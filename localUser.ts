@@ -1,4 +1,15 @@
+// localUser.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { db } from "./firebase";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
 
 export type LocalUser = {
   email: string;
@@ -6,39 +17,71 @@ export type LocalUser = {
   role: "student";
 };
 
-// Student lokal speichern
+// 🔎 Prüfen ob Benutzername vergeben ist
+export async function isUsernameTaken(username: string): Promise<boolean> {
+  const q = query(collection(db, "usernames"), where("username", "==", username));
+  const snapshot = await getDocs(q);
+  return !snapshot.empty;
+}
+
+// 🔑 Student speichern (nur beim ersten Login)
 export async function saveLocalUser(email: string, username: string) {
-  try {
-    const user: LocalUser = { email, username, role: "student" };
-    await AsyncStorage.setItem("localUser", JSON.stringify(user));
-    console.log("✅ LocalUser gespeichert:", user);
-  } catch (err) {
-    console.error("❌ Fehler beim Speichern des LocalUser:", err);
+  if (await isUsernameTaken(username)) {
+    throw new Error("❌ Benutzername ist schon vergeben!");
   }
+
+  // Username global reservieren
+  await addDoc(collection(db, "usernames"), { username });
+
+  const user: LocalUser = { email, username, role: "student" };
+  await AsyncStorage.setItem("localUser", JSON.stringify(user));
+
+  console.log("✅ Student gespeichert:", user);
+  return user;
 }
 
-// Student laden
+// 📦 Local User laden
 export async function loadLocalUser(): Promise<LocalUser | null> {
-  try {
-    const userData = await AsyncStorage.getItem("localUser");
-    if (userData) {
-      const user: LocalUser = JSON.parse(userData);
-      console.log("✅ LocalUser geladen:", user);
-      return user;
-    }
-    return null;
-  } catch (err) {
-    console.error("❌ Fehler beim Laden des LocalUser:", err);
-    return null;
-  }
+  const data = await AsyncStorage.getItem("localUser");
+  return data ? JSON.parse(data) : null;
 }
 
-// Student-Account löschen (Logout)
+// 🚪 Logout
 export async function clearLocalUser() {
-  try {
-    await AsyncStorage.removeItem("localUser");
-    console.log("✅ LocalUser entfernt");
-  } catch (err) {
-    console.error("❌ Fehler beim Entfernen des LocalUser:", err);
+  const local = await loadLocalUser();
+  if (local) {
+    // alten Namen aus Firestore löschen
+    const q = query(collection(db, "usernames"), where("username", "==", local.username));
+    const snapshot = await getDocs(q);
+    for (const d of snapshot.docs) {
+      await deleteDoc(doc(db, "usernames", d.id));
+    }
   }
+  await AsyncStorage.removeItem("localUser");
+}
+
+// ✏️ Benutzernamen ändern
+export async function updateUsername(newUsername: string) {
+  const local = await loadLocalUser();
+  if (!local) throw new Error("Kein User eingeloggt");
+
+  if (await isUsernameTaken(newUsername)) {
+    throw new Error("❌ Benutzername ist schon vergeben!");
+  }
+
+  // alten Namen löschen
+  const q = query(collection(db, "usernames"), where("username", "==", local.username));
+  const snapshot = await getDocs(q);
+  for (const d of snapshot.docs) {
+    await deleteDoc(doc(db, "usernames", d.id));
+  }
+
+  // neuen Namen speichern
+  await addDoc(collection(db, "usernames"), { username: newUsername });
+
+  const updated: LocalUser = { ...local, username: newUsername };
+  await AsyncStorage.setItem("localUser", JSON.stringify(updated));
+
+  console.log("✅ Benutzername geändert:", updated);
+  return updated;
 }

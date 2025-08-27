@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { loadLocalUser, saveLocalUser } from "../localUser";
+import { loadLocalUser, updateUsername } from "../localUser";
 
 export default function ProfileScreen() {
   const [userData, setUserData] = useState<any>(null);
@@ -14,11 +14,10 @@ export default function ProfileScreen() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // Firebase User (ÖH)
         if (auth.currentUser) {
+          // Firebase User (ÖH)
           const userRef = doc(db, "users", auth.currentUser.uid);
           const snap = await getDoc(userRef);
-
           if (snap.exists()) {
             setUserData(snap.data());
           }
@@ -39,28 +38,26 @@ export default function ProfileScreen() {
 
   const handleUpdateUsername = async () => {
     try {
+      if (!newUsername) {
+        Alert.alert("Fehler", "Bitte einen Benutzernamen eingeben.");
+        return;
+      }
+
       if (auth.currentUser) {
-        // Firebase (ÖH Account)
+        // ÖH: direkt im Firestore "users" Collection updaten
         const userRef = doc(db, "users", auth.currentUser.uid);
         await updateDoc(userRef, { username: newUsername });
         setUserData((prev: any) => ({ ...prev, username: newUsername }));
       } else {
-        // Lokaler Student
-        const localUser = await loadLocalUser();
-        if (localUser) {
-          const updated = { ...localUser, username: newUsername };
-
-          // ✅ Email UND Username übergeben
-          await saveLocalUser(updated.email, updated.username);
-
-          setUserData(updated);
-        }
+        // Student: Firestore-Check über updateUsername()
+        const updated = await updateUsername(newUsername);
+        setUserData(updated);
       }
 
       setEditVisible(false);
       setNewUsername("");
-    } catch (err) {
-      console.log("Fehler beim Ändern des Benutzernamens:", err);
+    } catch (err: any) {
+      Alert.alert("Fehler", err.message || "Benutzername konnte nicht geändert werden.");
     }
   };
 
@@ -108,7 +105,10 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.button} onPress={handleUpdateUsername}>
               <Text style={styles.buttonText}>Speichern</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, { backgroundColor: "gray" }]} onPress={() => setEditVisible(false)}>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: "gray" }]}
+              onPress={() => setEditVisible(false)}
+            >
               <Text style={styles.buttonText}>Abbrechen</Text>
             </TouchableOpacity>
           </View>
