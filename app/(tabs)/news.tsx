@@ -1,4 +1,4 @@
-import { View, StyleSheet, ScrollView } from "react-native";
+import { StyleSheet, ScrollView } from "react-native";
 import { Card, Text } from "react-native-paper";
 
 export default function NewsScreen() {

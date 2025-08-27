@@ -1,10 +1,48 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Pressable } from "react-native";
+import { DrawerActions, useNavigation } from "@react-navigation/native";
+import type { DrawerNavigationProp } from "@react-navigation/drawer";
 
 export default function TabLayout() {
+  const navigation = useNavigation<DrawerNavigationProp<any>>();
+
+  // Gemeinsame Header-Optionen für alle Tabs
+  const withMenuButton = (title: string, icon: string) => ({
+    title,
+    tabBarIcon: ({ color, size }: any) => (
+      <Ionicons name={icon as any} size={size} color={color} />
+    ),
+    headerLeft: () => (
+      <Pressable
+        onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+        style={{ marginLeft: 15 }}
+      >
+        <Ionicons name="menu" size={28} color="black" />
+      </Pressable>
+    ),
+  });
+
   return (
-    <Tabs screenOptions={{ headerShown: false }}>
-      {/* Index bleibt Start, aber unsichtbar */}
+    <Tabs>
+      <Tabs.Screen
+        name="news"
+        options={withMenuButton("News", "newspaper-outline")}
+      />
+      <Tabs.Screen
+        name="uni"
+        options={withMenuButton("Uni", "school-outline")}
+      />
+      <Tabs.Screen
+        name="timetable"
+        options={withMenuButton("Kalender", "calendar-outline")}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={withMenuButton("Chat", "chatbubbles-outline")}
+      />
+
+      {/* Index NICHT im Tab anzeigen */}
       <Tabs.Screen
         name="index"
         options={{
@@ -12,60 +50,11 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Menü-Tab (öffnet Drawer) */}
+      {/* Menü NICHT im Tab anzeigen */}
       <Tabs.Screen
         name="menu"
         options={{
-          title: "Menü",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="menu" size={size} color={color} />
-          ),
-        }}
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault(); // verhindert, dass menu.tsx geöffnet wird
-            navigation.openDrawer(); // Drawer öffnen
-          },
-        })}
-      />
-
-      <Tabs.Screen
-        name="news"
-        options={{
-          title: "News",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="newspaper" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="uni"
-        options={{
-          title: "Uni",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="school" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="timetable"
-        options={{
-          title: "Kalender",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "Chat",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles" size={size} color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>
