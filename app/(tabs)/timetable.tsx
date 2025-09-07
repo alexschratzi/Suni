@@ -1,11 +1,13 @@
-import { View, Text, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+import { Calendar } from 'react-native-calendars';
 
 export default function TimetableScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>📅 Dein Stundenplan</Text>
-      <Text>Hier könnten deine Vorlesungen angezeigt werden.</Text>
-    </View>
+      <Calendar
+    onDayPress={day => {
+      console.log('selected day', day);
+    }}
+      />  
   );
 }
 
