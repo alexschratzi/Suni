@@ -40,3 +40,4 @@ app-example
 
 .idea/
 .vscode/
+package-lock.json
