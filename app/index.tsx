@@ -1,105 +1,85 @@
-// app/index.tsx
-import React, { useState, useEffect } from "react";
-import { View, Text, Button, TextInput, StyleSheet, Alert } from "react-native";
+import { useState, useEffect } from "react";
+import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
 import { useRouter } from "expo-router";
-import { auth } from "../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { saveLocalUser, loadLocalUser } from "../localUser";
+import { auth, db } from "../firebase";
+import { PhoneAuthProvider, signInWithCredential, RecaptchaVerifier } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [role, setRole] = useState<"student" | "oeh" | null>(null);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [verificationId, setVerificationId] = useState<string | null>(null);
 
-  // Inputs
-  const [username, setUsername] = useState("");
-  const [matrikel, setMatrikel] = useState(""); // optional, kannst du rauswerfen
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  // Prüfen ob schon eingeloggt
   useEffect(() => {
-    (async () => {
-      const localUser = await loadLocalUser();
-      if (localUser || auth.currentUser) {
-        router.replace("/(tabs)/news");
-      }
-    })();
+    if (auth.currentUser) {
+      router.replace("/(tabs)/news");
+    }
   }, []);
 
-  if (!role) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>🔑 Login</Text>
-        <Button title="Student" onPress={() => setRole("student")} />
-        <Button title="ÖH" onPress={() => setRole("oeh")} />
-      </View>
-    );
-  }
+  const sendCode = async () => {
+    try {
+      // Recaptcha muss im echten Gerät laufen
+      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      const provider = new PhoneAuthProvider(auth);
+      const id = await provider.verifyPhoneNumber(phone, verifier);
+      setVerificationId(id);
+      Alert.alert("SMS-Code verschickt!");
+    } catch (err: any) {
+      Alert.alert("Fehler", err.message);
+    }
+  };
+
+  const confirmCode = async () => {
+    try {
+      if (!verificationId) return;
+      const credential = PhoneAuthProvider.credential(verificationId, code);
+      const userCred = await signInWithCredential(auth, credential);
+
+      const userRef = doc(db, "users", userCred.user.uid);
+      const snap = await getDoc(userRef);
+
+      if (!snap.exists()) {
+        // neues Profil anlegen
+        await setDoc(userRef, {
+          phone,
+          username: "NeuerUser",
+          role: "student",
+        });
+      }
+
+      router.replace("/(tabs)/news");
+    } catch (err: any) {
+      Alert.alert("Fehler", err.message);
+    }
+  };
 
   return (
     <View style={styles.container}>
-      {role === "student" ? (
+      <Text style={styles.title}>📱 Telefon-Login</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="+43 ..."
+        keyboardType="phone-pad"
+        value={phone}
+        onChangeText={setPhone}
+      />
+      <Button title="Code senden" onPress={sendCode} />
+
+      {verificationId && (
         <>
-          <Text style={styles.title}>👩‍🎓 Student Login</Text>
           <TextInput
             style={styles.input}
-            placeholder="Benutzername"
-            value={username}
-            onChangeText={setUsername}
+            placeholder="SMS Code"
+            keyboardType="number-pad"
+            value={code}
+            onChangeText={setCode}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="E-Mail (nur lokal gespeichert)"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <Button
-            title="Login"
-            onPress={async () => {
-              try {
-                if (!username) {
-                  Alert.alert("Fehler", "Bitte einen Benutzernamen eingeben.");
-                  return;
-                }
-                // Benutzername prüfen & speichern
-                await saveLocalUser(email || "-", username);
-                router.replace("/(tabs)/news");
-              } catch (err: any) {
-                Alert.alert("Fehler", err.message);
-              }
-            }}
-          />
-        </>
-      ) : (
-        <>
-          <Text style={styles.title}>🛠️ ÖH Login</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="E-Mail"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Passwort"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          <Button
-            title="Login"
-            onPress={async () => {
-              try {
-                await signInWithEmailAndPassword(auth, email, password);
-                router.replace("/(tabs)/news");
-              } catch (err: any) {
-                Alert.alert("Fehler", err.message);
-              }
-            }}
-          />
+          <Button title="Bestätigen" onPress={confirmCode} />
         </>
       )}
-      <Button title="Zurück" onPress={() => setRole(null)} />
+      {/* Wichtig für Recaptcha */}
+      <View id="recaptcha-container" />
     </View>
   );
 }
@@ -107,11 +87,5 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 20 },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
-    marginBottom: 10,
-    borderRadius: 8,
-  },
+  input: { borderWidth: 1, borderColor: "#ccc", padding: 10, marginBottom: 10, borderRadius: 8 },
 });
