@@ -1,3 +1,14 @@
+import { Ionicons } from "@expo/vector-icons"; // ← Icon Import
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   View,
@@ -10,17 +21,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import {
-  collection,
-  addDoc,
-  query,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "../../firebase";
-import { loadLocalUser } from "../../localUser";
-import { Ionicons } from "@expo/vector-icons"; // ← Icon Import
+
+import { db, auth } from "../../firebase";
 
 // Räume richtig typisieren
 const ROOMS = {
@@ -36,18 +38,26 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
   const [room, setRoom] = useState<RoomKey | null>(null);
+  const [inputHeight, setInputHeight] = useState(40);
 
+  // 🔑 Username vom aktuellen User laden
   useEffect(() => {
-    (async () => {
-      const user = await loadLocalUser();
-      if (user) setUsername(user.username);
-    })();
+    const loadUser = async () => {
+      if (auth.currentUser) {
+        const userRef = doc(db, "users", auth.currentUser.uid);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          setUsername(snap.data().username);
+        }
+      }
+    };
+    loadUser();
   }, []);
 
+  // Nachrichten aus aktuellem Raum laden
   useEffect(() => {
     if (!room) return;
-    // asc sortieren + inverted -> neueste oben
-    const q = query(collection(db, ROOMS[room]), orderBy("timestamp", "asc"));
+    const q = query(collection(db, ROOMS[room]), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setMessages(msgs);
@@ -57,17 +67,25 @@ export default function ChatScreen() {
   }, [room]);
 
   const sendMessage = async () => {
-    if (!input.trim() || !room) return;
+    if (!input.trim() || !room || !username) return;
     try {
       await addDoc(collection(db, ROOMS[room]), {
-        username,
+        username, // 🔑 Username mit abspeichern
         text: input,
         timestamp: serverTimestamp(),
       });
       setInput("");
+      setInputHeight(40);
     } catch (err) {
       console.error("❌ Nachricht konnte nicht gesendet werden:", err);
     }
+  };
+
+  const uploadAttachment = async () => {
+    console.log("📎 Attachment hochladen...");
+    // TODO: expo-image-picker oder document-picker einbauen
+    // TODO: Datei in Firebase Storage hochladen
+    // TODO: URL in Firestore speichern
   };
 
   if (!room) {
@@ -97,7 +115,7 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
+      keyboardVerticalOffset={110}
     >
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => setRoom(null)} style={styles.iconBtn}>
@@ -116,7 +134,6 @@ export default function ChatScreen() {
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
-        inverted
         renderItem={({ item }) => {
           const date = item.timestamp?.toDate
             ? item.timestamp
@@ -132,7 +149,7 @@ export default function ChatScreen() {
           return (
             <View style={styles.msgRow}>
               <Text style={styles.msgMeta}>
-                {item.username} • {date}
+                {item.username || "???"} • {date}
               </Text>
               <Text style={styles.msgText}>{item.text}</Text>
             </View>
@@ -141,11 +158,19 @@ export default function ChatScreen() {
       />
 
       <View style={styles.inputRow}>
+        <TouchableOpacity onPress={uploadAttachment} style={styles.attachBtn}>
+          <Ionicons name="attach" size={24} color="#1976D2" />
+        </TouchableOpacity>
+
         <TextInput
-          style={styles.input}
+          style={[styles.input, { height: inputHeight }]}
           placeholder="Nachricht eingeben..."
           value={input}
           onChangeText={setInput}
+          multiline
+          onContentSizeChange={(e) =>
+            setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
+          }
         />
         <Button title="Senden" onPress={sendMessage} />
       </View>
@@ -192,15 +217,22 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
+    marginBottom: 10,
     marginTop: 10,
+  },
+  attachBtn: {
+    marginRight: 8,
+    padding: 4,
   },
   input: {
     flex: 1,
     borderWidth: 1,
     borderColor: "#ccc",
     borderRadius: 5,
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     marginRight: 10,
+    textAlignVertical: "top",
   },
 });

@@ -1,9 +1,27 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  Modal,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { loadLocalUser, updateUsername } from "../localUser";
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  deleteDoc,
+} from "firebase/firestore";
 
 export default function ProfileScreen() {
   const [userData, setUserData] = useState<any>(null);
@@ -15,16 +33,9 @@ export default function ProfileScreen() {
     const fetchUser = async () => {
       try {
         if (auth.currentUser) {
-          // Firebase User (ÖH)
           const userRef = doc(db, "users", auth.currentUser.uid);
           const snap = await getDoc(userRef);
-          if (snap.exists()) {
-            setUserData(snap.data());
-          }
-        } else {
-          // Lokaler User (Student)
-          const localUser = await loadLocalUser();
-          if (localUser) setUserData(localUser);
+          if (snap.exists()) setUserData(snap.data());
         }
       } catch (err) {
         console.log("Profil laden fehlgeschlagen:", err);
@@ -32,67 +43,98 @@ export default function ProfileScreen() {
         setLoading(false);
       }
     };
-
     fetchUser();
   }, []);
 
   const handleUpdateUsername = async () => {
     try {
-      if (!newUsername) {
-        Alert.alert("Fehler", "Bitte einen Benutzernamen eingeben.");
+      if (!newUsername.trim()) {
+        Alert.alert("Fehler", "Bitte gib einen Benutzernamen ein.");
         return;
       }
 
-      if (auth.currentUser) {
-        // ÖH: direkt im Firestore "users" Collection updaten
-        const userRef = doc(db, "users", auth.currentUser.uid);
-        await updateDoc(userRef, { username: newUsername });
-        setUserData((prev: any) => ({ ...prev, username: newUsername }));
-      } else {
-        // Student: Firestore-Check über updateUsername()
-        const updated = await updateUsername(newUsername);
-        setUserData(updated);
+      const q = query(collection(db, "usernames"), where("username", "==", newUsername));
+      const existing = await getDocs(q);
+      if (!existing.empty) {
+        Alert.alert("Fehler", "Benutzername ist schon vergeben!");
+        return;
       }
 
+      // Alten Username freigeben
+      if (userData?.username) {
+        const oldQ = query(collection(db, "usernames"), where("username", "==", userData.username));
+        const oldDocs = await getDocs(oldQ);
+        for (const d of oldDocs.docs) {
+          await deleteDoc(d.ref);
+        }
+      }
+
+      // Neuen reservieren
+      await addDoc(collection(db, "usernames"), {
+        username: newUsername,
+        uid: auth.currentUser?.uid,
+      });
+
+      // In users updaten
+      const userRef = doc(db, "users", auth.currentUser!.uid);
+      await updateDoc(userRef, { username: newUsername });
+
+      setUserData((prev: any) => ({ ...prev, username: newUsername }));
       setEditVisible(false);
       setNewUsername("");
+      Alert.alert("✅ Erfolg", "Benutzername erfolgreich geändert!");
     } catch (err: any) {
-      Alert.alert("Fehler", err.message || "Benutzername konnte nicht geändert werden.");
+      Alert.alert("Fehler", err.message);
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <Text>Lade Profil...</Text>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#1976D2" />
+        <Text>Profil wird geladen...</Text>
       </View>
     );
   }
 
   if (!userData) {
     return (
-      <View style={styles.container}>
-        <Text>❌ Nicht eingeloggt</Text>
+      <View style={styles.center}>
+        <Ionicons name="alert-circle-outline" size={60} color="red" />
+        <Text style={{ fontSize: 18, marginTop: 10 }}>❌ Nicht eingeloggt</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Ionicons name="person-circle-outline" size={80} color="#1976D2" />
-      <Text style={styles.title}>👤 Profil</Text>
+      {/* Profil-Icon */}
+      <Ionicons name="person-circle-outline" size={120} color="#1976D2" />
+      <Text style={styles.title}>Mein Profil</Text>
 
-      <Text style={styles.text}>📧 E-Mail: {userData.email}</Text>
-      <View style={styles.row}>
-        <Text style={styles.text}>🆔 Benutzername: {userData.username}</Text>
+      {/* Karte: Telefonnummer */}
+      <View style={styles.card}>
+        <Ionicons name="call-outline" size={22} color="#1976D2" style={styles.cardIcon} />
+        <Text style={styles.cardText}>Telefonnummer: {userData.phone}</Text>
+      </View>
+
+      {/* Karte: Benutzername */}
+      <View style={styles.cardRow}>
+        <Ionicons name="person-outline" size={22} color="#1976D2" style={styles.cardIcon} />
+        <Text style={styles.cardText}>Benutzername: {userData.username}</Text>
         <TouchableOpacity onPress={() => setEditVisible(true)}>
-          <Ionicons name="pencil" size={20} color="blue" style={{ marginLeft: 8 }} />
+          <Ionicons name="pencil" size={20} color="#1976D2" style={{ marginLeft: 8 }} />
         </TouchableOpacity>
       </View>
-      <Text style={styles.text}>🔑 Rolle: {userData.role || "student"}</Text>
+
+      {/* Karte: Rolle */}
+      <View style={styles.card}>
+        <Ionicons name="key-outline" size={22} color="#1976D2" style={styles.cardIcon} />
+        <Text style={styles.cardText}>Rolle: {userData.role}</Text>
+      </View>
 
       {/* Modal für Benutzernamen ändern */}
-      <Modal visible={editVisible} transparent animationType="slide">
+      <Modal visible={editVisible} transparent animationType="fade">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Benutzernamen ändern</Text>
@@ -102,15 +144,14 @@ export default function ProfileScreen() {
               value={newUsername}
               onChangeText={setNewUsername}
             />
-            <TouchableOpacity style={styles.button} onPress={handleUpdateUsername}>
-              <Text style={styles.buttonText}>Speichern</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: "gray" }]}
-              onPress={() => setEditVisible(false)}
-            >
-              <Text style={styles.buttonText}>Abbrechen</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.button, styles.saveBtn]} onPress={handleUpdateUsername}>
+                <Text style={styles.buttonText}>Speichern</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={() => setEditVisible(false)}>
+                <Text style={styles.buttonText}>Abbrechen</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -119,14 +160,55 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "#f9f9f9" },
-  title: { fontSize: 26, fontWeight: "bold", marginBottom: 20 },
-  text: { fontSize: 18, marginBottom: 10 },
-  row: { flexDirection: "row", alignItems: "center" },
-  modalContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { width: "80%", padding: 20, backgroundColor: "white", borderRadius: 10, elevation: 5 },
+  container: { flex: 1, justifyContent: "flex-start", alignItems: "center", padding: 20, backgroundColor: "#F5F9FF" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 28, fontWeight: "bold", marginVertical: 15, color: "#0D47A1" },
+
+  // Karten-Styling
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 12,
+    marginVertical: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 12,
+    marginVertical: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardIcon: { marginRight: 10 },
+  cardText: { fontSize: 16, flexShrink: 1 },
+
+  // Modal
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: { width: "85%", padding: 20, backgroundColor: "white", borderRadius: 12 },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  input: { borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 5, marginBottom: 10 },
-  button: { backgroundColor: "#1976D2", padding: 10, borderRadius: 5, marginTop: 10 },
+  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 15 },
+  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
+  button: { flex: 1, padding: 12, borderRadius: 8, marginHorizontal: 5 },
+  saveBtn: { backgroundColor: "#1976D2" },
+  cancelBtn: { backgroundColor: "gray" },
   buttonText: { color: "white", fontWeight: "bold", textAlign: "center" },
 });

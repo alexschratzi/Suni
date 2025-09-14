@@ -1,11 +1,12 @@
 // app/_layout.tsx
 import { Drawer } from "expo-router/drawer";
-import { DrawerToggleButton } from "@react-navigation/drawer";
+import { DrawerToggleButton, DrawerContentScrollView, DrawerItemList } from "@react-navigation/drawer";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { logout } from "../utils/logout";
+import { Pressable, Text } from "react-native";
 
-export default function RootLayout() {
+export default function RootLayout(props: any) {
   const router = useRouter();
 
   return (
@@ -14,6 +15,28 @@ export default function RootLayout() {
         headerTitle: "Suni",
         headerLeft: () => <DrawerToggleButton tintColor="gray" />,
       }}
+      drawerContent={(drawerProps) => (
+        <DrawerContentScrollView {...drawerProps}>
+          {/* Alle Standard-Screens */}
+          <DrawerItemList {...drawerProps} />
+
+          {/* Logout Button */}
+          <Pressable
+            onPress={async () => {
+              await logout();       // Firebase signOut()
+              router.push("/");     // ⬅️ Zurück zum Login (app/index.tsx)
+            }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 15,
+            }}
+          >
+            <Ionicons name="log-out-outline" size={22} color="black" />
+            <Text style={{ marginLeft: 10, fontSize: 16 }}>Logout</Text>
+          </Pressable>
+        </DrawerContentScrollView>
+      )}
     >
       <Drawer.Screen
         name="(tabs)"
@@ -40,22 +63,6 @@ export default function RootLayout() {
           drawerIcon: ({ color, size }) => (
             <Ionicons name="list-outline" size={size} color={color} />
           ),
-        }}
-      />
-      <Drawer.Screen
-        name="logout"
-        options={{
-          title: "Logout",
-          drawerIcon: ({ color, size }) => (
-            <Ionicons name="log-out-outline" size={size} color={color} />
-          ),
-        }}
-        listeners={{
-          drawerItemPress: async (e) => {
-            e.preventDefault();
-            await logout();
-            router.replace("/"); // zurück zum Login-Screen
-          },
         }}
       />
     </Drawer>

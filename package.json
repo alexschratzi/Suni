@@ -22,6 +22,7 @@
     "expo-blur": "~14.1.5",
     "expo-calendar": "~14.1.4",
     "expo-constants": "~17.1.7",
+    "expo-firebase-recaptcha": "^2.3.1",
     "expo-font": "~13.3.2",
     "expo-haptics": "~14.1.4",
     "expo-image": "~2.4.0",
@@ -52,6 +53,7 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.0.10",
+    "@types/react-native": "^0.73.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~9.2.0",
     "typescript": "~5.8.3"
