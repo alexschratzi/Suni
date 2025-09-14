@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons"; // ← Icon Import
+import { Ionicons } from "@expo/vector-icons";
 import {
   addDoc,
   collection,
@@ -7,7 +7,6 @@ import {
   query,
   serverTimestamp,
   doc,
-  getDoc,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
@@ -21,6 +20,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { useRouter } from "expo-router";
 
 import { db, auth } from "../../firebase";
 
@@ -34,27 +34,29 @@ const ROOMS = {
 type RoomKey = keyof typeof ROOMS;
 
 export default function ChatScreen() {
+  const router = useRouter();
+
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
   const [room, setRoom] = useState<RoomKey | null>(null);
   const [inputHeight, setInputHeight] = useState(40);
 
-  // 🔑 Username vom aktuellen User laden
+  // 🔑 Username vom aktuellen User live synchronisieren
   useEffect(() => {
-    const loadUser = async () => {
-      if (auth.currentUser) {
-        const userRef = doc(db, "users", auth.currentUser.uid);
-        const snap = await getDoc(userRef);
-        if (snap.exists()) {
-          setUsername(snap.data().username);
-        }
+    if (!auth.currentUser) return;
+
+    const userRef = doc(db, "users", auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        setUsername(snap.data().username);
       }
-    };
-    loadUser();
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // Nachrichten aus aktuellem Raum laden
+  // Nachrichten aus aktuellem Raum live laden
   useEffect(() => {
     if (!room) return;
     const q = query(collection(db, ROOMS[room]), orderBy("timestamp", "desc"));
@@ -70,7 +72,7 @@ export default function ChatScreen() {
     if (!input.trim() || !room || !username) return;
     try {
       await addDoc(collection(db, ROOMS[room]), {
-        username, // 🔑 Username mit abspeichern
+        username, // 🔑 aktueller Username wird gespeichert
         text: input,
         timestamp: serverTimestamp(),
       });
@@ -86,6 +88,20 @@ export default function ChatScreen() {
     // TODO: expo-image-picker oder document-picker einbauen
     // TODO: Datei in Firebase Storage hochladen
     // TODO: URL in Firestore speichern
+  };
+
+  // 👉 Neue Funktion: Thread öffnen
+  const openThread = (message: any) => {
+    if (!room) return;
+    router.push({
+      pathname: "/reply",
+      params: {
+        room,
+        messageId: message.id,
+        messageText: message.text,
+        messageUser: message.username,
+      },
+    });
   };
 
   if (!room) {
@@ -147,12 +163,14 @@ export default function ChatScreen() {
                 })
             : "Gerade eben";
           return (
-            <View style={styles.msgRow}>
-              <Text style={styles.msgMeta}>
-                {item.username || "???"} • {date}
-              </Text>
-              <Text style={styles.msgText}>{item.text}</Text>
-            </View>
+            <TouchableOpacity onPress={() => openThread(item)}>
+              <View style={styles.msgRow}>
+                <Text style={styles.msgMeta}>
+                  {item.username || "???"} • {date}
+                </Text>
+                <Text style={styles.msgText}>{item.text}</Text>
+              </View>
+            </TouchableOpacity>
           );
         }}
       />
@@ -180,14 +198,8 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  iconBtn: {
-    marginRight: 10,
-  },
+  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  iconBtn: { marginRight: 10 },
   heading: { fontSize: 20, fontWeight: "bold" },
   roomCard: {
     padding: 15,
@@ -197,34 +209,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: "#E3F2FD",
   },
-  roomName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#0D47A1",
-  },
+  roomName: { fontSize: 18, fontWeight: "600", color: "#0D47A1" },
   msgRow: {
     paddingVertical: 10,
     borderBottomWidth: 0.5,
     borderBottomColor: "#ccc",
   },
-  msgMeta: {
-    fontSize: 12,
-    color: "#777",
-    marginBottom: 2,
-  },
-  msgText: {
-    fontSize: 16,
-  },
+  msgMeta: { fontSize: 12, color: "#777", marginBottom: 2 },
+  msgText: { fontSize: 16 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     marginBottom: 10,
     marginTop: 10,
   },
-  attachBtn: {
-    marginRight: 8,
-    padding: 4,
-  },
+  attachBtn: { marginRight: 8, padding: 4 },
   input: {
     flex: 1,
     borderWidth: 1,
