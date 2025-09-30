@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  uni-service:
+    image: ghcr.io/your-org/uni-service:latest # or build from context below
+    build:
+      context: ./uni-service
+      dockerfile: Dockerfile
+    container_name: uni-service
+    environment:
+      # service
+      ENV: prod
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:19006,http://localhost:8081,exp://127.0.0.1:19000}
+      # data file (mounted below)
+      UNI_DATA_PATH: /data/universities.json
+    ports:
+      - "8088:8000"
+    volumes:
+      - ./uni-service/universities.json:/data/universities.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped

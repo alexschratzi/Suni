@@ -14,6 +14,9 @@
         "NSCalendarsUsageDescription": "This app shows your timetable using your calendars."
       }
     },
+    "extra": {
+      "EXPO_PUBLIC_UNI_API_BASE": /* process.env.EXPO_PUBLIC_UNI_API_BASE ||  */ "http://localhost:8088"
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -36,7 +39,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

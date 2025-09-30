@@ -1,16 +1,11 @@
-import { View, Text, StyleSheet } from "react-native";
+// app/(tabs)/uni.tsx
+import * as React from "react";
+import { View } from "react-native";
+import LinkHub from "../../components/university/LinkHub";
+import Onboarding from "../../components/university/Onboarding";
+import { useUniversity } from "../../components/university/UniversityContext";
 
-export default function ProfileScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>👤 Dein Profil</Text>
-      <Text>Name: Alex Schratzberger</Text>
-      <Text>Studium: Informatik</Text>
-    </View>
-  );
+export default function Uni() {
+  const { shouldShowLinks } = useUniversity();
+  return <View style={{ flex: 1 }}>{shouldShowLinks ? <LinkHub /> : <Onboarding />}</View>;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center" },
-  heading: { fontSize: 24, fontWeight: "bold", marginBottom: 10 },
-});
