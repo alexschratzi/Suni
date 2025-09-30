@@ -3,7 +3,8 @@
   "countries": [
     { "id": 1, "name": "Österreich" },
     { "id": 2, "name": "Deutschland" },
-    { "id": 3, "name": "Schweiz" }
+    { "id": 3, "name": "Schweiz" },
+    { "id": 4, "name": "Test" }
   ],
   "universities": [
     { "id": 123, "name": "FH Salzburg", "countryId": 1 },
