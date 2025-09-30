@@ -206,8 +206,7 @@ export default function Onboarding() {
               <Card.Title title="4) Anmeldung" subtitle={university?.name ?? ""} />
               <Card.Content>
                 <Text>
-                  Anmeldung erfolgt im eingebetteten Browser. Sobald Sie auf eine FH-Seite weitergeleitet wurden,
-                  werden die Schnelllinks freigeschaltet.
+                  Anmeldung erfolgt sicher im Browser.
                 </Text>
                 <View style={{ height: 12 }} />
                 <Button
