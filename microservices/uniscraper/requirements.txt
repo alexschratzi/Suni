@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-"pydantic>=2"
+pydantic
 python-multipart
 playwright

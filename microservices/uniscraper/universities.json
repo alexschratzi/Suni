@@ -1,0 +1,37 @@
+{
+  "version": "2025-09-30.dev1",
+  "countries": [
+    { "id": 1, "name": "Österreich" },
+    { "id": 2, "name": "Deutschland" },
+    { "id": 3, "name": "Schweiz" }
+  ],
+  "universities": [
+    { "id": 123, "name": "FH Salzburg", "countryId": 1 },
+    { "id": 124, "name": "Universität Salzburg", "countryId": 1 }
+  ],
+  "programs": [
+    { "id": 1231, "name": "Informationstechnik und Systemmanagement BSc", "universityId": 123 }
+  ],
+  "uniConfigs": {
+    "123": {
+      "uniId": 123,
+      "loginUrl": "https://login.fh-salzburg.ac.at/",
+      "links": [
+        { "id": "outlook",   "title": "Outlook",   "url": "https://outlook.office.com/mail/" },
+        { "id": "myfhs",     "title": "myFHS",     "url": "https://myfhs.fh-salzburg.ac.at/#all-updates" },
+        { "id": "jobrouter", "title": "JobRouter", "url": "https://jobrouter.fhs.fh-salzburg.ac.at/" },
+        { "id": "moodle",    "title": "Moodle",    "url": "https://elearn.fh-salzburg.ac.at/my/" },
+        { "id": "fhsys",     "title": "FHSYS",     "url": "https://fhsys.fh-salzburg.ac.at/" }
+      ],
+      "loginDetection": {
+        "successHostSuffixes": ["fh-salzburg.ac.at", "office.com", "microsoft.com"],
+        "idpHosts": ["login.microsoftonline.com"]
+      }
+    },
+    "124": {
+      "uniId": 124,
+      "links": [],
+      "loginDetection": { "successHostSuffixes": [] }
+    }
+  }
+}
