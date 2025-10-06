@@ -78,15 +78,18 @@ export default function LinkHub() {
             </Modal>
 
             <Button
+                mode="text"
+                compact
                 style={{ margin: 12 }}
-                mode="outlined"
+                textColor="#d32f2f"        // optional: red-ish logout
                 onPress={async () => {
                     setBrowserUrl(null);
                     setLinks([]);
                     await resetOnboarding({ clearCookies: true });
                 }}
+                accessibilityLabel="Logout"
             >
-                Reset
+                Logout
             </Button>
         </View>
     );

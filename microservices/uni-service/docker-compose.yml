@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   uni-service:
     image: ghcr.io/your-org/uni-service:latest # or build from context below
