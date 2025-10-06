@@ -1,0 +1,12 @@
+diff --git a/node_modules/@howljs/calendar-kit/src/CalendarBody.tsx b/node_modules/@howljs/calendar-kit/src/CalendarBody.tsx
+index 91d3264..49bcf1c 100644
+--- a/node_modules/@howljs/calendar-kit/src/CalendarBody.tsx
++++ b/node_modules/@howljs/calendar-kit/src/CalendarBody.tsx
+@@ -324,6 +324,7 @@ const CalendarBody: React.FC<CalendarBodyProps> = ({
+           showsVerticalScrollIndicator={false}
+           onLayout={_onLayout}
+           onScroll={_onScroll}
++          scrollEnabled={false}
+           refreshControl={
+             onRefresh ? (
+               <RefreshControl refreshing={false} onRefresh={_onRefresh} />
