@@ -2,10 +2,11 @@
 import { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, Button, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { auth, db, firebaseConfig } from "../firebase";
+import { Platform } from "react-native";
 import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
-import { PhoneAuthProvider, signInWithCredential } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc } from "firebase/firestore";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -15,9 +16,14 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
-  const [verificationId, setVerificationId] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<any>(null);
 
   useEffect(() => {
+    if (Platform.OS === "web") {
+      recaptchaVerifier.current = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible",
+      });
+    }
     if (auth.currentUser) {
       router.replace("/(tabs)/news");
     } else {
@@ -27,9 +33,13 @@ export default function LoginScreen() {
 
   const sendCode = async () => {
     try {
-      const provider = new PhoneAuthProvider(auth);
-      const id = await provider.verifyPhoneNumber(phone, recaptchaVerifier.current!);
-      setVerificationId(id);
+      let conf;
+      if (Platform.OS === "web") {
+        conf = await signInWithPhoneNumber(auth, phone, recaptchaVerifier.current!);
+      } else {
+        conf = await signInWithPhoneNumber(auth, phone, recaptchaVerifier.current);
+      }
+      setConfirmation(conf);
       Alert.alert("SMS-Code verschickt!");
     } catch (err: any) {
       Alert.alert("Fehler", err.message);
@@ -38,10 +48,8 @@ export default function LoginScreen() {
 
   const confirmCode = async () => {
     try {
-      if (!verificationId) return;
-      const credential = PhoneAuthProvider.credential(verificationId, code);
-      const userCred = await signInWithCredential(auth, credential);
-
+      if (!confirmation) return;
+      const userCred = await confirmation.confirm(code);
       const userRef = doc(db, "users", userCred.user.uid);
       const snap = await getDoc(userRef);
 
@@ -87,8 +95,22 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <FirebaseRecaptchaVerifierModal ref={recaptchaVerifier} firebaseConfig={firebaseConfig} />
-
+      {Platform.OS === "web" ? (
+        <div id="recaptcha-container"></div>
+      ) : (
+        <FirebaseRecaptchaVerifierModal
+          ref={recaptchaVerifier}
+          firebaseConfig={{
+            apiKey: "AIzaSyBxTehFpuCXrU7-yCEBDee4C17jRzZRqzY",
+            authDomain: "test-projekt-23e8b.firebaseapp.com",
+            projectId: "test-projekt-23e8b",
+            storageBucket: "test-projekt-23e8b.firebasestorage.app",
+            messagingSenderId: "986555980321",
+            appId: "1:986555980321:web:e007191c65240ffea62160",
+            measurementId: "G-4V08R3JEX5"
+          }}
+        />
+      )}
       <Text style={styles.title}>📱 Telefon-Login</Text>
 
       <TextInput
@@ -100,7 +122,7 @@ export default function LoginScreen() {
       />
       <Button title="Code senden" onPress={sendCode} />
 
-      {verificationId && (
+      {confirmation && (
         <>
           <TextInput
             style={styles.input}
