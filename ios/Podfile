@@ -1,7 +1,8 @@
 
+
 platform :ios, '13.0'
 
-use_frameworks! :linkage => :static
+use_frameworks!
 use_modular_headers!
 
 require_relative '../node_modules/expo/scripts/autolinking'
@@ -17,6 +18,4 @@ target 'suni' do
     :hermes_enabled => true
   )
 
-  pod 'FirebaseCoreInternal', :modular_headers => true
-  pod 'GoogleUtilities', :modular_headers => true
 end
