@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { PixelRatio, StyleSheet, View } from "react-native";
 import type {
   CalendarKitHandle,
@@ -56,7 +56,7 @@ export default function TimetableScreen() {
   const onPressBg = (v: DateOrDateTime) => {
     Haptics.selectionAsync().catch(() => {});
     const s = toDate(v);
-    const e = new Date(s.getTime() + 30 * 60 * 1000);
+    const e = new Date(s.getTime() + 60 * 60 * 1000);
     addEvent(s.toISOString(), e.toISOString());
   };
 
@@ -81,7 +81,7 @@ export default function TimetableScreen() {
   // visible time range + grid interval
   const startMinutes = MIN_H * 60;
   const endMinutes = MAX_H * 60;
-  const timeInterval = 60; // minutes per row
+  const timeInterval = 60;
   const spaceFromTop = 0;
   const spaceFromBottom = 0;
 
@@ -124,8 +124,8 @@ export default function TimetableScreen() {
         minTimeIntervalHeight={desiredIntervalHeight}
         maxTimeIntervalHeight={desiredIntervalHeight}
         allowDragToCreate
-        defaultDuration={30}
-        dragStep={15}
+        defaultDuration={60}
+        dragStep={60}
         useHaptic
         onDragCreateEventEnd={onCreate}
         onPressBackground={onPressBg}
@@ -137,7 +137,9 @@ export default function TimetableScreen() {
         <View onLayout={(e) => setHeaderBlockH(e.nativeEvent.layout.height)}>
           <CalendarHeader />
         </View>
-        <CalendarBody />
+        <CalendarBody
+        renderCustomHorizontalLine={renderHourOnlyLine}
+        />
       </CalendarContainer>
     </View>
   );
@@ -177,6 +179,16 @@ function toDate(v: DateOrDateTime | undefined): Date {
 }
 
 const toISO = (v: DateOrDateTime | undefined) => toDate(v).toISOString();
+
+const renderHourOnlyLine = ({ index, borderColor }: { index: number; borderColor: string }) => {
+  if (!Number.isInteger(index)) return null; // skip 30-min lines (i + 0.5)
+  return (
+    <View
+      pointerEvents="none"
+      style={{ height: StyleSheet.hairlineWidth, backgroundColor: borderColor }}
+    />
+  );
+};
 
 /* ---------------------- Styles ---------------------- */
 const styles = StyleSheet.create({
