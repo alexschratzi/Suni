@@ -11,27 +11,11 @@ use_expo_modules!
 
 target 'suni' do
   config = use_native_modules!
-
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => true
   )
 
-  # Firebase Fix – verhindert Swift/Pod Konflikte
   pod 'FirebaseCoreInternal', :modular_headers => true
   pod 'GoogleUtilities', :modular_headers => true
-
-  post_install do |installer|
-    react_native_post_install(
-      installer,
-      # Falls du Flipper deaktivieren willst: Setze auf false
-      :mac_catalyst_enabled => false
-    )
-    # Expo Build-kompatibel halten
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-      end
-    end
-  end
 end
