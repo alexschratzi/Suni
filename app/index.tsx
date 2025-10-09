@@ -10,8 +10,8 @@ import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc } from "
 export default function LoginScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [phone, setPhone] = useState("+43 1 23456789");
+  const [code, setCode] = useState("123456");
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
 
@@ -19,17 +19,24 @@ export default function LoginScreen() {
   let recaptchaVerifier: any = null;
 
   useEffect(() => {
-    // Expo Go: App Verification für Tests deaktivieren
-    // @ts-ignore
-    if (auth.settings) {
-      // In Expo Go kann appVerificationDisabledForTesting gesetzt werden
-      // Damit werden Testnummern ohne Recaptcha akzeptiert
-      auth.settings.appVerificationDisabledForTesting = true;
-    }
-    setLoading(false);
-    if (auth.currentUser) {
-      router.replace("/(tabs)/news");
-    }
+    const init = async () => {
+      try {
+        // 🔸 Expo Go: Testmodus aktivieren (keine Recaptcha-Verifizierung)
+        if (__DEV__ && auth.settings) {
+          auth.settings.appVerificationDisabledForTesting = true;
+        }
+
+        // 🔸 Falls schon eingeloggt → direkt weiter
+        if (auth.currentUser) {
+          router.replace("/(tabs)/news");
+        }
+      } catch (err) {
+        console.log("Init-Fehler:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
   }, [router]);
 
   // SMS-Code senden
