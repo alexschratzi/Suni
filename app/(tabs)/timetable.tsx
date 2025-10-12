@@ -20,6 +20,9 @@ type Ev = {
     color?: string;
 };
 
+const SNAP_TO_MINUTE = 60;
+const DEFAULT_EVENT_DURATION_MIN = 60;
+
 const MIN_H = 7;
 const MAX_H = 24;
 
@@ -47,7 +50,6 @@ export default function TimetableScreen() {
                 textAlign: "right",
                 marginTop: 6, // 👈 moves label BELOW the hour line
             },
-            formatHourLabel: (hour: number) => `${hour}`,
             eventContainerStyle: {borderRadius: 8},
             eventTitleStyle: {fontSize: 12, fontWeight: "600"},
             minimumEventHeight: 16,
@@ -64,10 +66,15 @@ export default function TimetableScreen() {
     const onPressBg = (v: DateOrDateTime) => {
         Haptics.selectionAsync().catch(() => {
         });
-        const s = toDate(v);
-        const e = new Date(s.getTime() + 60 * 60 * 1000);
-        addEvent(s.toISOString(), e.toISOString());
+        const raw = toDate(v);
+
+        // choose "nearest" or "floor" depending on UX you want
+        const snapped = snapToGrid(raw, timeInterval, "nearest");
+
+        const end = new Date(snapped.getTime() + DEFAULT_EVENT_DURATION_MIN * MINUTE_MS);
+        addEvent(snapped.toISOString(), end.toISOString());
     };
+
 
     const addEvent = (startISO: string, endISO: string) =>
         setEvents((p) => [
@@ -137,8 +144,8 @@ export default function TimetableScreen() {
 
                 allowDragToCreate
                 dragToCreateMode={"date-time"}
-                defaultDuration={60}
-                dragStep={60}
+                defaultDuration={DEFAULT_EVENT_DURATION_MIN}
+                dragStep={SNAP_TO_MINUTE}
                 useHaptic={true}
                 enableResourceScroll={false}
                 onDragCreateEventEnd={onCreate}
@@ -203,6 +210,10 @@ const toISO = (v: DateOrDateTime | undefined) => toDate(v).toISOString();
 const renderHourOnlyLine = ({index, borderColor}: { index: number; borderColor: string }) => {
     // skip 30-min lines (i + 0.5)
     if (!Number.isInteger(index)) return null;
+    // remove first line
+    if (index === 0) return null;
+    // remove last line
+    if (index === (MAX_H - MIN_H)) return null;
     return (
         <View
             pointerEvents="none"
@@ -210,6 +221,18 @@ const renderHourOnlyLine = ({index, borderColor}: { index: number; borderColor: 
         />
     );
 };
+type SnapMode = "nearest" | "floor" | "ceil";
+const MINUTE_MS = 60 * 1000;
+
+function snapToGrid(d: Date, stepMin: number, mode: SnapMode = "nearest") {
+    const minutes = d.getHours() * 60 + d.getMinutes();
+    const q = minutes / stepMin;
+    const snappedQ = mode === "floor" ? Math.floor(q) : mode === "ceil" ? Math.ceil(q) : Math.round(q);
+    const snappedMin = snappedQ * stepMin;
+    const dayStart = new Date(d);
+    dayStart.setHours(0, 0, 0, 0);
+    return new Date(dayStart.getTime() + snappedMin * MINUTE_MS);
+}
 
 /* ---------------------- Styles ---------------------- */
 const styles = StyleSheet.create({
