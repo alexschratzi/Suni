@@ -63,17 +63,6 @@ export default function TimetableScreen() {
         addEvent(toISO(ev.start), toISO(ev.end));
     };
 
-    const onPressBg = (v: DateOrDateTime) => {
-        Haptics.selectionAsync().catch(() => {
-        });
-        const raw = toDate(v);
-
-        // choose "nearest" or "floor" depending on UX you want
-        const snapped = snapToGrid(raw, timeInterval, "nearest");
-
-        const end = new Date(snapped.getTime() + DEFAULT_EVENT_DURATION_MIN * MINUTE_MS);
-        addEvent(snapped.toISOString(), end.toISOString());
-    };
 
 
     const addEvent = (startISO: string, endISO: string) =>
@@ -149,7 +138,7 @@ export default function TimetableScreen() {
                 useHaptic={true}
                 enableResourceScroll={false}
                 onDragCreateEventEnd={onCreate}
-                onPressBackground={onPressBg}
+
                 events={events}
 
                 locale="de"
@@ -221,18 +210,6 @@ const renderHourOnlyLine = ({index, borderColor}: { index: number; borderColor: 
         />
     );
 };
-type SnapMode = "nearest" | "floor" | "ceil";
-const MINUTE_MS = 60 * 1000;
-
-function snapToGrid(d: Date, stepMin: number, mode: SnapMode = "nearest") {
-    const minutes = d.getHours() * 60 + d.getMinutes();
-    const q = minutes / stepMin;
-    const snappedQ = mode === "floor" ? Math.floor(q) : mode === "ceil" ? Math.ceil(q) : Math.round(q);
-    const snappedMin = snappedQ * stepMin;
-    const dayStart = new Date(d);
-    dayStart.setHours(0, 0, 0, 0);
-    return new Date(dayStart.getTime() + snappedMin * MINUTE_MS);
-}
 
 /* ---------------------- Styles ---------------------- */
 const styles = StyleSheet.create({
