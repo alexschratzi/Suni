@@ -23,6 +23,14 @@ type Ev = {
 const SNAP_TO_MINUTE = 60;
 const DEFAULT_EVENT_DURATION_MIN = 60;
 
+const deLocale = {
+  de: {
+    weekDayShort: 'So_Mo_Di_Mi_Do_Fr_Sa'.split('_'),
+    meridiem: { ante: 'AM', post: 'PM' },
+    more: 'mehr',
+  },
+};
+
 const MIN_H = 7;
 const MAX_H = 24;
 
@@ -70,7 +78,7 @@ export default function TimetableScreen() {
             ...p,
             {
                 id: Math.random().toString(36).slice(2),
-                title: "Neuer Termin",
+                title: "NEW",
                 start: {dateTime: startISO},
                 end: {dateTime: endISO},
                 color: "#2563eb",
@@ -113,6 +121,8 @@ export default function TimetableScreen() {
                 numberOfDays={7}
                 scrollByDay={false}
                 firstDay={1}
+                initialLocales={deLocale}
+                locale="de"
                 scrollToNow={false}
                 spaceFromTop={spaceFromTop}
                 spaceFromBottom={spaceFromBottom}
@@ -141,7 +151,6 @@ export default function TimetableScreen() {
 
                 events={events}
 
-                locale="de"
                 theme={theme}
             >
                 {/* measure everything above the grid that calendar renders (header + all-day) */}
