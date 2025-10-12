@@ -1,5 +1,5 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
-import {PixelRatio, StyleSheet, View} from "react-native";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {PixelRatio, StyleSheet, View, Text} from "react-native";
 import type {
     CalendarKitHandle,
     DateOrDateTime,
@@ -12,6 +12,8 @@ import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 
+dayjs.locale("de");
+
 type Ev = {
     id: string;
     title: string;
@@ -22,14 +24,6 @@ type Ev = {
 
 const SNAP_TO_MINUTE = 60;
 const DEFAULT_EVENT_DURATION_MIN = 60;
-
-const deLocale = {
-  de: {
-    weekDayShort: 'So_Mo_Di_Mi_Do_Fr_Sa'.split('_'),
-    meridiem: { ante: 'AM', post: 'PM' },
-    more: 'mehr',
-  },
-};
 
 const MIN_H = 7;
 const MAX_H = 24;
@@ -49,6 +43,7 @@ export default function TimetableScreen() {
         () => ({
             headerBackgroundColor: "#fafafa",
             headerBorderColor: "#eaeaea",
+            dayBarBorderColor: "transparent",
             dayName: {fontWeight: "700", fontSize: 12, textAlign: "center"},
             dayNumber: {fontWeight: "700", fontSize: 12, textAlign: "center"},
             hourTextStyle: {
@@ -56,7 +51,7 @@ export default function TimetableScreen() {
                 color: "#6b7280",
                 fontWeight: "600",
                 textAlign: "right",
-                marginTop: 6, // 👈 moves label BELOW the hour line
+                marginTop: 6,
             },
             eventContainerStyle: {borderRadius: 8},
             eventTitleStyle: {fontSize: 12, fontWeight: "600"},
@@ -70,7 +65,6 @@ export default function TimetableScreen() {
         });
         addEvent(toISO(ev.start), toISO(ev.end));
     };
-
 
 
     const addEvent = (startISO: string, endISO: string) =>
@@ -114,6 +108,26 @@ export default function TimetableScreen() {
         }
     }, [desiredIntervalHeight]);
 
+    const renderDayItem = useCallback(({dateUnix}: { dateUnix: number }) => {
+        const date = new Date(dateUnix);
+        const dayLabel = dayjs(date).format("dd"); // Mo, Di, Mi ...
+        const dayNum = dayjs(date).format("D");    // 6, 7, 8 ...
+
+        return (
+            <View style={{alignItems: "center"}}>
+                <Text
+                    style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: "#111827", // normaler Text, kein Kreis
+                    }}
+                >
+                    {`${dayLabel} ${dayNum}`}
+                </Text>
+            </View>
+        );
+    }, []);
+
     return (
         <View style={styles.root} onLayout={(e) => setCalendarAreaH(e.nativeEvent.layout.height)}>
             <CalendarContainer
@@ -121,7 +135,6 @@ export default function TimetableScreen() {
                 numberOfDays={7}
                 scrollByDay={false}
                 firstDay={1}
-                initialLocales={deLocale}
                 locale="de"
                 scrollToNow={false}
                 spaceFromTop={spaceFromTop}
@@ -155,7 +168,7 @@ export default function TimetableScreen() {
             >
                 {/* measure everything above the grid that calendar renders (header + all-day) */}
                 <View onLayout={(e) => setHeaderBlockH(e.nativeEvent.layout.height)}>
-                    <CalendarHeader/>
+                    <CalendarHeader renderDayItem={renderDayItem} dayBarHeight={22}/>
                 </View>
                 <CalendarBody
                     renderCustomHorizontalLine={renderHourOnlyLine}
