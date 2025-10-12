@@ -1,9 +1,10 @@
 // app/auth.tsx
 import { useState } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
+import {StyleSheet, Alert, View} from "react-native";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, UserCredential } from "firebase/auth";
 import { auth } from "../firebase";
 import { saveLocalUser, loadLocalUser } from "../localUser";
+import {Button, Text, TextInput} from "react-native-paper";
 
 export default function AuthScreen() {
   const [email, setEmail] = useState("");
@@ -74,7 +75,7 @@ export default function AuthScreen() {
         />
       )}
 
-      <Button title={isRegister ? "Registrieren" : "Login"} onPress={handleAuth} />
+        <Button onPress={handleAuth}>{isRegister ? "Registrieren" : "Login"}</Button>
 
       <Text
         style={styles.switch}
@@ -90,5 +91,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 20 },
   title: { fontSize: 24, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   input: { borderWidth: 1, borderColor: "#ccc", padding: 10, marginBottom: 10, borderRadius: 5 },
-  switch: { marginTop: 20, color: "blue", textAlign: "center" },
+  switch: { marginTop: 20, textAlign: "center" },
 });

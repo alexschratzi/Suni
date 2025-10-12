@@ -30,7 +30,6 @@ const styles = StyleSheet.create({
     header: {
         marginTop: 0,
         paddingTop: 0,
-        backgroundColor: "transparent",   // remove gray background
         elevation: 0,                      // Android shadow
         shadowColor: "transparent",        // iOS shadow
         borderBottomWidth: 0,              // no divider line

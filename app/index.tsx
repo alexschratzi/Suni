@@ -1,10 +1,11 @@
 // app/index.tsx
 import { useState, useEffect } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { auth, db } from "../firebase";
 import { signInWithPhoneNumber } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc } from "firebase/firestore";
+import {Button, Text, TextInput} from "react-native-paper";
 
 // LoginScreen: Telefon-Authentifizierung mit Firebase Web SDK
 export default function LoginScreen() {
@@ -113,7 +114,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       {/* Recaptcha-Container nur im Web anzeigen */}
       {typeof window !== "undefined" && window.document ? <div id="recaptcha-container"></div> : null}
-      <Text style={styles.title}>📱 Telefon-Login</Text>
+      <Text style={styles.title}>Telefon-Login</Text>
       <TextInput
         style={styles.input}
         placeholder="+43 ..."
@@ -121,7 +122,7 @@ export default function LoginScreen() {
         value={phone}
         onChangeText={setPhone}
       />
-      <Button title="Code senden" onPress={sendCode} />
+        <Button onPress={sendCode}>Code senden</Button>
       {confirmation && (
         <>
           <TextInput
@@ -137,7 +138,7 @@ export default function LoginScreen() {
             value={username}
             onChangeText={setUsername}
           />
-          <Button title="Bestätigen" onPress={confirmCode} />
+            <Button onPress={confirmCode}>Bestätigen</Button>
         </>
       )}
     </View>
@@ -148,5 +149,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 20 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  input: { borderWidth: 1, borderColor: "#ccc", padding: 10, marginBottom: 10, borderRadius: 8 },
+  input: { borderWidth: 1, padding: 10, marginBottom: 10, borderRadius: 8 },
 });

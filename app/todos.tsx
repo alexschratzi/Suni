@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Text, TextInput, Button, FlatList, StyleSheet } from "react-native";
+import { View, FlatList, StyleSheet } from "react-native";
+import {Button, Text, TextInput} from "react-native-paper";
 
 export default function TodosScreen() {
   const [todos, setTodos] = useState<string[]>([]);
@@ -13,14 +14,14 @@ export default function TodosScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>✅ To-Do Liste</Text>
+      <Text style={styles.heading}>To-Do</Text>
       <TextInput
         style={styles.input}
         placeholder="Neue Aufgabe..."
         value={newTodo}
         onChangeText={setNewTodo}
       />
-      <Button title="Hinzufügen" onPress={addTodo} />
+        <Button onPress={addTodo}>Hinzufügen</Button>
 
       <FlatList
         data={todos}

@@ -1,10 +1,11 @@
 // app/(tabs)/_layout.tsx
+import * as React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { withLayoutContext } from "expo-router";
-
-// ✅ Add this import
 import { UniversityProvider } from "../../components/university/UniversityContext";
+import { useTheme } from "react-native-paper";
+import { StyleSheet } from "react-native";
 
 const { Navigator } = createMaterialTopTabNavigator();
 export const MaterialTopTabs = withLayoutContext(Navigator);
@@ -17,19 +18,24 @@ const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function TabLayout() {
+  // Use the Paper theme — this is the *same* theme provided in app/_layout via AppThemeProvider
+  const theme = useTheme();
+
   return (
-    // ✅ Provider wraps the whole tab navigator
     <UniversityProvider>
       <MaterialTopTabs
         tabBarPosition="bottom"
         screenOptions={({ route }) => ({
           swipeEnabled: true,
           tabBarShowLabel: false,
-          tabBarIndicatorStyle: { height: 0 },
-          tabBarActiveTintColor: "#111",
-          tabBarInactiveTintColor: "#888",
+          // If you want no indicator, keep height 0; otherwise use theme.colors.primary
+          tabBarIndicatorStyle: { height: 0 }, // or: { height: 2, backgroundColor: theme.colors.primary }
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
           tabBarStyle: {
-            backgroundColor: "white",
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.outlineVariant,
+            borderTopWidth: StyleSheet.hairlineWidth,
             height: 90,
             paddingBottom: 10,
             paddingTop: 5,

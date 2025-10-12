@@ -8,23 +8,27 @@ import {
   serverTimestamp,
   doc,
 } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  Button,
-  StyleSheet,
-  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  FlatList,
+  View, // still useful for layout gaps/padding
 } from "react-native";
 import { useRouter } from "expo-router";
+import {
+  Button,
+  Card,
+  Divider,
+  IconButton,
+  Text,
+  TextInput,
+  useTheme,
+} from "react-native-paper";
 
 import { db, auth } from "../../firebase";
 
-// Räume richtig typisieren
 const ROOMS = {
   salzburg: "messages_salzburg",
   oesterreich: "messages_oesterreich",
@@ -35,6 +39,7 @@ type RoomKey = keyof typeof ROOMS;
 
 export default function ChatScreen() {
   const router = useRouter();
+  const theme = useTheme();
 
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
@@ -42,29 +47,24 @@ export default function ChatScreen() {
   const [room, setRoom] = useState<RoomKey | null>(null);
   const [inputHeight, setInputHeight] = useState(40);
 
-  // 🔑 Username vom aktuellen User live synchronisieren
+  // Live username
   useEffect(() => {
     if (!auth.currentUser) return;
-
     const userRef = doc(db, "users", auth.currentUser.uid);
     const unsubscribe = onSnapshot(userRef, (snap) => {
-      if (snap.exists()) {
-        setUsername(snap.data().username);
-      }
+      if (snap.exists()) setUsername(snap.data().username);
     });
-
     return () => unsubscribe();
   }, []);
 
-  // Nachrichten aus aktuellem Raum live laden
+  // Live messages for active room
   useEffect(() => {
     if (!room) return;
     const q = query(collection(db, ROOMS[room]), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMessages(msgs);
     });
-
     return () => unsubscribe();
   }, [room]);
 
@@ -72,8 +72,8 @@ export default function ChatScreen() {
     if (!input.trim() || !room || !username) return;
     try {
       await addDoc(collection(db, ROOMS[room]), {
-        username, // 🔑 aktueller Username wird gespeichert
-        text: input,
+        username,
+        text: input.trim(),
         timestamp: serverTimestamp(),
       });
       setInput("");
@@ -84,13 +84,10 @@ export default function ChatScreen() {
   };
 
   const uploadAttachment = async () => {
-    console.log("📎 Attachment hochladen...");
-    // TODO: expo-image-picker oder document-picker einbauen
-    // TODO: Datei in Firebase Storage hochladen
-    // TODO: URL in Firestore speichern
+    // TODO: expo-image-picker / document-picker + Firebase Storage
+    console.log("📎 Attachment hochladen…");
   };
 
-  // 👉 Neue Funktion: Thread öffnen
   const openThread = (message: any) => {
     if (!room) return;
     router.push({
@@ -106,24 +103,32 @@ export default function ChatScreen() {
 
   if (!room) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.heading}>💬 Wähle einen Chatroom</Text>
-        {Object.keys(ROOMS).map((key) => (
-          <TouchableOpacity
-            key={key}
-            style={styles.roomCard}
-            onPress={() => setRoom(key as RoomKey)}
-          >
-            <Text style={styles.roomName}>
-              {key === "salzburg"
-                ? "Salzburg"
-                : key === "oesterreich"
-                ? "Österreich"
-                : "Wirtschaft"}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Text variant="titleLarge" style={styles.heading}>
+          💬 Wähle einen Chatroom
+        </Text>
+
+        <View style={{ gap: 12 }}>
+          {(
+            Object.keys(ROOMS) as Array<keyof typeof ROOMS>
+          ).map((key) => (
+            <Card key={key} onPress={() => setRoom(key)}>
+              <Card.Content>
+                <Text variant="titleMedium">
+                  {key === "salzburg"
+                    ? "Salzburg"
+                    : key === "oesterreich"
+                    ? "Österreich"
+                    : "Wirtschaft"}
+                </Text>
+              </Card.Content>
+            </Card>
+          ))}
+        </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -133,11 +138,20 @@ export default function ChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={110}
     >
+      {/* Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => setRoom(null)} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={24} color="#1976D2" />
-        </TouchableOpacity>
-        <Text style={styles.heading}>
+        <IconButton
+          onPress={() => setRoom(null)}
+          accessibilityLabel="Zurück"
+          icon={() => (
+            <Ionicons
+              name="arrow-back"
+              size={22}
+              color={theme.colors.onSurface}
+            />
+          )}
+        />
+        <Text variant="titleLarge" style={styles.headerTitle}>
           💬 Chatroom:{" "}
           {room === "salzburg"
             ? "Salzburg"
@@ -147,91 +161,87 @@ export default function ChatScreen() {
         </Text>
       </View>
 
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const date = item.timestamp?.toDate
-            ? item.timestamp
-                .toDate()
-                .toLocaleString("de-DE", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-            : "Gerade eben";
-          return (
-            <TouchableOpacity onPress={() => openThread(item)}>
-              <View style={styles.msgRow}>
-                <Text style={styles.msgMeta}>
-                  {item.username || "???"} • {date}
-                </Text>
-                <Text style={styles.msgText}>{item.text}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {/* Messages */}
+      <Card mode="contained" style={{ flex: 1 }}>
+        <Card.Content style={{ paddingHorizontal: 0 }}>
+          <FlatList
+            data={messages}
+            keyExtractor={(item) => item.id}
+            ItemSeparatorComponent={Divider}
+            renderItem={({ item }) => {
+              const date = item.timestamp?.toDate
+                ? item.timestamp
+                    .toDate()
+                    .toLocaleString("de-DE", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                : "Gerade eben";
 
+              return (
+                <Card mode="contained" onPress={() => openThread(item)} style={{ marginHorizontal: 12, marginVertical: 6 }}>
+                  <Card.Content>
+                    <Text variant="labelSmall" style={{ opacity: 0.7 }}>
+                      {item.username || "???"} • {date}
+                    </Text>
+                    <Text variant="bodyMedium" style={{ marginTop: 4 }}>
+                      {item.text}
+                    </Text>
+                  </Card.Content>
+                </Card>
+              );
+            }}
+          />
+        </Card.Content>
+      </Card>
+
+      {/* Composer */}
       <View style={styles.inputRow}>
-        <TouchableOpacity onPress={uploadAttachment} style={styles.attachBtn}>
-          <Ionicons name="attach" size={24} color="#1976D2" />
-        </TouchableOpacity>
+        <IconButton
+          onPress={uploadAttachment}
+          accessibilityLabel="Anhang"
+          icon={() => <Ionicons name="attach" size={22} color={theme.colors.primary} />}
+        />
 
         <TextInput
-          style={[styles.input, { height: inputHeight }]}
-          placeholder="Nachricht eingeben..."
+          mode="outlined"
+          multiline
+          placeholder="Nachricht eingeben…"
           value={input}
           onChangeText={setInput}
-          multiline
           onContentSizeChange={(e) =>
             setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
           }
+          style={[styles.input, { height: inputHeight }]}
         />
-        <Button title="Senden" onPress={sendMessage} />
+
+        <Button
+          mode="contained"
+          onPress={sendMessage}
+          disabled={!input.trim()}
+        >
+          Senden
+        </Button>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  iconBtn: { marginRight: 10 },
-  heading: { fontSize: 20, fontWeight: "bold" },
-  roomCard: {
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#1976D2",
-    borderRadius: 10,
-    marginBottom: 10,
-    backgroundColor: "#E3F2FD",
-  },
-  roomName: { fontSize: 18, fontWeight: "600", color: "#0D47A1" },
-  msgRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#ccc",
-  },
-  msgMeta: { fontSize: 12, color: "#777", marginBottom: 2 },
-  msgText: { fontSize: 16 },
+  container: { flex: 1, padding: 16, gap: 12 },
+  heading: { marginBottom: 8 },
+  headerRow: { flexDirection: "row", alignItems: "center" },
+  headerTitle: { marginLeft: 4 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    marginBottom: 10,
-    marginTop: 10,
+    gap: 8,
+    marginTop: 8,
   },
-  attachBtn: { marginRight: 8, padding: 4 },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginRight: 10,
-    textAlignVertical: "top",
   },
 });

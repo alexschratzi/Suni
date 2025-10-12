@@ -1,77 +1,28 @@
 // app/_layout.tsx
-import { Ionicons } from "@expo/vector-icons";
-import {
-  DrawerContentScrollView,
-  DrawerItemList,
-  DrawerToggleButton,
-} from "@react-navigation/drawer";
-import { useRouter } from "expo-router";
-import { Drawer } from "expo-router/drawer";
-import { StatusBar } from "expo-status-bar";
 import * as React from "react";
-import { Pressable, Text } from "react-native";
-import {
-  MD3LightTheme as DefaultTheme,
-  PaperProvider,
-} from "react-native-paper";
+import { StatusBar } from "expo-status-bar";
+import { Drawer } from "expo-router/drawer";
+import { DrawerToggleButton } from "@react-navigation/drawer";
+import { Ionicons } from "@expo/vector-icons";
+import {AppThemeProvider, getCurrentTheme} from "../theme"; // <-- new
+import { useColorScheme } from "react-native";
+import {useTheme} from "react-native-paper";
 
-// ---- App theme (Paper) ----
-const theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: "#2563eb",   // ✅ your blue
-    onPrimary: "#ffffff", // text/icons on primary
-  },
-};
 
-export default function RootLayout(props: any) {
-  const router = useRouter();
+
+export default function RootLayout() {
+  const scheme = useColorScheme();
+    const theme = useTheme();
 
   return (
-    <PaperProvider theme={theme}>
-      {/* White text on blue header */}
-      <StatusBar style="light" />
-
+    <AppThemeProvider>
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       <Drawer
         screenOptions={{
           headerTitle: "Suni",
-          // Blue header + white content
-          headerStyle: { backgroundColor: theme.colors.primary },
-          headerTitleStyle: { color: theme.colors.onPrimary },
-          headerTintColor: theme.colors.onPrimary,
-          headerLeft: () => (
-            <DrawerToggleButton tintColor={theme.colors.onPrimary} />
-          ),
-
-          // Drawer item colors
-          drawerActiveTintColor: theme.colors.primary,
-          drawerInactiveTintColor: "#6b7280", // slate-500
+          headerLeft: () => <DrawerToggleButton />,
+          // No color overrides—Navigation theme gets them from Paper automatically
         }}
-        drawerContent={(drawerProps) => (
-          <DrawerContentScrollView {...drawerProps}>
-            {/* Default screens */}
-            <DrawerItemList {...drawerProps} />
-
-            {/* Logout Button */}
-            <Pressable
-              onPress={async () => {
-                // your existing logic
-                const { logout } = await import("../utils/logout");
-                await logout();
-                router.push("/");
-              }}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                padding: 15,
-              }}
-            >
-              <Ionicons name="log-out-outline" size={22} color="black" />
-              <Text style={{ marginLeft: 10, fontSize: 16 }}>Logout</Text>
-            </Pressable>
-          </DrawerContentScrollView>
-        )}
       >
         <Drawer.Screen
           name="(tabs)"
@@ -101,6 +52,6 @@ export default function RootLayout(props: any) {
           }}
         />
       </Drawer>
-    </PaperProvider>
+    </AppThemeProvider>
   );
 }
