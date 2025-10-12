@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState} from "react";
 import { PixelRatio, StyleSheet, View } from "react-native";
 import type {
   CalendarKitHandle,
@@ -40,7 +40,14 @@ export default function TimetableScreen() {
       headerBorderColor: "#eaeaea",
       dayName: { fontWeight: "700", fontSize: 12, textAlign: "center" },
       dayNumber: { fontWeight: "700", fontSize: 12, textAlign: "center" },
-      hourTextStyle: { fontSize: 11, color: "#6b7280" },
+      hourTextStyle: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "600",
+    textAlign: "right",
+    marginTop: 6, // 👈 moves label BELOW the hour line
+  },
+    formatHourLabel: (hour: number) => `${hour}`,
       eventContainerStyle: { borderRadius: 8 },
       eventTitleStyle: { fontSize: 12, fontWeight: "600" },
       minimumEventHeight: 16,
@@ -113,6 +120,8 @@ export default function TimetableScreen() {
         spaceFromBottom={spaceFromBottom}
         allowHorizontalSwipe={false}
         allowPinchToZoom={false}
+        hourWidth={40}
+
         initialDate={startISO}
         minDate={startISO}
         maxDate={endISO}
@@ -123,13 +132,17 @@ export default function TimetableScreen() {
         initialTimeIntervalHeight={desiredIntervalHeight}
         minTimeIntervalHeight={desiredIntervalHeight}
         maxTimeIntervalHeight={desiredIntervalHeight}
+
         allowDragToCreate
+        dragToCreateMode={"date-time"}
         defaultDuration={60}
         dragStep={60}
-        useHaptic
+        useHaptic={true}
+        enableResourceScroll={false}
         onDragCreateEventEnd={onCreate}
         onPressBackground={onPressBg}
         events={events}
+
         locale="de"
         theme={theme}
       >
@@ -139,6 +152,8 @@ export default function TimetableScreen() {
         </View>
         <CalendarBody
         renderCustomHorizontalLine={renderHourOnlyLine}
+        hourFormat="H"
+
         />
       </CalendarContainer>
     </View>
@@ -169,14 +184,17 @@ const addDays = (base: Date, n: number) => {
 };
 const fmtYMD = (d: Date) => dayjs(d).format("YYYY-MM-DD");
 
-function toDate(v: DateOrDateTime | undefined): Date {
-  if (!v) return new Date();
+function toDate(v: unknown): Date {
   if (v instanceof Date) return v;
   if (typeof v === "string") return new Date(v);
-  if ("dateTime" in v) return new Date((v as any).dateTime);
-  if ("date" in v) return new Date(String((v as any).date) + "T00:00:00");
+  if (typeof v === "object" && v !== null) {
+    const obj = v as { dateTime?: string; date?: string };
+    if (obj.dateTime) return new Date(obj.dateTime);
+    if (obj.date) return new Date(`${obj.date}T00:00:00`);
+  }
   return new Date();
 }
+
 
 const toISO = (v: DateOrDateTime | undefined) => toDate(v).toISOString();
 
@@ -185,7 +203,7 @@ const renderHourOnlyLine = ({ index, borderColor }: { index: number; borderColor
   return (
     <View
       pointerEvents="none"
-      style={{ height: StyleSheet.hairlineWidth, backgroundColor: borderColor }}
+      style={{ height: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderColor }}
     />
   );
 };
