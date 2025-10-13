@@ -1,47 +1,59 @@
-// theme/index.tsx
-import * as React from "react";
-import {useColorScheme} from "react-native";
-import {adaptNavigationTheme, MD3DarkTheme, MD3LightTheme, MD3Theme, PaperProvider,} from "react-native-paper";
-import {
-    DarkTheme as NavigationDarkTheme,
-    DefaultTheme as NavigationDefaultTheme,
-    ThemeProvider as NavigationThemeProvider,
-} from "@react-navigation/native";
+import React, { useState, useEffect } from 'react';
+import { useColorScheme } from 'react-native';
+import { Provider as PaperProvider, MD3LightTheme, MD3DarkTheme } from 'react-native-paper';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// --- Build matching Navigation themes from Paper themes ---
-const {LightTheme: NavLight, DarkTheme: NavDark} = adaptNavigationTheme({
-    reactNavigationLight: NavigationDefaultTheme,
-    reactNavigationDark: NavigationDarkTheme,
-    materialLight: MD3LightTheme,
-    materialDark: MD3DarkTheme,
+export const ThemeContext = React.createContext({
+  userTheme: 'system' as 'light' | 'dark' | 'system',
+  setUserTheme: (t: 'light' | 'dark' | 'system') => {},
 });
 
-// --- Export static theme objects (usable anywhere) ---
-export const lightTheme = MD3LightTheme;
-export const darkTheme = MD3DarkTheme;
+const customLightTheme = {
+  ...MD3LightTheme,
+  colors: {
+    ...MD3LightTheme.colors,
+    // primary: '#007aff',
+  },
+};
 
-// --- Helper: get current Paper theme based on system scheme ---
-export function getCurrentTheme(): MD3Theme {
-    const colorScheme =
-        typeof window !== "undefined" && window.matchMedia
-            ? (window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light")
-            : "light";
-    return colorScheme === "dark" ? darkTheme : lightTheme;
-}
+const customDarkTheme = {
+  ...MD3DarkTheme,
+  colors: {
+    ...MD3DarkTheme.colors,
+    // primary: '#0a84ff',
+  },
+};
 
-// --- React provider for use inside components ---
-export function AppThemeProvider({children}: { children: React.ReactNode }) {
-    const scheme = useColorScheme(); // "light" | "dark"
-    const paperTheme = scheme === "dark" ? darkTheme : lightTheme;
-    const navTheme = scheme === "dark" ? NavDark : NavLight;
+export const ThemeProviderWrapper = ({ children }: { children: React.ReactNode }) => {
+  const systemScheme = useColorScheme();
+  const [userTheme, setUserTheme] = useState<'light' | 'dark' | 'system'>('system');
 
-    return (
-        <PaperProvider theme={paperTheme}>
-            <NavigationThemeProvider value={navTheme}>
-                {children}
-            </NavigationThemeProvider>
-        </PaperProvider>
-    );
-}
+  useEffect(() => {
+    AsyncStorage.getItem('theme').then((stored) => {
+      if (stored === 'light' || stored === 'dark' || stored === 'system') {
+        setUserTheme(stored);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem('theme', userTheme);
+  }, [userTheme]);
+
+  const effectiveTheme =
+    userTheme === 'system'
+      ? systemScheme === 'dark'
+        ? customDarkTheme
+        : customLightTheme
+      : userTheme === 'dark'
+      ? customDarkTheme
+      : customLightTheme;
+
+  return (
+    <ThemeContext.Provider value={{ userTheme, setUserTheme }}>
+      <PaperProvider theme={effectiveTheme}>{children}</PaperProvider>
+    </ThemeContext.Provider>
+  );
+};
+
+

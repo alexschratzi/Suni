@@ -1,11 +1,11 @@
 // app/index.tsx
-import {useEffect, useState} from "react";
-import {ActivityIndicator, Alert, StyleSheet, View} from "react-native";
-import {useRouter} from "expo-router";
-import {auth, db} from "../firebase";
-import {signInWithPhoneNumber} from "firebase/auth";
-import {addDoc, collection, doc, getDoc, getDocs, query, setDoc, where} from "firebase/firestore";
-import {Button, Text, TextInput} from "react-native-paper";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, StyleSheet } from "react-native";
+import { useRouter } from "expo-router";
+import { auth, db } from "../firebase";
+import { signInWithPhoneNumber } from "firebase/auth";
+import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
+import { Button, Surface, Text, TextInput } from "react-native-paper";
 
 // LoginScreen: Telefon-Authentifizierung mit Firebase Web SDK
 export default function LoginScreen() {
@@ -87,7 +87,7 @@ export default function LoginScreen() {
                     return;
                 }
                 // Username reservieren
-                await addDoc(collection(db, "usernames"), {username, uid: userCred.user.uid});
+                await addDoc(collection(db, "usernames"), { username, uid: userCred.user.uid });
                 // Profil anlegen
                 await setDoc(userRef, {
                     phone,
@@ -103,20 +103,22 @@ export default function LoginScreen() {
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large"/>
+            <Surface style={styles.center}>
+                <ActivityIndicator size="large" />
                 <Text>Prüfe Login...</Text>
-            </View>
+            </Surface>
         );
     }
 
     return (
-        <View style={styles.container}>
+        <Surface style={styles.container}>
             {/* Recaptcha-Container nur im Web anzeigen */}
             {typeof window !== "undefined" && window.document ? <div id="recaptcha-container"></div> : null}
             <Text style={styles.title}>Telefon-Login</Text>
             <TextInput
+                mode="outlined"
                 style={styles.input}
+                label="Number"
                 placeholder="+43 ..."
                 keyboardType="phone-pad"
                 value={phone}
@@ -126,6 +128,7 @@ export default function LoginScreen() {
             {confirmation && (
                 <>
                     <TextInput
+                        mode="outlined"
                         style={styles.input}
                         placeholder="SMS Code"
                         keyboardType="number-pad"
@@ -133,6 +136,7 @@ export default function LoginScreen() {
                         onChangeText={setCode}
                     />
                     <TextInput
+                        mode="outlined"
                         style={styles.input}
                         placeholder="Benutzername"
                         value={username}
@@ -141,13 +145,12 @@ export default function LoginScreen() {
                     <Button onPress={confirmCode}>Bestätigen</Button>
                 </>
             )}
-        </View>
+        </Surface>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flex: 1, justifyContent: "center", padding: 20},
-    center: {flex: 1, justifyContent: "center", alignItems: "center"},
-    title: {fontSize: 22, fontWeight: "bold", marginBottom: 15, textAlign: "center"},
-    input: {borderWidth: 1, padding: 10, marginBottom: 10, borderRadius: 8},
+    container: { flex: 1, justifyContent: "center", padding: 20 },
+    center: { flex: 1, justifyContent: "center", alignItems: "center" },
+    title: { fontSize: 22, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
 });

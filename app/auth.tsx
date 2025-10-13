@@ -1,95 +1,120 @@
-// app/auth.tsx
-import {useState} from "react";
-import {Alert, StyleSheet, View} from "react-native";
-import {createUserWithEmailAndPassword, signInWithEmailAndPassword, UserCredential} from "firebase/auth";
-import {auth} from "../firebase";
-import {loadLocalUser, saveLocalUser} from "../localUser";
-import {Button, Text, TextInput} from "react-native-paper";
+import { useState } from "react";
+import { Alert, KeyboardAvoidingView, Platform } from "react-native";
+import {
+  Text,
+  TextInput,
+  Button,
+  Surface,
+  useTheme,
+} from "react-native-paper";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  UserCredential,
+} from "firebase/auth";
+import { auth } from "../firebase";
+import { loadLocalUser, saveLocalUser } from "../localUser";
 
 export default function AuthScreen() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [username, setUsername] = useState("");
-    const [isRegister, setIsRegister] = useState(true);
+  const theme = useTheme();
 
-    const handleAuth = async () => {
-        try {
-            // === ÖH ACCOUNTS (Firebase) ===
-            if (email.endsWith("@oeh.at")) {
-                let userCredential: UserCredential;
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [isRegister, setIsRegister] = useState(true);
 
-                if (isRegister) {
-                    userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                    Alert.alert("ÖH Registrierung erfolgreich!", `Willkommen ${username}`);
-                } else {
-                    userCredential = await signInWithEmailAndPassword(auth, email, password);
-                    Alert.alert("ÖH Login erfolgreich!", `Willkommen zurück ${userCredential.user.email}`);
-                }
-            }
+  const handleAuth = async () => {
+    try {
+      if (email.endsWith("@oeh.at")) {
+        let userCredential: UserCredential;
 
-            // === Studenten ACCOUNTS (lokal) ===
-            else {
-                if (isRegister) {
-                    await saveLocalUser(email, username);
-                    Alert.alert("Registrierung erfolgreich!", `Willkommen ${username}`);
-                } else {
-                    const localUser = await loadLocalUser();
-                    if (localUser && localUser.email === email) {
-                        Alert.alert("Login erfolgreich!", `Willkommen zurück ${localUser.username}`);
-                    } else {
-                        Alert.alert("Fehler", "Kein lokales Benutzerprofil gefunden!");
-                    }
-                }
-            }
-        } catch (err: any) {
-            Alert.alert("Fehler", err.message);
+        if (isRegister) {
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          Alert.alert("ÖH Registrierung erfolgreich!", `Willkommen ${username}`);
+        } else {
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
+          Alert.alert("ÖH Login erfolgreich!", `Willkommen zurück ${userCredential.user.email}`);
         }
-    };
+      } else {
+        if (isRegister) {
+          await saveLocalUser(email, username);
+          Alert.alert("Registrierung erfolgreich!", `Willkommen ${username}`);
+        } else {
+          const localUser = await loadLocalUser();
+          if (localUser && localUser.email === email) {
+            Alert.alert("Login erfolgreich!", `Willkommen zurück ${localUser.username}`);
+          } else {
+            Alert.alert("Fehler", "Kein lokales Benutzerprofil gefunden!");
+          }
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Fehler", err.message);
+    }
+  };
 
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>{isRegister ? "Registrieren" : "Login"}</Text>
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <Surface
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          padding: 20,
+          backgroundColor: theme.colors.background,
+        }}
+      >
+        <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 20 }}>
+          {isRegister ? "Registrieren" : "Login"}
+        </Text>
 
-            <TextInput
-                style={styles.input}
-                placeholder="E-Mail"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-            />
+        <TextInput
+          mode="outlined"
+          label="E-Mail"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          style={{ marginBottom: 10 }}
+        />
 
-            <TextInput
-                style={styles.input}
-                placeholder="Passwort"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-            />
+        <TextInput
+          mode="outlined"
+          label="Passwort"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          style={{ marginBottom: 10 }}
+        />
 
-            {isRegister && (
-                <TextInput
-                    style={styles.input}
-                    placeholder="Benutzername"
-                    value={username}
-                    onChangeText={setUsername}
-                />
-            )}
+        {isRegister && (
+          <TextInput
+            mode="outlined"
+            label="Benutzername"
+            value={username}
+            onChangeText={setUsername}
+            style={{ marginBottom: 10 }}
+          />
+        )}
 
-            <Button onPress={handleAuth}>{isRegister ? "Registrieren" : "Login"}</Button>
+        <Button mode="contained" onPress={handleAuth}>
+          {isRegister ? "Registrieren" : "Login"}
+        </Button>
 
-            <Text
-                style={styles.switch}
-                onPress={() => setIsRegister(!isRegister)}
-            >
-                {isRegister ? "Schon ein Konto? Hier einloggen" : "Noch kein Konto? Registrieren"}
-            </Text>
-        </View>
-    );
+        <Text
+          style={{
+            marginTop: 20,
+            textAlign: "center",
+            color: theme.colors.primary,
+          }}
+          onPress={() => setIsRegister(!isRegister)}
+        >
+          {isRegister
+            ? "Schon ein Konto? Hier einloggen"
+            : "Noch kein Konto? Registrieren"}
+        </Text>
+      </Surface>
+    </KeyboardAvoidingView>
+  );
 }
-
-const styles = StyleSheet.create({
-    container: {flex: 1, justifyContent: "center", padding: 20},
-    title: {fontSize: 24, fontWeight: "bold", marginBottom: 20, textAlign: "center"},
-    input: {borderWidth: 1, borderColor: "#ccc", padding: 10, marginBottom: 10, borderRadius: 5},
-    switch: {marginTop: 20, textAlign: "center"},
-});
