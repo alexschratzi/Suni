@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {PixelRatio, StyleSheet, View, Text} from "react-native";
+import {PixelRatio, StyleSheet, Text, View} from "react-native";
 import type {
     CalendarKitHandle,
     DateOrDateTime,

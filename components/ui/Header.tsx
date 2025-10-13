@@ -1,13 +1,13 @@
 // components/ui/Header.tsx
 import * as React from "react";
-import { StyleSheet } from "react-native";
-import { Appbar } from "react-native-paper";
+import {StyleSheet} from "react-native";
+import {Appbar} from "react-native-paper";
 
 export default function Header({
-    title,
-    canGoBack,
-    onBack,
-}: {
+                                   title,
+                                   canGoBack,
+                                   onBack,
+                               }: {
     title: string;
     canGoBack?: boolean;
     onBack?: () => void;
@@ -18,10 +18,10 @@ export default function Header({
             elevated={false}
             statusBarHeight={0}
             style={styles.header}
-            theme={{ colors: { surface: "transparent" } }} // ensure Paper uses transparent surface
+            theme={{colors: {surface: "transparent"}}} // ensure Paper uses transparent surface
         >
-            {canGoBack ? <Appbar.BackAction onPress={onBack} /> : null}
-            <Appbar.Content title={title} />
+            {canGoBack ? <Appbar.BackAction onPress={onBack}/> : null}
+            <Appbar.Content title={title}/>
         </Appbar.Header>
     );
 }

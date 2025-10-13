@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import os
 from datetime import datetime, timezone
+
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,12 +24,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": APP_NAME, "time": now_iso(), "env": ENV}
+
 
 @app.get("/universityData")
 def university_data(response: Response):
@@ -47,6 +52,7 @@ def university_data(response: Response):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load data: {e}")
+
 
 # Mount versioned router
 app.include_router(v1.router)

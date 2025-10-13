@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 from .models import UniversityData
 
 UNI_DATA_PATH = Path(os.getenv("UNI_DATA_PATH", "universities.json"))
+
 
 @dataclass
 class DataBundle:
@@ -18,17 +20,21 @@ class DataBundle:
     etag: str
     last_modified_http: str  # RFC 1123 format
 
+
 _cache: Optional[DataBundle] = None
+
 
 def _httpdate(ts: float) -> str:
     # RFC 1123
     return datetime.utcfromtimestamp(ts).strftime("%a, %d %b %Y %H:%M:%S GMT")
+
 
 def _compute_etag(payload: bytes, mtime: float) -> str:
     h = sha256()
     h.update(payload)
     h.update(str(mtime).encode())
     return f"W/\"{h.hexdigest()}\""  # weak ETag
+
 
 def load_data_bundle() -> DataBundle:
     global _cache

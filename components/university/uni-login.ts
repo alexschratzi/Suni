@@ -32,14 +32,14 @@ async function getJson<T>(path: string, fallback?: () => Promise<T> | T): Promis
     if (entry.etag) headers["If-None-Match"] = entry.etag;
 
     try {
-        const res = await fetch(url, { headers });
+        const res = await fetch(url, {headers});
         if (res.status === 304 && entry.payload) {
             return entry.payload as T;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const etag = res.headers.get("etag") ?? undefined;
         const data = (await res.json()) as T;
-        cache[url] = { etag, payload: data, lastFetched: Date.now() };
+        cache[url] = {etag, payload: data, lastFetched: Date.now()};
         return data;
     } catch (e) {
         // graceful fallback
@@ -53,17 +53,21 @@ async function getJson<T>(path: string, fallback?: () => Promise<T> | T): Promis
 export function fetchCountries(fallback?: () => Promise<Country[]> | Country[]) {
     return getJson<Country[]>("/v1/countries", fallback);
 }
+
 export function fetchUniversities(countryId: number, fallback?: () => Promise<University[]> | University[]) {
     const q = encodeURI(`/v1/universities?countryId=${countryId}`);
     return getJson<University[]>(q, fallback);
 }
+
 export function fetchPrograms(universityId: number, fallback?: () => Promise<Program[]> | Program[]) {
     const q = encodeURI(`/v1/programs?universityId=${universityId}`);
     return getJson<Program[]>(q, fallback);
 }
+
 export function fetchUniConfig(uniId: number, fallback?: () => Promise<UniConfig> | UniConfig) {
     return getJson<UniConfig>(`/v1/unis/${uniId}/config`, fallback);
 }
+
 export function fetchUniLinks(uniId: number, fallback?: () => Promise<{ links: LinkItem[] }> | { links: LinkItem[] }) {
     return getJson<{ links: LinkItem[] }>(`/v1/unis/${uniId}/links`, fallback);
 }

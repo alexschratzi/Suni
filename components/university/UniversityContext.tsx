@@ -31,7 +31,7 @@ const STORAGE_KEYS = {
 
 const UniversityContext = React.createContext<Ctx | undefined>(undefined);
 
-export function UniversityProvider({ children }: { children: React.ReactNode }) {
+export function UniversityProvider({children}: { children: React.ReactNode }) {
     const [country, setCountryState] = React.useState<Country | null>(null);
     const [university, setUniversityState] = React.useState<University | null>(null);
     const [program, setProgramState] = React.useState<Program | null>(null);
