@@ -3,13 +3,7 @@ import React, {useCallback, useEffect, useRef, useState} from "react";
 import {BackHandler, StyleSheet, View} from "react-native";
 import {Appbar, ProgressBar, Text} from "react-native-paper";
 import {WebView} from "react-native-webview";
-
-export type LoginDetectionConfig = {
-    /** If URL host ends with any of these suffixes, we consider login successful. */
-    successHostSuffixes: string[];
-    /** If URL host equals any of these, we consider "still on IdP / pre-login". */
-    idpHosts?: string[];
-};
+import type {LoginDetectionConfig}  from "@/components/university/uni-login";
 
 type Props = {
     initialUrl: string;

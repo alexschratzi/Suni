@@ -12,7 +12,7 @@ import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 import {Divider, Surface, Text, useTheme} from "react-native-paper";
-import {Ev} from "@/components/timetable/types"
+import {Ev} from "@/types/timetable";
 import {mapPaperToCalendarTheme} from "@/components/timetable/mapPaperToCalendarTheme";
 
 dayjs.locale("de");

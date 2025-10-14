@@ -7,7 +7,7 @@ export type Program = { id: number; name: string; universityId: number };
 
 export type LinkItem = { id: string; title: string; url: string };
 export type LoginDetectionConfig = {
-    successHostSuffixes?: string[];
+    successHostSuffixes: string[];
     idpHosts?: string[];
 };
 export type UniConfig = {
