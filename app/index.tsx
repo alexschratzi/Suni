@@ -117,7 +117,6 @@ export default function LoginScreen() {
             <Text style={styles.title}>Telefon-Login</Text>
             <TextInput
                 mode="outlined"
-                style={styles.input}
                 label="Number"
                 placeholder="+43 ..."
                 keyboardType="phone-pad"
@@ -129,7 +128,6 @@ export default function LoginScreen() {
                 <>
                     <TextInput
                         mode="outlined"
-                        style={styles.input}
                         placeholder="SMS Code"
                         keyboardType="number-pad"
                         value={code}
@@ -137,7 +135,6 @@ export default function LoginScreen() {
                     />
                     <TextInput
                         mode="outlined"
-                        style={styles.input}
                         placeholder="Benutzername"
                         value={username}
                         onChangeText={setUsername}

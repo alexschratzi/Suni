@@ -5,7 +5,7 @@ import { Drawer } from "expo-router/drawer";
 import { DrawerActions } from "@react-navigation/native";
 import type { DrawerContentComponentProps } from "@react-navigation/drawer";
 
-import { ThemeProviderWrapper } from "../theme";
+import { ThemeProviderWrapper } from "@/theme";
 import {
   useTheme,
   Appbar,
@@ -76,7 +76,7 @@ function ThemedDrawerContent(props: DrawerContentComponentProps) {
               <PaperDrawer.Item
                 key={route.key}
                 label={label as string}
-                icon={({ color, size }) => <IconComp color={color} size={size} />}
+                icon={({ color, size }) => <IconComp color={color} size={size} focused={false} />}
                 active={state.index === index}
                 onPress={() => navigation.navigate(route.name as never)}
               />

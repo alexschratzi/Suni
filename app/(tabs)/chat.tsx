@@ -198,7 +198,15 @@ export default function ChatScreen() {
             setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
           }
         />
-        <Button title="Senden" onPress={sendMessage} />
+        <Button
+    mode="contained"
+    onPress={sendMessage}
+    disabled={!input.trim()}
+    style={{ marginLeft: 4 }}
+    contentStyle={{ paddingHorizontal: 12, height: 40 }}
+  >
+    Senden
+  </Button>
       </View>
     </KeyboardAvoidingView>
   );
