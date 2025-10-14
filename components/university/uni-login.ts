@@ -17,7 +17,7 @@ export type UniConfig = {
     loginDetection?: LoginDetectionConfig;
 };
 
-const BASE = process.env.EXPO_PUBLIC_UNI_API_BASE ?? "http://10.0.2.2:8000";
+const BASE = process.env.EXPO_PUBLIC_UNI_API_BASE ?? "https://uni-service.lancealot.at";
 type CacheEntry<T> = { etag?: string; payload?: T; lastFetched?: number };
 const cache: Record<string, CacheEntry<any>> = {};
 
@@ -26,7 +26,9 @@ export function clearUniApiClientCache(): void {
 }
 
 async function getJson<T>(path: string, fallback?: () => Promise<T> | T): Promise<T> {
+    
     const url = `${BASE}${path}`;
+    console.log("fetching: " + url);
     const entry = cache[url] || {};
     const headers: Record<string, string> = {};
     if (entry.etag) headers["If-None-Match"] = entry.etag;
@@ -45,6 +47,7 @@ async function getJson<T>(path: string, fallback?: () => Promise<T> | T): Promis
         // graceful fallback
         if (entry.payload) return entry.payload as T;
         if (fallback) return await Promise.resolve(fallback());
+        console.log(e);
         throw e;
     }
 }
