@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {PixelRatio, StyleSheet, Text, View} from "react-native";
+import {PixelRatio, StyleSheet} from "react-native";
 import type {
     CalendarKitHandle,
     DateOrDateTime,
@@ -11,6 +11,7 @@ import {CalendarBody, CalendarContainer, CalendarHeader} from "@howljs/calendar-
 import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
+import {Divider, Surface, Text, useTheme} from "react-native-paper";
 
 dayjs.locale("de");
 
@@ -21,14 +22,17 @@ type Ev = {
     end: { dateTime: string };
     color?: string;
 };
+//todo: make events follow theme (dark/light mode)
 
 const SNAP_TO_MINUTE = 60;
 const DEFAULT_EVENT_DURATION_MIN = 60;
-
 const MIN_H = 7;
 const MAX_H = 24;
 
 export default function TimetableScreen() {
+    const paper = useTheme();                     // ← current Paper theme
+    const isDark = (paper as any).dark === true;  // MD3 themes expose .dark
+
     const [weekOffset, setWeekOffset] = useState(0);
     const [events, setEvents] = useState<Ev[]>([]);
 
@@ -39,33 +43,84 @@ export default function TimetableScreen() {
 
     const calendarRef = useRef<CalendarKitHandle>(null);
 
+    // Map Paper tokens → CalendarKit theme
     const theme = useMemo<DeepPartial<ThemeConfigs>>(
-        () => ({
-            headerBackgroundColor: "#fafafa",
-            headerBorderColor: "#eaeaea",
-            dayBarBorderColor: "transparent",
-            dayName: {fontWeight: "700", fontSize: 12, textAlign: "center"},
-            dayNumber: {fontWeight: "700", fontSize: 12, textAlign: "center"},
-            hourTextStyle: {
-                fontSize: 12,
-                color: "#6b7280",
-                fontWeight: "600",
-                textAlign: "right",
-                marginTop: 6,
-            },
-            eventContainerStyle: {borderRadius: 8},
-            eventTitleStyle: {fontSize: 12, fontWeight: "600"},
-            minimumEventHeight: 16,
-        }),
-        []
-    );
+  () => ({
+    // ---- NEW: define the colors map explicitly ----
+    colors: {
+      primary: paper.colors.primary,
+      onPrimary: paper.colors.onPrimary,
+      background: paper.colors.background,
+      onBackground: paper.colors.onBackground ?? paper.colors.onSurface,
+      border: paper.colors.outlineVariant ?? paper.colors.outline,
+      text: paper.colors.onSurface,
+      surface: paper.colors.surface,
+      onSurface: paper.colors.onSurface,
+    },
+
+    // ---- defaults for all texts (Calendar Body uses this) ----
+    textStyle: {
+      color: paper.colors.onSurface,
+      fontSize: 12,
+    },
+
+    // containers / bars
+    headerBackgroundColor: paper.colors.surface,
+    headerBorderColor: paper.colors.outlineVariant ?? paper.colors.outline,
+    dayBarBorderColor: "transparent",
+
+    // hour column (this is the bit you’re seeing not themed)
+    hourBackgroundColor: paper.colors.surface,             // ← important
+    hourBorderColor: paper.colors.outlineVariant ?? paper.colors.outline,
+    hourTextStyle: {
+      fontSize: 12,
+      color: paper.colors.onSurfaceVariant,
+      fontWeight: "600",
+      textAlign: "right",
+      marginTop: 6,
+    },
+
+    // day labels
+    dayName: {
+      fontWeight: "700",
+      fontSize: 12,
+      textAlign: "center",
+      color: paper.colors.onSurfaceVariant,
+    },
+    dayNumber: {
+      fontWeight: "700",
+      fontSize: 12,
+      textAlign: "center",
+      color: paper.colors.onSurface,
+    },
+
+    // events
+    eventContainerStyle: {
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    },
+    eventTitleStyle: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: paper.colors.onPrimary,
+    },
+    minimumEventHeight: 16,
+
+    // grid / now line / out-of-range
+    lineColor: paper.colors.outlineVariant ?? paper.colors.outline,
+    nowIndicatorColor: paper.colors.primary,
+    outOfRangeBackgroundColor: isDark ? "#0b0b0b" : "#fafafa",
+    unavailableHourBackgroundColor: paper.colors.surface, // optional
+  }),
+  [paper, isDark]
+);
 
     const onCreate = (ev: OnCreateEventResponse) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
         });
         addEvent(toISO(ev.start), toISO(ev.end));
     };
-
 
     const addEvent = (startISO: string, endISO: string) =>
         setEvents((p) => [
@@ -75,13 +130,13 @@ export default function TimetableScreen() {
                 title: "NEW",
                 start: {dateTime: startISO},
                 end: {dateTime: endISO},
-                color: "#2563eb",
+                color: "#4dabf7", // fixed color light blue
+                // color: paper.colors.primary, // follow theme primary color (does not update when theme changes)
             },
         ]);
 
     // Wochenanker (Montag dieser Woche) + Offset
     const weekStart = useMemo(() => addWeeks(getMonday(new Date()), weekOffset), [weekOffset]);
-
     const startISO = fmtYMD(weekStart);
     const endISO = fmtYMD(addDays(weekStart, 6));
 
@@ -108,28 +163,41 @@ export default function TimetableScreen() {
         }
     }, [desiredIntervalHeight]);
 
-    const renderDayItem = useCallback(({dateUnix}: { dateUnix: number }) => {
-        const date = new Date(dateUnix);
-        const dayLabel = dayjs(date).format("dd"); // Mo, Di, Mi ...
-        const dayNum = dayjs(date).format("D");    // 6, 7, 8 ...
+    const renderDayItem = useCallback(
+        ({dateUnix}: { dateUnix: number }) => {
+            const date = new Date(dateUnix);
+            const dayLabel = dayjs(date).format("dd"); // Mo, Di, Mi ...
+            const dayNum = dayjs(date).format("D");    // 6, 7, 8 ...
 
-        return (
-            <View style={{alignItems: "center"}}>
-                <Text
-                    style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: "#111827", // normaler Text, kein Kreis
-                    }}
+            return (
+                <Surface
+                    mode="flat"
+                    elevation={0}
+                    style={{alignItems: "center", backgroundColor: "transparent"}}
                 >
-                    {`${dayLabel} ${dayNum}`}
-                </Text>
-            </View>
-        );
-    }, []);
+                    <Text
+                        variant="labelSmall"
+                        style={{
+                            fontSize: 12,
+                            fontWeight: "700",
+                            color: paper.colors.onSurface, // ← follow theme
+                        }}
+                    >
+                        {`${dayLabel} ${dayNum}`}
+                    </Text>
+                </Surface>
+            );
+        },
+        [paper.colors.onSurface]
+    );
 
     return (
-        <View style={styles.root} onLayout={(e) => setCalendarAreaH(e.nativeEvent.layout.height)}>
+        <Surface
+            mode="flat"
+            elevation={0}
+            style={[styles.root, {backgroundColor: paper.colors.background}]} // ← follow theme
+            onLayout={(e) => setCalendarAreaH(e.nativeEvent.layout.height)}
+        >
             <CalendarContainer
                 ref={calendarRef}
                 numberOfDays={7}
@@ -142,7 +210,6 @@ export default function TimetableScreen() {
                 allowHorizontalSwipe={false}
                 allowPinchToZoom={false}
                 hourWidth={40}
-
                 initialDate={startISO}
                 minDate={startISO}
                 maxDate={endISO}
@@ -153,7 +220,6 @@ export default function TimetableScreen() {
                 initialTimeIntervalHeight={desiredIntervalHeight}
                 minTimeIntervalHeight={desiredIntervalHeight}
                 maxTimeIntervalHeight={desiredIntervalHeight}
-
                 allowDragToCreate
                 dragToCreateMode={"date-time"}
                 defaultDuration={DEFAULT_EVENT_DURATION_MIN}
@@ -161,22 +227,25 @@ export default function TimetableScreen() {
                 useHaptic={true}
                 enableResourceScroll={false}
                 onDragCreateEventEnd={onCreate}
-
                 events={events}
-
-                theme={theme}
+                theme={theme} // ← the important line
             >
                 {/* measure everything above the grid that calendar renders (header + all-day) */}
-                <View onLayout={(e) => setHeaderBlockH(e.nativeEvent.layout.height)}>
+                <Surface
+                    mode="flat"
+                    elevation={0}
+                    onLayout={(e) => setHeaderBlockH(e.nativeEvent.layout.height)}
+                    style={{backgroundColor: "transparent"}}
+                >
                     <CalendarHeader renderDayItem={renderDayItem} dayBarHeight={22}/>
-                </View>
+                </Surface>
+
                 <CalendarBody
                     renderCustomHorizontalLine={renderHourOnlyLine}
                     hourFormat="H"
-
                 />
             </CalendarContainer>
-        </View>
+        </Surface>
     );
 }
 
@@ -215,7 +284,6 @@ function toDate(v: unknown): Date {
     return new Date();
 }
 
-
 const toISO = (v: DateOrDateTime | undefined) => toDate(v).toISOString();
 
 const renderHourOnlyLine = ({index, borderColor}: { index: number; borderColor: string }) => {
@@ -225,15 +293,22 @@ const renderHourOnlyLine = ({index, borderColor}: { index: number; borderColor: 
     if (index === 0) return null;
     // remove last line
     if (index === (MAX_H - MIN_H)) return null;
+
+    // Use Paper's Divider so the line picks up MD3 defaults, but we override the color/height
     return (
-        <View
+        <Divider
+            // keep interaction disabled
             pointerEvents="none"
-            style={{height: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderColor}}
+            // emulate a hairline bottom border
+            style={{
+                height: StyleSheet.hairlineWidth,
+                backgroundColor: borderColor,
+            }}
         />
     );
 };
 
 /* ---------------------- Styles ---------------------- */
 const styles = StyleSheet.create({
-    root: {flex: 1, backgroundColor: "#fff"},
+    root: {flex: 1},
 });
