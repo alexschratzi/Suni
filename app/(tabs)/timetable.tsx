@@ -12,17 +12,10 @@ import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 import {Divider, Surface, Text, useTheme} from "react-native-paper";
+import {Ev} from "@/components/timetable/types"
+import {mapPaperToCalendarTheme} from "@/components/timetable/mapPaperToCalendarTheme";
 
 dayjs.locale("de");
-
-type Ev = {
-    id: string;
-    title: string;
-    start: { dateTime: string };
-    end: { dateTime: string };
-    color?: string;
-};
-//todo: make events follow theme (dark/light mode)
 
 const SNAP_TO_MINUTE = 60;
 const DEFAULT_EVENT_DURATION_MIN = 60;
@@ -30,11 +23,11 @@ const MIN_H = 7;
 const MAX_H = 24;
 
 export default function TimetableScreen() {
-    const paper = useTheme();                     // ← current Paper theme
-    const isDark = (paper as any).dark === true;  // MD3 themes expose .dark
+    const paper = useTheme();
 
     const [weekOffset, setWeekOffset] = useState(0);
     const [events, setEvents] = useState<Ev[]>([]);
+    const theme = useMemo<DeepPartial<ThemeConfigs>>(() => mapPaperToCalendarTheme(paper), [paper]);
 
     // measure: outer calendar area (below any custom header you might add)
     const [calendarAreaH, setCalendarAreaH] = useState<number | null>(null);
@@ -43,78 +36,7 @@ export default function TimetableScreen() {
 
     const calendarRef = useRef<CalendarKitHandle>(null);
 
-    // Map Paper tokens → CalendarKit theme
-    const theme = useMemo<DeepPartial<ThemeConfigs>>(
-  () => ({
-    // ---- NEW: define the colors map explicitly ----
-    colors: {
-      primary: paper.colors.primary,
-      onPrimary: paper.colors.onPrimary,
-      background: paper.colors.background,
-      onBackground: paper.colors.onBackground ?? paper.colors.onSurface,
-      border: paper.colors.outlineVariant ?? paper.colors.outline,
-      text: paper.colors.onSurface,
-      surface: paper.colors.surface,
-      onSurface: paper.colors.onSurface,
-    },
 
-    // ---- defaults for all texts (Calendar Body uses this) ----
-    textStyle: {
-      color: paper.colors.onSurface,
-      fontSize: 12,
-    },
-
-    // containers / bars
-    headerBackgroundColor: paper.colors.surface,
-    headerBorderColor: paper.colors.outlineVariant ?? paper.colors.outline,
-    dayBarBorderColor: "transparent",
-
-    // hour column (this is the bit you’re seeing not themed)
-    hourBackgroundColor: paper.colors.surface,             // ← important
-    hourBorderColor: paper.colors.outlineVariant ?? paper.colors.outline,
-    hourTextStyle: {
-      fontSize: 12,
-      color: paper.colors.onSurfaceVariant,
-      fontWeight: "600",
-      textAlign: "right",
-      marginTop: 6,
-    },
-
-    // day labels
-    dayName: {
-      fontWeight: "700",
-      fontSize: 12,
-      textAlign: "center",
-      color: paper.colors.onSurfaceVariant,
-    },
-    dayNumber: {
-      fontWeight: "700",
-      fontSize: 12,
-      textAlign: "center",
-      color: paper.colors.onSurface,
-    },
-
-    // events
-    eventContainerStyle: {
-      borderRadius: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-    },
-    eventTitleStyle: {
-      fontSize: 12,
-      fontWeight: "600",
-      color: paper.colors.onPrimary,
-    },
-    minimumEventHeight: 16,
-
-    // grid / now line / out-of-range
-    lineColor: paper.colors.outlineVariant ?? paper.colors.outline,
-    nowIndicatorColor: paper.colors.primary,
-    outOfRangeBackgroundColor: isDark ? "#0b0b0b" : "#fafafa",
-    unavailableHourBackgroundColor: paper.colors.surface, // optional
-  }),
-  [paper, isDark]
-);
 
     const onCreate = (ev: OnCreateEventResponse) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
