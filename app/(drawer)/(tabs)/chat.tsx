@@ -25,7 +25,7 @@ import {
   useTheme,
 } from "react-native-paper";
 
-import { db, auth } from "../../firebase";
+import { db, auth } from "../../../firebase";
 
 const ROOMS = {
   salzburg: "messages_salzburg",

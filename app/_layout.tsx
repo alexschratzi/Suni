@@ -29,7 +29,7 @@ export default function RootLayout() {
   return (
     <>
       {!user && <Redirect href="/(auth)" />}
-      {user && <Redirect href="/(tabs)/news" />}
+      {user && <Redirect href="/(drawer)/(tabs)/news" />}
 
       <Stack screenOptions={{ headerShown: false }}>
         {/* Gruppen IMMER registrieren → verhindert die gelbe Warnung */}
