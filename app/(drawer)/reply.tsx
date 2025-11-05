@@ -24,7 +24,7 @@ import {
   IconButton,
 } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { auth, db } from "../../../firebase";
+import { auth, db } from "../../firebase";
 
 export default function ReplyScreen() {
   const theme = useTheme();

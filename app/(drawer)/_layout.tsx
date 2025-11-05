@@ -2,13 +2,16 @@
 import React, { useEffect, useState } from "react";
 import { Drawer } from "expo-router/drawer";
 import { useRouter } from "expo-router";
-import { onAuthStateChanged, User, signOut } from "firebase/auth";
+import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../../firebase";
 import { DrawerToggleButton } from "@react-navigation/drawer";
-import { Pressable, Text } from "react-native";
+import { Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "react-native-paper";
 
 export default function DrawerLayout() {
   const router = useRouter();
+  const theme = useTheme();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
@@ -30,10 +33,10 @@ export default function DrawerLayout() {
   return (
     <Drawer
       screenOptions={{
-        headerShown: true, // <- Header vom Drawer aktiv
+        headerShown: true,
       }}
     >
-      {/* Home = deine Tabs => Header mit Hamburger links + Logout rechts */}
+      {/* Hauptseite: Tabs mit Hamburger links & Zahnrad rechts */}
       <Drawer.Screen
         name="(tabs)"
         options={{
@@ -41,20 +44,63 @@ export default function DrawerLayout() {
           headerLeft: (props) => <DrawerToggleButton {...props} />,
           headerRight: () => (
             <Pressable
-              onPress={() => signOut(auth).then(() => router.replace("/(auth)"))}
-              style={{ paddingHorizontal: 12 }}
+              onPress={() => router.push("/(drawer)/settings")}
+              style={{ paddingHorizontal: 16 }}
+              accessibilityRole="button"
+              accessibilityLabel="Einstellungen öffnen"
             >
-              <Text>Logout</Text>
+              <Ionicons
+                name="settings-outline"
+                size={24}
+                color={theme.colors.onSurface}
+              />
             </Pressable>
           ),
         }}
       />
 
-      {/* Profil im Seitenmenü, ebenfalls mit Hamburger */}
+      {/* Profil */}
       <Drawer.Screen
         name="profile"
         options={{
           title: "Profil",
+          headerLeft: (props) => <DrawerToggleButton {...props} />,
+        }}
+      />
+
+      {/* To-Dos */}
+      <Drawer.Screen
+        name="todos"
+        options={{
+          title: "To-Dos",
+          headerLeft: (props) => <DrawerToggleButton {...props} />,
+        }}
+      />
+
+      {/* Einstellungen */}
+      <Drawer.Screen
+        name="settings"
+        options={{
+          title: "Einstellungen",
+          headerLeft: (props) => <DrawerToggleButton {...props} />,
+        }}
+      />
+
+      {/* Logout */}
+      <Drawer.Screen
+        name="logout"
+        options={{
+          title: "Logout",
+          headerShown: false,
+        }}
+      />
+
+      {/* Reply: unsichtbar */}
+      <Drawer.Screen
+        name="reply"
+        options={{
+          drawerItemStyle: { display: "none" },
+          title: "Antwort",
           headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
