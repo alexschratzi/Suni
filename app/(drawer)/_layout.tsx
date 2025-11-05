@@ -34,9 +34,17 @@ export default function DrawerLayout() {
     <Drawer
       screenOptions={{
         headerShown: true,
+        // 🔽 Header folgt dem Paper-Theme (Hell/Dunkel)
+        headerStyle: { backgroundColor: theme.colors.surface },
+        headerTintColor: theme.colors.onSurface,         // wirkt auf Titel + Icons
+        headerTitleStyle: { color: theme.colors.onSurface },
+        // Drawer-Farben ebenfalls ans Theme koppeln
+        drawerStyle: { backgroundColor: theme.colors.surface },
+        drawerActiveTintColor: theme.colors.primary,
+        drawerInactiveTintColor: theme.colors.onSurfaceVariant,
       }}
     >
-      {/* Hauptseite: Tabs mit Hamburger links & Zahnrad rechts */}
+      {/* Home: Tabs unten, Header oben vom Drawer */}
       <Drawer.Screen
         name="(tabs)"
         options={{
@@ -47,19 +55,19 @@ export default function DrawerLayout() {
               onPress={() => router.push("/(drawer)/settings")}
               style={{ paddingHorizontal: 16 }}
               accessibilityRole="button"
-              accessibilityLabel="Einstellungen öffnen"
+              aria-label="Einstellungen öffnen"
             >
               <Ionicons
                 name="settings-outline"
                 size={24}
-                color={theme.colors.onSurface}
+                color={theme.colors.onSurface} // folgt Theme
               />
             </Pressable>
           ),
         }}
       />
 
-      {/* Profil */}
+      {/* Profil im Seitenmenü */}
       <Drawer.Screen
         name="profile"
         options={{
@@ -68,7 +76,7 @@ export default function DrawerLayout() {
         }}
       />
 
-      {/* To-Dos */}
+      {/* To-Dos im Seitenmenü */}
       <Drawer.Screen
         name="todos"
         options={{
@@ -77,7 +85,7 @@ export default function DrawerLayout() {
         }}
       />
 
-      {/* Einstellungen */}
+      {/* Einstellungen im Seitenmenü */}
       <Drawer.Screen
         name="settings"
         options={{
@@ -86,7 +94,7 @@ export default function DrawerLayout() {
         }}
       />
 
-      {/* Logout */}
+      {/* Logout als Menüpunkt */}
       <Drawer.Screen
         name="logout"
         options={{
@@ -95,7 +103,7 @@ export default function DrawerLayout() {
         }}
       />
 
-      {/* Reply: unsichtbar */}
+      {/* Reply bleibt unsichtbar (nur per Navigation erreichbar) */}
       <Drawer.Screen
         name="reply"
         options={{
