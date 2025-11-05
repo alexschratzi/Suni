@@ -13,7 +13,7 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { auth, db } from "../firebase";
+import { auth, db } from "../../firebase";
 import {
   addDoc,
   collection,

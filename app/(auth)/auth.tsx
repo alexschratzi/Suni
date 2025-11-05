@@ -12,8 +12,8 @@ import {
   signInWithEmailAndPassword,
   UserCredential,
 } from "firebase/auth";
-import { auth } from "../firebase";
-import { loadLocalUser, saveLocalUser } from "../localUser";
+import { auth } from "../../firebase";
+import { loadLocalUser, saveLocalUser } from "../../localUser";
 
 export default function AuthScreen() {
   const theme = useTheme();
