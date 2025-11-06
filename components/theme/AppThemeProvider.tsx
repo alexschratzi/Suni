@@ -1,13 +1,24 @@
 // components/theme/AppThemeProvider.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Appearance } from "react-native";
-import { Provider as PaperProvider, MD3LightTheme, MD3DarkTheme } from "react-native-paper";
+import {
+  Provider as PaperProvider,
+  MD3LightTheme,
+  MD3DarkTheme,
+} from "react-native-paper";
 
-type ThemeMode = "light" | "dark";
+export type ThemeMode = "light" | "dark" | "system";
 
 type AppThemeContextValue = {
-  mode: ThemeMode;
+  mode: ThemeMode;                      // gewählte Einstellung
+  effectiveMode: "light" | "dark";      // tatsächlich aktiv
   isDark: boolean;
   setMode: (m: ThemeMode) => void;
   toggleTheme: () => void;
@@ -15,26 +26,41 @@ type AppThemeContextValue = {
 
 const STORAGE_KEY = "@suni:themeMode";
 
-const AppThemeContext = createContext<AppThemeContextValue | undefined>(undefined);
+const AppThemeContext = createContext<AppThemeContextValue | undefined>(
+  undefined
+);
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  // Standard: Systempräferenz als Startwert
-  const systemIsDark = Appearance.getColorScheme() === "dark";
-  const [mode, setMode] = useState<ThemeMode>(systemIsDark ? "dark" : "light");
+  const [mode, setMode] = useState<ThemeMode>("system");
+  const [systemScheme, setSystemScheme] = useState<"light" | "dark">(
+    Appearance.getColorScheme() === "dark" ? "dark" : "light"
+  );
 
-  // Persistenz laden
+  // gespeicherte Wahl laden
   useEffect(() => {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved === "light" || saved === "dark") {
+        if (saved === "light" || saved === "dark" || saved === "system") {
           setMode(saved);
+        } else {
+          setMode("system");
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
     })();
   }, []);
 
-  // Persistenz speichern
+  // auf Systemänderungen reagieren
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystemScheme(colorScheme === "dark" ? "dark" : "light");
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Einstellung speichern
   useEffect(() => {
     (async () => {
       try {
@@ -43,23 +69,24 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [mode]);
 
+  const effectiveMode: "light" | "dark" =
+    mode === "system" ? systemScheme : mode;
+
   const paperTheme = useMemo(() => {
-    const base = mode === "dark" ? MD3DarkTheme : MD3LightTheme;
-    // ⚠️ Hier KEINE harten Farben setzen, damit dein bestehendes Design/Theming erhalten bleibt.
-    // Optional: Customizations hier einfügen, z. B. runde Ecken, eigene Farben etc.
-    return {
-      ...base,
-    };
-  }, [mode]);
+    const base = effectiveMode === "dark" ? MD3DarkTheme : MD3LightTheme;
+    return { ...base };
+  }, [effectiveMode]);
 
   const value = useMemo<AppThemeContextValue>(
     () => ({
       mode,
-      isDark: mode === "dark",
-      setMode: (m) => setMode(m),
-      toggleTheme: () => setMode((m) => (m === "dark" ? "light" : "dark")),
+      effectiveMode,
+      isDark: effectiveMode === "dark",
+      setMode,
+      toggleTheme: () =>
+        setMode((prev) => (prev === "dark" ? "light" : "dark")),
     }),
-    [mode]
+    [mode, effectiveMode]
   );
 
   return (
@@ -71,6 +98,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppTheme() {
   const ctx = useContext(AppThemeContext);
-  if (!ctx) throw new Error("useAppTheme must be used within <AppThemeProvider/>");
+  if (!ctx)
+    throw new Error("useAppTheme must be used within <AppThemeProvider/>");
   return ctx;
 }

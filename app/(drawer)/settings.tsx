@@ -1,31 +1,79 @@
 // app/(drawer)/settings.tsx
 import React from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Text, Switch, Button, useTheme } from "react-native-paper";
-import { useAppTheme } from "../../components/theme/AppThemeProvider";
+import {
+  Text,
+  RadioButton,
+  useTheme,
+  List,
+  Divider,
+} from "react-native-paper";
+import { useAppTheme, ThemeMode } from "../../components/theme/AppThemeProvider";
 
 export default function SettingsScreen() {
   const paperTheme = useTheme();
-  const { isDark, toggleTheme } = useAppTheme();
+  const { mode, effectiveMode, setMode } = useAppTheme();
+
+  const onChange = (value: ThemeMode) => setMode(value);
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: paperTheme.colors.surface }]}>
-      <View style={styles.row}>
-        <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface }}>
-          Dark Mode
-        </Text>
-        <Switch value={isDark} onValueChange={toggleTheme} />
+    <ScrollView
+      contentContainerStyle={[
+        styles.container,
+        { backgroundColor: paperTheme.colors.surface },
+      ]}
+    >
+      <Text
+        variant="titleLarge"
+        style={[styles.title, { color: paperTheme.colors.onSurface }]}
+      >
+        Erscheinungsbild
+      </Text>
+
+      <View style={[styles.card, { backgroundColor: paperTheme.colors.surface }]}>
+        <RadioButton.Group onValueChange={(v) => onChange(v as ThemeMode)} value={mode}>
+          <List.Item
+            title="System"
+            description="Automatisch dem Gerätestil folgen"
+            titleStyle={{ color: paperTheme.colors.onSurface }}
+            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
+            left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
+            right={() => <RadioButton value="system" />}
+            onPress={() => onChange("system")}
+          />
+          <Divider />
+          <List.Item
+            title="Hell"
+            description="Helles Erscheinungsbild verwenden"
+            titleStyle={{ color: paperTheme.colors.onSurface }}
+            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
+            left={(props) => <List.Icon {...props} icon="white-balance-sunny" />}
+            right={() => <RadioButton value="light" />}
+            onPress={() => onChange("light")}
+          />
+          <Divider />
+          <List.Item
+            title="Dunkel"
+            description="Dunkles Erscheinungsbild verwenden"
+            titleStyle={{ color: paperTheme.colors.onSurface }}
+            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
+            left={(props) => <List.Icon {...props} icon="weather-night" />}
+            right={() => <RadioButton value="dark" />}
+            onPress={() => onChange("dark")}
+          />
+        </RadioButton.Group>
       </View>
 
-      {/* Beispiel: weitere Settings-Platzhalter */}
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface, marginBottom: 8 }}>
-          Weitere Einstellungen
-        </Text>
-        <Button mode="contained" onPress={() => {}}>
-          Coming soon
-        </Button>
-      </View>
+      <Text
+        variant="bodyMedium"
+        style={{
+          marginTop: 16,
+          color: paperTheme.colors.onSurfaceVariant,
+        }}
+      >
+        Aktiv: <Text style={{ fontWeight: "600" }}>{effectiveMode === "dark" ? "Dunkel" : "Hell"}</Text>
+        {mode === "system" ? " (folgt System)" : ""}
+      </Text>
     </ScrollView>
   );
 }
@@ -34,14 +82,13 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     minHeight: "100%",
+    gap: 12,
   },
-  row: {
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  title: {
+    marginBottom: 4,
   },
-  section: {
-    marginTop: 24,
+  card: {
+    borderRadius: 12,
+    overflow: "hidden",
   },
 });
