@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "deploymentTarget": "15.1",
       "infoPlist": {
         "NSCalendarsUsageDescription": "This app shows your timetable using your calendars.",
         "ITSAppUsesNonExemptEncryption": false
@@ -47,8 +48,19 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "useModularHeaders": true,
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
     ],
+
     "experiments": {
       "typedRoutes": true
     }

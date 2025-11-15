@@ -1,9 +1,16 @@
 // firebase.ts
-import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeApp, getApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  initializeAuth,
+  getReactNativePersistence,
+  Auth,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyDYpOpiZ-2VBmMuPUbZ5ltrJvyrvxWHvMs",
   authDomain: "suni-9468f.firebaseapp.com",
   projectId: "suni-9468f",
@@ -12,10 +19,22 @@ const firebaseConfig = {
   appId: "1:167831321634:ios:f214ca30d921a0cd4b5e7b",
 };
 
-
-
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// Auth – Web = getAuth, Native (Expo Go / EAS) = initializeAuth mit AsyncStorage
+let authInstance: Auth;
+
+if (Platform.OS === "web") {
+  authInstance = getAuth(app);
+} else {
+  authInstance =
+    // Initialize nur einmal
+    (getApps().length && getAuth(app)) ||
+    initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+}
+
+export const auth = authInstance;
 
 export const db = getFirestore(app);

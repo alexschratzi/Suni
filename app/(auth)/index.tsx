@@ -1,9 +1,22 @@
 // app/(auth)/index.tsx
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Platform,
+} from "react-native";
 import { useRouter } from "expo-router";
-import { signInWithPhoneNumber, signInAnonymously } from "firebase/auth";
-import { auth } from "../../firebase";
+import {
+  signInWithPhoneNumber,
+  signInAnonymously,
+  RecaptchaVerifier,
+} from "firebase/auth";
+import { auth, db, firebaseConfig } from "../../firebase";
 import {
   doc,
   getDoc,
@@ -14,10 +27,9 @@ import {
   getDocs,
   addDoc,
 } from "firebase/firestore";
-import { db } from "../../firebase";
-import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
+import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
 
-// @ts-ignore
+// Für Web
 declare global {
   interface Window {
     recaptchaVerifier?: any;
@@ -28,75 +40,79 @@ export default function LoginScreen() {
   const theme = useTheme();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState("+43 123456789"); // 🔹 Testnummer aus Firebase Console
-  const [code, setCode] = useState("123456");
+
+  const [phone, setPhone] = useState("+43123456789"); // Testnummer → wird bereinigt
+  const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
 
+  // Für iOS/Android (Expo)
+  const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal>(null);
+
   useEffect(() => {
-    const init = async () => {
-      try {
-        if (__DEV__ && auth.settings) {
-          auth.settings.appVerificationDisabledForTesting = true;
-          console.log("✅ AppVerification deaktiviert (Testmodus aktiv)");
-        }
-      } catch (err) {
-        console.log("Init-Fehler:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    init();
+    setLoading(false);
   }, []);
 
   const sendCode = async () => {
     try {
-      if (!phone.startsWith("+")) {
-        Alert.alert("Fehler", "Bitte Telefonnummer im Format +43 ... eingeben.");
+      // E.164 Format herstellen
+      const cleanPhone = phone.replace(/\s+/g, "");
+
+      if (!cleanPhone.startsWith("+")) {
+        Alert.alert("Fehler", "Bitte Telefonnummer im Format +43... eingeben.");
         return;
       }
 
       let confirmationResult;
 
       if (Platform.OS === "web") {
-        // Nur Web: reCAPTCHA initialisieren
-        // @ts-ignore
-        const { RecaptchaVerifier } = await import("firebase/auth");
+        // Web-Version
         if (!window.recaptchaVerifier) {
-          // @ts-ignore
           window.recaptchaVerifier = new RecaptchaVerifier(
+            auth,
             "recaptcha-container",
-            { size: "invisible" },
-            auth
+            { size: "invisible" }
           );
         }
+
         confirmationResult = await signInWithPhoneNumber(
           auth,
-          phone,
+          cleanPhone,
           window.recaptchaVerifier
         );
       } else {
-        // Expo Go oder Dev-Build
-        confirmationResult = await signInWithPhoneNumber(auth, phone);
+        // Mobile (Expo)
+        if (!recaptchaVerifier.current) {
+          throw new Error("reCAPTCHA nicht geladen");
+        }
+
+        confirmationResult = await signInWithPhoneNumber(
+          auth,
+          cleanPhone,
+          // @ts-ignore
+          recaptchaVerifier.current
+        );
       }
 
       setConfirmation(confirmationResult);
-      Alert.alert("Code gesendet ✅", "Bitte den SMS-Code eingeben!");
+      Alert.alert("Code gesendet", "Bitte SMS-Code eingeben!");
     } catch (err: any) {
       console.log("Fehler bei sendCode:", err);
-      Alert.alert("Fehler", err.message);
+      Alert.alert("Fehler beim Senden", err.message || String(err));
     }
   };
 
   const confirmCode = async () => {
     try {
       if (!confirmation) {
-        Alert.alert("Fehler", "Kein Bestätigungsvorgang aktiv!");
+        Alert.alert("Fehler", "Kein aktiver Login-Vorgang!");
         return;
       }
 
       const userCred = await confirmation.confirm(code);
-      const userRef = doc(db, "users", userCred.user.uid);
+      const uid = userCred.user.uid;
+
+      const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
 
       if (!snap.exists()) {
@@ -105,40 +121,43 @@ export default function LoginScreen() {
           return;
         }
 
+        // Check ob Username schon existiert
         const q = query(
           collection(db, "usernames"),
-          where("username", "==", username)
+          where("username", "==", username.trim())
         );
         const existing = await getDocs(q);
+
         if (!existing.empty) {
-          Alert.alert("Fehler", "Benutzername ist schon vergeben!");
+          Alert.alert("Fehler", "Benutzername bereits vergeben.");
           return;
         }
 
         await addDoc(collection(db, "usernames"), {
-          username,
-          uid: userCred.user.uid,
+          uid,
+          username: username.trim(),
         });
-        await setDoc(userRef, { phone, username, role: "student" });
+
+        await setDoc(userRef, {
+          uid,
+          phone: phone.replace(/\s+/g, ""),
+          username: username.trim(),
+          role: "student",
+        });
       }
 
-      Alert.alert("✅ Erfolg!", "Login erfolgreich!");
+      Alert.alert("Login erfolgreich!");
       router.replace("../(tabs)");
     } catch (err: any) {
       console.log("Fehler bei confirmCode:", err);
-      Alert.alert("Fehler", err.message);
+      Alert.alert("Fehler", err.message || String(err));
     }
   };
 
   const testLogin = async () => {
     try {
-      const userCred = await signInAnonymously(auth);
-      console.log("Eingeloggt als Test-User:", userCred.user.uid);
-      Alert.alert(
-        "🧪 Testmodus aktiviert",
-        "Du bist jetzt als Test-User eingeloggt!"
-      );
-      // → Weiterleitung passiert automatisch durch onAuthStateChanged im Root-Layout
+      const cred = await signInAnonymously(auth);
+      Alert.alert("Testlogin erfolgreich", cred.user.uid);
     } catch (err: any) {
       Alert.alert("Fehler beim Testlogin", err.message);
     }
@@ -146,9 +165,9 @@ export default function LoginScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator animating size="large" />
-        <Text style={{ marginTop: 12 }}>Prüfe Login ...</Text>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text>Lade...</Text>
       </View>
     );
   }
@@ -165,16 +184,20 @@ export default function LoginScreen() {
   } as const;
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: theme.colors.background },
-      ]}
-    >
-      {/* Nur Web: Recaptcha Container */}
-      {Platform.OS === "web" && typeof document !== "undefined"
-        ? React.createElement("div", { id: "recaptcha-container" })
-        : null}
+    <View style={styles.container}>
+      {/* Recaptcha für Mobile */}
+      {Platform.OS !== "web" && (
+        <FirebaseRecaptchaVerifierModal
+          ref={recaptchaVerifier}
+          firebaseConfig={firebaseConfig}
+          attemptInvisibleVerification={true}
+        />
+      )}
+
+      {/* Recaptcha für Web */}
+      {Platform.OS === "web" &&
+        typeof document !== "undefined" &&
+        React.createElement("div", { id: "recaptcha-container" })}
 
       <Text variant="headlineSmall" style={styles.title}>
         📱 Telefon-Login
@@ -183,43 +206,36 @@ export default function LoginScreen() {
       {!confirmation ? (
         <>
           <TextInput
-            style={inputStyle}
+            style={styles.input}
+            value={phone}
+            onChangeText={setPhone}
             placeholder="+43 ..."
             placeholderTextColor={theme.colors.onSurfaceVariant}
             keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
           />
+          <Button title="Code senden" onPress={sendCode} />
 
-          <Button mode="contained" onPress={sendCode} style={styles.button}>
-            Code senden
-          </Button>
-
-          <Button mode="outlined" onPress={testLogin} style={styles.button}>
-            🧪 Test Login
-          </Button>
+          <View style={{ marginTop: 20 }}>
+            <Button title="🧪 Testlogin" color="orange" onPress={testLogin} />
+          </View>
         </>
       ) : (
         <>
           <TextInput
-            style={inputStyle}
+            style={styles.input}
+            value={code}
+            onChangeText={setCode}
             placeholder="SMS-Code"
             placeholderTextColor={theme.colors.onSurfaceVariant}
             keyboardType="number-pad"
-            value={code}
-            onChangeText={setCode}
           />
           <TextInput
-            style={inputStyle}
-            placeholder="Benutzername"
-            placeholderTextColor={theme.colors.onSurfaceVariant}
+            style={styles.input}
             value={username}
             onChangeText={setUsername}
+            placeholder="Benutzername"
           />
-
-          <Button mode="contained" onPress={confirmCode} style={styles.button}>
-            Bestätigen
-          </Button>
+          <Button title="Login bestätigen" onPress={confirmCode} />
         </>
       )}
     </View>
@@ -232,10 +248,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "bold",
-    marginBottom: 16,
     textAlign: "center",
+    marginBottom: 20,
   },
-  button: {
-    marginTop: 8,
+  input: {
+    borderWidth: 1,
+    borderColor: "#CCC",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
   },
 });
