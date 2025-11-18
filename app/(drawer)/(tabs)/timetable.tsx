@@ -75,7 +75,6 @@ const COLOR_OPTIONS = [
 export default function TimetableScreen() {
   const paper = useTheme();
 
-  // you can still keep this if you want to "jump" to specific weeks later
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<EvWithMeta[]>([]);
   const theme = useMemo<DeepPartial<ThemeConfigs>>(
@@ -88,16 +87,13 @@ export default function TimetableScreen() {
 
   const calendarRef = useRef<CalendarKitHandle>(null);
 
-  // currently edited event + form state
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
 
-  // which field's date-time picker is open
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
 
   const openEditorForEvent = useCallback((ev: EvWithMeta) => {
-    // fullTitle is our "long" title; we store abbreviated title separately
     const fullTitle = ev.fullTitle ?? ev.title ?? "";
     const autoAbbr = makeTitleAbbr(fullTitle);
     const titleAbbr = ev.titleAbbr ?? autoAbbr;
@@ -112,8 +108,8 @@ export default function TimetableScreen() {
       color: ev.color ?? "#4dabf7",
     });
 
-    // single source of truth for "custom vs auto"
     setHasCustomTitleAbbr(ev.isTitleAbbrCustom ?? false);
+    setActivePicker(null);
   }, []);
 
   const onCreate = (ev: OnCreateEventResponse) => {
@@ -127,7 +123,7 @@ export default function TimetableScreen() {
 
     const newEvent: EvWithMeta = {
       id: Math.random().toString(36).slice(2),
-      title: titleAbbr, // abbreviation shown in calendar
+      title: titleAbbr,
       start: {dateTime: startISO},
       end: {dateTime: endISO},
       color: "#4dabf7",
@@ -143,7 +139,6 @@ export default function TimetableScreen() {
   const onPressEvent = (event: OnEventResponse) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-    // find the full EvWithMeta from local state
     const ev = events.find((e) => e.id === event.id);
     if (!ev) return;
 
@@ -186,12 +181,10 @@ export default function TimetableScreen() {
 
     const updated: EvWithMeta = {
       ...editingEvent,
-      // this is what the calendar displays
       title: titleAbbr,
       color: editorForm.color || editingEvent.color,
       start: {dateTime: editorForm.from},
       end: {dateTime: editorForm.until},
-
       fullTitle,
       titleAbbr,
       note: editorForm.note,
@@ -202,28 +195,21 @@ export default function TimetableScreen() {
     closeEditor();
   };
 
-  // Date-time picker handler
+  // Date-time picker handler (inline)
   const handlePickerChange = (
     event: DateTimePickerEvent,
     date?: Date | undefined
   ) => {
-    if (!editorForm) {
-      setActivePicker(null);
-      return;
-    }
+    if (!editorForm) return;
+    if (!date) return;
 
-    if (event.type === "dismissed" || !date) {
-      setActivePicker(null);
-      return;
-    }
-
+    // For inline display, onChange fires on every scroll – we just update the value.
     const iso = date.toISOString();
     if (activePicker === "from") {
       updateForm({from: iso});
     } else if (activePicker === "until") {
       updateForm({until: iso});
     }
-    setActivePicker(null);
   };
 
   // Monday this week + optional offset
@@ -233,14 +219,10 @@ export default function TimetableScreen() {
     [baseMonday, weekOffset]
   );
 
-  // current week’s "anchor" date
   const initialDate = fmtYMD(weekStart);
-
-  // allow navigation about a year in both directions
   const minDate = fmtYMD(addWeeks(baseMonday, -52));
   const maxDate = fmtYMD(addWeeks(baseMonday, 52));
 
-  // visible time range + grid interval
   const startMinutes = MIN_H * 60;
   const endMinutes = MAX_H * 60;
   const timeInterval = 60;
@@ -312,18 +294,15 @@ export default function TimetableScreen() {
         <CalendarContainer
           ref={calendarRef}
           numberOfDays={7}
-          // week paging (not day-by-day) when swiping horizontally
           scrollByDay={false}
           firstDay={1}
           locale="de"
           scrollToNow={false}
           spaceFromTop={spaceFromTop}
           spaceFromBottom={spaceFromBottom}
-          // let the library handle horizontal week navigation
           allowHorizontalSwipe={true}
           allowPinchToZoom={false}
           hourWidth={40}
-          // week anchor + wide range around it
           initialDate={initialDate}
           minDate={minDate}
           maxDate={maxDate}
@@ -343,7 +322,6 @@ export default function TimetableScreen() {
           events={events}
           theme={theme}
           onPressEvent={onPressEvent}
-          // optional: keep track of current visible week in state
           onDateChanged={(iso) => {
             const d = new Date(iso);
             const monday = getMonday(d);
@@ -421,7 +399,11 @@ export default function TimetableScreen() {
             <Text variant="labelSmall" style={styles.label}>
               From
             </Text>
-            <Pressable onPress={() => setActivePicker("from")}>
+            <Pressable
+              onPress={() =>
+                setActivePicker((prev) => (prev === "from" ? null : "from"))
+              }
+            >
               <TextInput
                 mode="outlined"
                 value={formatDateTimeIso(editorForm.from)}
@@ -430,11 +412,24 @@ export default function TimetableScreen() {
                 dense
               />
             </Pressable>
+            {activePicker === "from" && (
+              <DateTimePicker
+                value={new Date(editorForm.from)}
+                mode="datetime"
+                display="spinner"
+                onChange={handlePickerChange}
+                style={{alignSelf: "stretch"}}
+              />
+            )}
 
             <Text variant="labelSmall" style={styles.label}>
               Until
             </Text>
-            <Pressable onPress={() => setActivePicker("until")}>
+            <Pressable
+              onPress={() =>
+                setActivePicker((prev) => (prev === "until" ? null : "until"))
+              }
+            >
               <TextInput
                 mode="outlined"
                 value={formatDateTimeIso(editorForm.until)}
@@ -443,6 +438,15 @@ export default function TimetableScreen() {
                 dense
               />
             </Pressable>
+            {activePicker === "until" && (
+              <DateTimePicker
+                value={new Date(editorForm.until)}
+                mode="datetime"
+                display="spinner"
+                onChange={handlePickerChange}
+                style={{alignSelf: "stretch"}}
+              />
+            )}
 
             <Text variant="labelSmall" style={styles.label}>
               Note
@@ -492,18 +496,6 @@ export default function TimetableScreen() {
               </Button>
             </View>
           </Surface>
-
-          {/* Native date-time picker, shown only when needed */}
-          {activePicker && (
-            <DateTimePicker
-              value={new Date(
-                activePicker === "from" ? editorForm.from : editorForm.until
-              )}
-              mode="datetime"
-              display="default"
-              onChange={handlePickerChange}
-            />
-          )}
         </View>
       )}
     </Surface>
@@ -593,7 +585,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     right: 0,
-    width: "80%", // fills height, right side, overlay
+    width: "80%",
     padding: 16,
     borderLeftWidth: StyleSheet.hairlineWidth,
     justifyContent: "flex-start",
