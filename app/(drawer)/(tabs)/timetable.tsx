@@ -63,6 +63,15 @@ type EvWithMeta = Ev & {
 
 type ActivePicker = "from" | "until" | null;
 
+const COLOR_OPTIONS = [
+  "#4dabf7", // blue
+  "#f783ac", // pink
+  "#ffd43b", // yellow
+  "#69db7c", // green
+  "#845ef7", // purple
+  "#ffa94d", // orange
+];
+
 export default function TimetableScreen() {
   const paper = useTheme();
 
@@ -447,14 +456,27 @@ export default function TimetableScreen() {
             />
 
             <Text variant="labelSmall" style={styles.label}>
-              Color (hex)
+              Color
             </Text>
-            <TextInput
-              mode="outlined"
-              value={editorForm.color}
-              onChangeText={(text) => updateForm({color: text})}
-              dense
-            />
+            <View style={styles.colorRow}>
+              {COLOR_OPTIONS.map((c) => {
+                const selected = editorForm.color === c;
+                return (
+                  <Pressable
+                    key={c}
+                    onPress={() => updateForm({color: c})}
+                    style={[
+                      styles.colorDot,
+                      {backgroundColor: c},
+                      selected && {
+                        borderWidth: 2,
+                        borderColor: paper.colors.primary,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
 
             <View
               style={{
@@ -575,5 +597,19 @@ const styles = StyleSheet.create({
     padding: 16,
     borderLeftWidth: StyleSheet.hairlineWidth,
     justifyContent: "flex-start",
+  },
+  colorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  colorDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.2)",
   },
 });
