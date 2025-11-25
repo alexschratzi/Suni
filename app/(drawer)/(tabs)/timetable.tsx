@@ -5,7 +5,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {PixelRatio, StyleSheet, View, Pressable} from "react-native";
+import { PixelRatio, StyleSheet, View, Pressable } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CalendarBody,
   CalendarContainer,
@@ -34,8 +35,8 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import {Ev} from "@/types/timetable";
-import {mapPaperToCalendarTheme} from "@/components/timetable/mapPaperToCalendarTheme";
+import { Ev } from "@/types/timetable";
+import { mapPaperToCalendarTheme } from "@/components/timetable/mapPaperToCalendarTheme";
 
 dayjs.locale("de");
 
@@ -74,6 +75,11 @@ const COLOR_OPTIONS = [
 
 export default function TimetableScreen() {
   const paper = useTheme();
+  const router = useRouter();
+
+  const { jumpToToday } = useLocalSearchParams<{
+    jumpToToday?: string;
+  }>();
 
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<EvWithMeta[]>([]);
@@ -124,8 +130,8 @@ export default function TimetableScreen() {
     const newEvent: EvWithMeta = {
       id: Math.random().toString(36).slice(2),
       title: titleAbbr,
-      start: {dateTime: startISO},
-      end: {dateTime: endISO},
+      start: { dateTime: startISO },
+      end: { dateTime: endISO },
       color: "#4dabf7",
       fullTitle,
       titleAbbr,
@@ -146,13 +152,13 @@ export default function TimetableScreen() {
   };
 
   const updateForm = (patch: Partial<EventEditorForm>) => {
-    setEditorForm((prev) => (prev ? {...prev, ...patch} : prev));
+    setEditorForm((prev) => (prev ? { ...prev, ...patch } : prev));
   };
 
   const onChangeFullTitle = (text: string) => {
     setEditorForm((prev) => {
       if (!prev) return prev;
-      const next: EventEditorForm = {...prev, fullTitle: text};
+      const next: EventEditorForm = { ...prev, fullTitle: text };
       if (!hasCustomTitleAbbr) {
         next.titleAbbr = makeTitleAbbr(text);
       }
@@ -162,7 +168,7 @@ export default function TimetableScreen() {
 
   const onChangeTitleAbbr = (text: string) => {
     setHasCustomTitleAbbr(true);
-    updateForm({titleAbbr: text});
+    updateForm({ titleAbbr: text });
   };
 
   const closeEditor = () => {
@@ -183,8 +189,8 @@ export default function TimetableScreen() {
       ...editingEvent,
       title: titleAbbr,
       color: editorForm.color || editingEvent.color,
-      start: {dateTime: editorForm.from},
-      end: {dateTime: editorForm.until},
+      start: { dateTime: editorForm.from },
+      end: { dateTime: editorForm.until },
       fullTitle,
       titleAbbr,
       note: editorForm.note,
@@ -203,17 +209,16 @@ export default function TimetableScreen() {
     if (!editorForm) return;
     if (!date) return;
 
-    // For inline display, onChange fires on every scroll – we just update the value.
     const iso = date.toISOString();
     if (activePicker === "from") {
-      updateForm({from: iso});
+      updateForm({ from: iso });
     } else if (activePicker === "until") {
-      updateForm({until: iso});
+      updateForm({ until: iso });
     }
   };
 
-  // Monday this week + optional offset
-  const baseMonday = getMonday(new Date());
+  // Stable "base" Monday (week 0) for relative offset
+  const baseMonday = useMemo(() => getMonday(new Date()), []);
   const weekStart = useMemo(
     () => addWeeks(baseMonday, weekOffset),
     [baseMonday, weekOffset]
@@ -250,12 +255,33 @@ export default function TimetableScreen() {
 
   useEffect(() => {
     if (desiredIntervalHeight && calendarRef.current?.zoom) {
-      calendarRef.current.zoom({height: desiredIntervalHeight});
+      calendarRef.current.zoom({ height: desiredIntervalHeight });
     }
   }, [desiredIntervalHeight]);
 
+  // Handle the "Zu heute springen" command coming from settings
+  useEffect(() => {
+    if (jumpToToday === "1" || jumpToToday === "true") {
+      const today = new Date();
+
+      // our own state: week 0 is the "base" week
+      setWeekOffset(0);
+
+      // tell the calendar to go to today
+      calendarRef.current?.goToDate({
+        date: today,
+        animatedDate: true,
+        hourScroll: false,
+        animatedHour: true,
+      });
+
+      // clear the param so a future tap in settings can trigger again
+      router.setParams({ jumpToToday: undefined });
+    }
+  }, [jumpToToday, router]);
+
   const renderDayItem = useCallback(
-    ({dateUnix}: { dateUnix: number }) => {
+    ({ dateUnix }: { dateUnix: number }) => {
       const date = new Date(dateUnix);
       const dayLabel = dayjs(date).format("dd");
       const dayNum = dayjs(date).format("D");
@@ -264,7 +290,7 @@ export default function TimetableScreen() {
         <Surface
           mode="flat"
           elevation={0}
-          style={{alignItems: "center", backgroundColor: "transparent"}}
+          style={{ alignItems: "center", backgroundColor: "transparent" }}
         >
           <Text
             variant="labelSmall"
@@ -286,11 +312,11 @@ export default function TimetableScreen() {
     <Surface
       mode="flat"
       elevation={0}
-      style={[styles.root, {backgroundColor: paper.colors.background}]}
+      style={[styles.root, { backgroundColor: paper.colors.background }]}
       onLayout={(e) => setCalendarAreaH(e.nativeEvent.layout.height)}
     >
       {/* Main calendar (not squished) */}
-      <View style={{flex: 1}}>
+      <View style={{ flex: 1 }}>
         <CalendarContainer
           ref={calendarRef}
           numberOfDays={7}
@@ -337,7 +363,7 @@ export default function TimetableScreen() {
             mode="flat"
             elevation={0}
             onLayout={(e) => setHeaderBlockH(e.nativeEvent.layout.height)}
-            style={{backgroundColor: "transparent"}}
+            style={{ backgroundColor: "transparent" }}
           >
             <CalendarHeader renderDayItem={renderDayItem} dayBarHeight={22} />
           </Surface>
@@ -367,14 +393,14 @@ export default function TimetableScreen() {
               },
             ]}
           >
-            <View style={{flexDirection: "row", alignItems: "center"}}>
-              <Text variant="titleMedium" style={{flex: 1}}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text variant="titleMedium" style={{ flex: 1 }}>
                 Event bearbeiten
               </Text>
               <IconButton icon="close" onPress={closeEditor} />
             </View>
 
-            <Divider style={{marginVertical: 8}} />
+            <Divider style={{ marginVertical: 8 }} />
 
             <Text variant="labelSmall" style={styles.label}>
               Title
@@ -418,7 +444,7 @@ export default function TimetableScreen() {
                 mode="datetime"
                 display="spinner"
                 onChange={handlePickerChange}
-                style={{alignSelf: "stretch"}}
+                style={{ alignSelf: "stretch" }}
               />
             )}
 
@@ -444,7 +470,7 @@ export default function TimetableScreen() {
                 mode="datetime"
                 display="spinner"
                 onChange={handlePickerChange}
-                style={{alignSelf: "stretch"}}
+                style={{ alignSelf: "stretch" }}
               />
             )}
 
@@ -454,7 +480,7 @@ export default function TimetableScreen() {
             <TextInput
               mode="outlined"
               value={editorForm.note}
-              onChangeText={(text) => updateForm({note: text})}
+              onChangeText={(text) => updateForm({ note: text })}
               multiline
               numberOfLines={3}
             />
@@ -468,10 +494,10 @@ export default function TimetableScreen() {
                 return (
                   <Pressable
                     key={c}
-                    onPress={() => updateForm({color: c})}
+                    onPress={() => updateForm({ color: c })}
                     style={[
                       styles.colorDot,
-                      {backgroundColor: c},
+                      { backgroundColor: c },
                       selected && {
                         borderWidth: 2,
                         borderColor: paper.colors.primary,
@@ -525,7 +551,7 @@ function toDate(v: unknown): Date {
   if (v instanceof Date) return v;
   if (typeof v === "string") return new Date(v);
   if (typeof v === "object" && v !== null) {
-    const obj = v as {dateTime?: string; date?: string};
+    const obj = v as { dateTime?: string; date?: string };
     if (obj.dateTime) return new Date(obj.dateTime);
     if (obj.date) return new Date(`${obj.date}T00:00:00`);
   }
@@ -571,7 +597,7 @@ function formatDateTimeIso(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  root: {flex: 1},
+  root: { flex: 1 },
   label: {
     marginTop: 8,
     marginBottom: 2,
