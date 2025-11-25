@@ -9,11 +9,21 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useTheme, Text } from "react-native-paper";
 
-import DefaultHeaderRight from "@/app/(drawer)/_headers/DefaultHeaderRight";
+import DefaultHeaderRight from "@/app/(drawer)/headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
   TimetableHeaderRight,
-} from "@/app/(drawer)/_headers/timetable";
+} from "@/app/(drawer)/headers/timetable";
+
+// explicit tab → route mapping so TypeScript knows the exact route literals
+const TAB_ROUTES = {
+  news: "/(drawer)/(tabs)/news",
+  uni: "/(drawer)/(tabs)/uni",
+  timetable: "/(drawer)/(tabs)/timetable",
+  chat: "/(drawer)/(tabs)/chat",
+} as const;
+
+type TabKey = keyof typeof TAB_ROUTES;
 
 export default function DrawerLayout() {
   const router = useRouter();
@@ -23,7 +33,14 @@ export default function DrawerLayout() {
 
   // which tab is currently active? (news, uni, timetable, chat)
   const segments = useSegments();
-  const currentTab = (segments[segments.length - 1] ?? "") as string;
+  const lastSegment = (segments[segments.length - 1] ?? "") as string;
+
+  // ensure we always end up with a valid TabKey (fallback: "news")
+  const currentTab: TabKey = (["news", "uni", "timetable", "chat"].includes(
+    lastSegment
+  )
+    ? lastSegment
+    : "news") as TabKey;
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -42,8 +59,8 @@ export default function DrawerLayout() {
 
   // "Zurück" → always go back to the currently open tab page
   const goBackToTabs = () => {
-    // e.g. "/(drawer)/(tabs)/timetable"
-    router.navigate("/(drawer)/(tabs)/" + (currentTab || "news"));
+    const route = TAB_ROUTES[currentTab] ?? TAB_ROUTES.news;
+    router.navigate(route);
   };
 
   return (
@@ -146,7 +163,7 @@ export default function DrawerLayout() {
 
       {/* HIDDEN: Stundenplan-Einstellungen (only via timetable menu) */}
       <Drawer.Screen
-        name="_settings/timetable"
+        name="settings/timetable"
         options={{
           drawerItemStyle: { display: "none" },
           title: "Stundenplan-Einstellungen",

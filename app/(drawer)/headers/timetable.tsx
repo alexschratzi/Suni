@@ -46,7 +46,7 @@ export function TimetableHeaderRight() {
 
   const goToCalendarSettings = () => {
     closeMenu();
-    router.push("/(drawer)/_settings/timetable");
+    router.push("/(drawer)/settings/timetable");
   };
 
   const goToGeneralSettings = () => {
