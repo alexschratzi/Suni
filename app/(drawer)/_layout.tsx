@@ -1,17 +1,19 @@
 // app/(drawer)/_layout.tsx
 import React, { useEffect, useState } from "react";
+import { Pressable } from "react-native";
 import { Drawer } from "expo-router/drawer";
 import { useRouter, useSegments } from "expo-router";
+import { DrawerToggleButton } from "@react-navigation/drawer";
+import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useTheme, Text } from "react-native-paper";
-import { DrawerToggleButton } from "@react-navigation/drawer";
 
-import DefaultHeaderRight from "./headers/DefaultHeader";
+import DefaultHeaderRight from "@/app/(drawer)/_headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
   TimetableHeaderRight,
-} from "./headers/timetable";
+} from "@/app/(drawer)/_headers/timetable";
 
 export default function DrawerLayout() {
   const router = useRouter();
@@ -19,6 +21,7 @@ export default function DrawerLayout() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
+  // which tab is currently active? (news, uni, timetable, chat)
   const segments = useSegments();
   const currentTab = (segments[segments.length - 1] ?? "") as string;
 
@@ -37,6 +40,12 @@ export default function DrawerLayout() {
 
   if (!ready || !user) return null;
 
+  // "Zurück" → always go back to the currently open tab page
+  const goBackToTabs = () => {
+    // e.g. "/(drawer)/(tabs)/timetable"
+    router.navigate("/(drawer)/(tabs)/" + (currentTab || "news"));
+  };
+
   return (
     <Drawer
       screenOptions={{
@@ -47,14 +56,14 @@ export default function DrawerLayout() {
         drawerStyle: { backgroundColor: theme.colors.surface },
         drawerActiveTintColor: theme.colors.primary,
         drawerInactiveTintColor: theme.colors.onSurfaceVariant,
-        // drawer button on the left for all screens
-        headerLeft: (props) => <DrawerToggleButton {...props} />,
       }}
     >
-      {/* Home: Tabs unten, Header oben vom Drawer */}
+      {/* MAIN APP (tabs) – hidden from drawer */}
       <Drawer.Screen
         name="(tabs)"
         options={{
+          drawerItemStyle: { display: "none" },
+          headerLeft: (props) => <DrawerToggleButton {...props} />,
           headerTitle: () =>
             currentTab === "timetable" ? (
               <TimetableHeaderTitle />
@@ -75,54 +84,114 @@ export default function DrawerLayout() {
         }}
       />
 
-      {/* Profil im Seitenmenü */}
+      {/* VISIBLE IN DRAWER: Profil */}
       <Drawer.Screen
         name="profile"
         options={{
           title: "Profil",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
         }}
       />
 
-      {/* To-Dos im Seitenmenü */}
+      {/* VISIBLE IN DRAWER: To-Dos */}
       <Drawer.Screen
         name="todos"
         options={{
           title: "To-Dos",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
         }}
       />
 
-      {/* Globale Einstellungen im Seitenmenü */}
+      {/* VISIBLE IN DRAWER: Einstellungen (global_settings) */}
       <Drawer.Screen
         name="global_settings"
         options={{
           title: "Einstellungen",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
         }}
       />
 
-      {/* Stundenplan-Einstellungen (unsichtbar im Menü) */}
+      {/* HIDDEN: Stundenplan-Einstellungen (only via timetable menu) */}
       <Drawer.Screen
-        name="settings/timetable" // app/(drawer)/settings/timetable.tsx
+        name="_settings/timetable"
         options={{
           drawerItemStyle: { display: "none" },
           title: "Stundenplan-Einstellungen",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
         }}
       />
 
-      {/* Logout als Menüpunkt */}
-      <Drawer.Screen
-        name="logout"
-        options={{
-          title: "Logout",
-          headerShown: false,
-        }}
-      />
-
-      {/* Reply bleibt unsichtbar (nur per Navigation erreichbar) */}
+      {/* HIDDEN: Reply (internal) */}
       <Drawer.Screen
         name="reply"
         options={{
           drawerItemStyle: { display: "none" },
           title: "Antwort",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
+        }}
+      />
+
+      {/* VISIBLE IN DRAWER: Logout */}
+      <Drawer.Screen
+        name="logout"
+        options={{
+          title: "Logout",
+          headerShown: false,
         }}
       />
     </Drawer>
