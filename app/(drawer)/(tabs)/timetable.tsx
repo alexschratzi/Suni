@@ -224,6 +224,12 @@ export default function TimetableScreen() {
     [baseMonday, weekOffset]
   );
 
+  useEffect(() => {
+  const mondayIso = fmtYMD(weekStart); // "YYYY-MM-DD"
+  router.setParams({ currentMonday: mondayIso });
+}, [weekStart, router]);
+
+
   const initialDate = fmtYMD(weekStart);
   const minDate = fmtYMD(addWeeks(baseMonday, -52));
   const maxDate = fmtYMD(addWeeks(baseMonday, 52));

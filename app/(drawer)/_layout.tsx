@@ -4,20 +4,14 @@ import { Drawer } from "expo-router/drawer";
 import { useRouter, useSegments } from "expo-router";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../../firebase";
+import { useTheme, Text } from "react-native-paper";
 import { DrawerToggleButton } from "@react-navigation/drawer";
-import { Pressable } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "react-native-paper";
 
-// All possible settings routes we navigate to
-type SettingsRoute =
-  | "/(drawer)/settings/timetable"   // tab-spezifisch
-  | "/(drawer)/global_settings";     // global fallback
-
-type SettingsConfig = {
-  path: SettingsRoute;
-  label: string;
-};
+import DefaultHeaderRight from "./headers/DefaultHeader";
+import {
+  TimetableHeaderTitle,
+  TimetableHeaderRight,
+} from "./headers/timetable";
 
 export default function DrawerLayout() {
   const router = useRouter();
@@ -25,32 +19,8 @@ export default function DrawerLayout() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  // Aktuellen Tab anhand der Segmente bestimmen
   const segments = useSegments();
-  // Beispiel: / (drawer) / (tabs) / timetable -> "timetable" ist das letzte Segment
   const currentTab = (segments[segments.length - 1] ?? "") as string;
-
-  // Mapping: Tab-Name -> Settings-Route + Label
-  const settingsByTab: Record<string, SettingsConfig> = {
-    timetable: {
-      path: "/(drawer)/settings/timetable",
-      label: "Stundenplan-Einstellungen öffnen",
-    },
-    // Wenn du später eigene Settings-Seiten baust:
-    // chat: { path: "/(drawer)/Settings/chat", label: "Chat-Einstellungen öffnen" },
-    // news: { path: "/(drawer)/Settings/news", label: "News-Einstellungen öffnen" },
-    // uni: { path: "/(drawer)/Settings/uni", label: "Uni-Einstellungen öffnen" },
-  };
-
-  // Fallback: globale Einstellungen
-  const defaultSettings: SettingsConfig = {
-    path: "/(drawer)/global_settings",   // <- deine globale Settings-Seite
-    label: "Einstellungen öffnen",
-  };
-
-  const tabSpecificSettings = settingsByTab[currentTab];
-  const { path: settingsPath, label: settingsLabel } =
-    tabSpecificSettings ?? defaultSettings;
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -77,28 +47,31 @@ export default function DrawerLayout() {
         drawerStyle: { backgroundColor: theme.colors.surface },
         drawerActiveTintColor: theme.colors.primary,
         drawerInactiveTintColor: theme.colors.onSurfaceVariant,
+        // drawer button on the left for all screens
+        headerLeft: (props) => <DrawerToggleButton {...props} />,
       }}
     >
       {/* Home: Tabs unten, Header oben vom Drawer */}
       <Drawer.Screen
         name="(tabs)"
         options={{
-          title: "Suni",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push(settingsPath)}
-              style={{ paddingHorizontal: 16 }}
-              accessibilityRole="button"
-              aria-label={settingsLabel}
-            >
-              <Ionicons
-                name="settings-outline"
-                size={24}
-                color={theme.colors.onSurface}
-              />
-            </Pressable>
-          ),
+          headerTitle: () =>
+            currentTab === "timetable" ? (
+              <TimetableHeaderTitle />
+            ) : (
+              <Text
+                variant="titleMedium"
+                style={{ color: theme.colors.onSurface }}
+              >
+                Suni
+              </Text>
+            ),
+          headerRight: () =>
+            currentTab === "timetable" ? (
+              <TimetableHeaderRight />
+            ) : (
+              <DefaultHeaderRight />
+            ),
         }}
       />
 
@@ -107,7 +80,6 @@ export default function DrawerLayout() {
         name="profile"
         options={{
           title: "Profil",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
 
@@ -116,26 +88,23 @@ export default function DrawerLayout() {
         name="todos"
         options={{
           title: "To-Dos",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
 
       {/* Globale Einstellungen im Seitenmenü */}
       <Drawer.Screen
-        name="global_settings"  // <-- muss Dateiname matchen: app/(drawer)/global_settings.tsx
+        name="global_settings"
         options={{
           title: "Einstellungen",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
 
       {/* Stundenplan-Einstellungen (unsichtbar im Menü) */}
       <Drawer.Screen
-        name="settings/timetable" // <-- muss Dateiname matchen: app/(drawer)/Settings/timetable.tsx
+        name="settings/timetable" // app/(drawer)/settings/timetable.tsx
         options={{
           drawerItemStyle: { display: "none" },
           title: "Stundenplan-Einstellungen",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
 
@@ -154,7 +123,6 @@ export default function DrawerLayout() {
         options={{
           drawerItemStyle: { display: "none" },
           title: "Antwort",
-          headerLeft: (props) => <DrawerToggleButton {...props} />,
         }}
       />
     </Drawer>
