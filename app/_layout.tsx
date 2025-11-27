@@ -6,6 +6,8 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../firebase"; // ggf. Pfad anpassen
 import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ✅ richtiger Pfad/Name
 import { StatusBar } from "expo-status-bar";
+import "../i18n/i18n";
+
 
 
 export default function RootLayout() {

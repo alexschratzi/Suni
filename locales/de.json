@@ -1,0 +1,91 @@
+{
+  "settings": {
+    "appearanceTitle": "Erscheinungsbild",
+    "languageTitle": "Sprache",
+    "theme": {
+      "system": {
+        "title": "System",
+        "description": "Automatisch dem Gerätestil folgen"
+      },
+      "light": {
+        "title": "Hell",
+        "description": "Helles Erscheinungsbild verwenden"
+      },
+      "dark": {
+        "title": "Dunkel",
+        "description": "Dunkles Erscheinungsbild verwenden"
+      },
+      "activeLabel": "Aktiv: {{mode}}",
+      "activeDark": "Dunkel",
+      "activeLight": "Hell",
+      "followSystem": " (folgt System)"
+    },
+    "language": {
+      "german": "Deutsch",
+      "english": "Englisch",
+      "info": "Die Spracheinstellung wird mit deinem Konto synchronisiert."
+    }
+  },
+
+  "chat": {
+    "tabs": {
+      "rooms": "Chaträume",
+      "direct": "Direkt"
+    },
+    "search": {
+      "roomsPlaceholder": "Räume suchen…",
+      "directPlaceholder": "Direktnachrichten suchen…"
+    },
+    "rooms": {
+      "salzburg": {
+        "title": "Salzburg",
+        "subtitle": "Allgemeiner Chat für Salzburg"
+      },
+      "oesterreich": {
+        "title": "Österreich",
+        "subtitle": "News & Events"
+      },
+      "wirtschaft": {
+        "title": "Wirtschaft",
+        "subtitle": "Studium & Praxis"
+      }
+    },
+    "empty": {
+      "roomsTitle": "Keine Chaträume gefunden",
+      "roomsSubtitle": "Passe die Suche an oder erstelle später neue Räume.",
+      "directTitle": "Keine Direktnachrichten",
+      "directSubtitle": "Starte eine neue Unterhaltung."
+    },
+    "loadingMessages": "Lade Nachrichten…",
+    "justNow": "Gerade eben",
+    "inputPlaceholder": "Nachricht eingeben…",
+    "send": "Senden",
+    "direct": {
+      "addFriend": "Freund hinzufügen",
+      "showRequests": "Anfragen anzeigen"
+    }
+  },
+
+  "auth": {
+    "title": "📱 Telefon-Login",
+    "loading": "Prüfe Login ...",
+    "phonePlaceholder": "+43 ...",
+    "sendCode": "Code senden",
+    "testLogin": "🧪 Test Login",
+    "codePlaceholder": "SMS-Code",
+    "usernamePlaceholder": "Benutzername",
+    "confirm": "Bestätigen",
+
+    "error": "Fehler",
+    "phoneFormat": "Bitte Telefonnummer im Format +43 ... eingeben.",
+    "codeSentTitle": "Code gesendet",
+    "codeSentMsg": "Bitte den SMS-Code eingeben!",
+    "noConfirmation": "Kein Bestätigungsvorgang aktiv!",
+    "enterUsername": "Bitte Benutzernamen eingeben.",
+    "usernameTaken": "Benutzername ist schon vergeben!",
+    "successTitle": "Erfolg!",
+    "successMsg": "Login erfolgreich!",
+    "testSuccessTitle": "Testmodus aktiviert",
+    "testSuccessMsg": "Du bist jetzt als Test-User eingeloggt!"
+  }
+}

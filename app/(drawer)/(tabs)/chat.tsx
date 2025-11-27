@@ -33,6 +33,9 @@ import {
   serverTimestamp,
   doc,
 } from "firebase/firestore";
+import { where } from "firebase/firestore/lite";
+import { useTranslation } from "react-i18next";
+
 import { db, auth } from "../../../firebase";
 
 const ROOMS = {
@@ -53,6 +56,9 @@ type Direct = {
 export default function ChatScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
+
+  const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
   // Top-Segmente & Suche
   const [tab, setTab] = useState<TabKey>("rooms");
@@ -70,11 +76,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
 
-  // Demo-Direktnachrichten (später Firestore ersetzen)
-  const [directs] = useState<Direct[]>([
-    { id: "dm_anna", displayName: "Anna Wallner", last: "Bis später!" },
-    { id: "dm_max", displayName: "Max Huber", last: "Senden wir um 14:00?" },
-  ]);
+  const [directs, setDirects] = useState<Direct[]>([]);
 
   // Username laden
   useEffect(() => {
@@ -101,12 +103,50 @@ export default function ChatScreen() {
     return () => unsubscribe();
   }, [room]);
 
+  // Direktnachrichten-Threads laden
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    const q = query(
+      collection(db, "dm_threads"),
+      where("users", "array-contains", uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const arr: Direct[] = snap.docs.map((d) => {
+        const data = d.data();
+        const otherUid = data.users.find((u: string) => u !== uid);
+        return {
+          id: d.id,
+          displayName: otherUid,
+          last: data.lastMessage ?? "",
+        };
+      });
+      setDirects(arr);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Filter
   const filteredRooms = useMemo(() => {
     const list: { key: RoomKey; title: string; subtitle: string }[] = [
-      { key: "salzburg", title: "Salzburg", subtitle: "Allgemeiner Chat für Salzburg" },
-      { key: "oesterreich", title: "Österreich", subtitle: "News & Events" },
-      { key: "wirtschaft", title: "Wirtschaft", subtitle: "Studium & Praxis" },
+      {
+        key: "salzburg",
+        title: t("chat.rooms.salzburg.title"),
+        subtitle: t("chat.rooms.salzburg.subtitle"),
+      },
+      {
+        key: "oesterreich",
+        title: t("chat.rooms.oesterreich.title"),
+        subtitle: t("chat.rooms.oesterreich.subtitle"),
+      },
+      {
+        key: "wirtschaft",
+        title: t("chat.rooms.wirtschaft.title"),
+        subtitle: t("chat.rooms.wirtschaft.subtitle"),
+      },
     ];
     const q = search.trim().toLowerCase();
     if (!q) return list;
@@ -115,7 +155,7 @@ export default function ChatScreen() {
         r.title.toLowerCase().includes(q) ||
         r.subtitle.toLowerCase().includes(q)
     );
-  }, [search]);
+  }, [search, t]);
 
   const filteredDirects = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -143,7 +183,7 @@ export default function ChatScreen() {
   };
 
   const uploadAttachment = async () => {
-    console.log("📎 Attachment hochladen…");
+    console.log("📎 Attachment upload…");
   };
 
   const openThread = (message: any) => {
@@ -166,13 +206,17 @@ export default function ChatScreen() {
         value={tab}
         onValueChange={(v) => setTab(v as TabKey)}
         buttons={[
-          { value: "rooms", label: "Chaträume", icon: "chat" },
-          { value: "direct", label: "Direkt", icon: "account" },
+          { value: "rooms", label: t("chat.tabs.rooms"), icon: "chat" },
+          { value: "direct", label: t("chat.tabs.direct"), icon: "account" },
         ]}
         style={styles.segment}
       />
       <Searchbar
-        placeholder={tab === "rooms" ? "Räume suchen…" : "Direktnachrichten suchen…"}
+        placeholder={
+          tab === "rooms"
+            ? t("chat.search.roomsPlaceholder")
+            : t("chat.search.directPlaceholder")
+        }
         value={search}
         onChangeText={setSearch}
         style={[styles.search, { backgroundColor: theme.colors.surfaceVariant }]}
@@ -187,13 +231,18 @@ export default function ChatScreen() {
     <FlatList
       data={filteredRooms}
       keyExtractor={(it) => it.key}
-      ItemSeparatorComponent={() => <Divider style={{ backgroundColor: theme.colors.outlineVariant }} />}
+      ItemSeparatorComponent={() => (
+        <Divider style={{ backgroundColor: theme.colors.outlineVariant }} />
+      )}
       contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
       renderItem={({ item }) => (
         <Card
           mode="elevated"
           onPress={() => setRoom(item.key)}
-          style={{ marginBottom: 12, backgroundColor: theme.colors.elevation.level2 }}
+          style={{
+            marginBottom: 12,
+            backgroundColor: theme.colors.elevation.level2,
+          }}
         >
           <Card.Title
             title={item.title}
@@ -210,7 +259,11 @@ export default function ChatScreen() {
             )}
             right={(props) => (
               <View style={{ paddingRight: 8, justifyContent: "center" }}>
-                <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceVariant} />
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={theme.colors.onSurfaceVariant}
+                />
               </View>
             )}
           />
@@ -218,8 +271,8 @@ export default function ChatScreen() {
       )}
       ListEmptyComponent={
         <Empty
-          title="Keine Chaträume gefunden"
-          subtitle="Passe die Suche an oder erstelle später neue Räume."
+          title={t("chat.empty.roomsTitle")}
+          subtitle={t("chat.empty.roomsSubtitle")}
         />
       }
     />
@@ -230,12 +283,21 @@ export default function ChatScreen() {
       keyboardVerticalOffset={110}
     >
       {/* Raum-Header */}
-      <View style={[styles.roomHeader, { borderBottomColor: theme.colors.outlineVariant }]}>
+      <View
+        style={[
+          styles.roomHeader,
+          { borderBottomColor: theme.colors.outlineVariant },
+        ]}
+      >
         <TouchableOpacity onPress={() => setRoom(null)} style={styles.iconBtn}>
           <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
         </TouchableOpacity>
         <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
-          {room === "salzburg" ? "Salzburg" : room === "oesterreich" ? "Österreich" : "Wirtschaft"}
+          {room === "salzburg"
+            ? t("chat.rooms.salzburg.title")
+            : room === "oesterreich"
+            ? t("chat.rooms.oesterreich.title")
+            : t("chat.rooms.wirtschaft.title")}
         </Text>
       </View>
 
@@ -243,25 +305,36 @@ export default function ChatScreen() {
       {loadingMsgs ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>Lade Nachrichten…</Text>
+          <Text
+            style={{
+              marginTop: 8,
+              color: theme.colors.onSurfaceVariant,
+            }}
+          >
+            {t("chat.loadingMessages")}
+          </Text>
         </View>
       ) : (
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 }}
+          contentContainerStyle={{
+            paddingHorizontal: 12,
+            paddingTop: 8,
+            paddingBottom: 8,
+          }}
           renderItem={({ item }) => {
             const date = item.timestamp?.toDate
               ? item.timestamp
                   .toDate()
-                  .toLocaleString("de-DE", {
+                  .toLocaleString(locale, {
                     day: "2-digit",
                     month: "2-digit",
                     year: "numeric",
                     hour: "2-digit",
                     minute: "2-digit",
                   })
-              : "Gerade eben";
+              : t("chat.justNow");
             return (
               <TouchableOpacity onPress={() => openThread(item)}>
                 <View
@@ -273,10 +346,19 @@ export default function ChatScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.msgMeta, { color: theme.colors.onSurfaceVariant }]}>
+                  <Text
+                    style={[
+                      styles.msgMeta,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
                     {item.username || "???"} • {date}
                   </Text>
-                  <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>{item.text}</Text>
+                  <Text
+                    style={[styles.msgText, { color: theme.colors.onSurface }]}
+                  >
+                    {item.text}
+                  </Text>
                 </View>
               </TouchableOpacity>
             );
@@ -285,7 +367,12 @@ export default function ChatScreen() {
       )}
 
       {/* Eingabezeile */}
-      <View style={[styles.inputRow, { borderTopColor: theme.colors.outlineVariant }]}>
+      <View
+        style={[
+          styles.inputRow,
+          { borderTopColor: theme.colors.outlineVariant },
+        ]}
+      >
         <TouchableOpacity onPress={uploadAttachment} style={styles.attachBtn}>
           <Ionicons name="attach" size={22} color={theme.colors.primary} />
         </TouchableOpacity>
@@ -300,7 +387,7 @@ export default function ChatScreen() {
               backgroundColor: theme.colors.surface,
             },
           ]}
-          placeholder="Nachricht eingeben…"
+          placeholder={t("chat.inputPlaceholder")}
           placeholderTextColor={theme.colors.onSurfaceVariant}
           value={input}
           onChangeText={setInput}
@@ -316,7 +403,7 @@ export default function ChatScreen() {
           style={{ marginLeft: 6 }}
           contentStyle={{ paddingHorizontal: 14, height: 40 }}
         >
-          Senden
+          {t("chat.send")}
         </Button>
       </View>
     </KeyboardAvoidingView>
@@ -324,41 +411,76 @@ export default function ChatScreen() {
 
   // Ansicht 2: Direktnachrichten
   const DirectView = (
-    <FlatList
-      data={filteredDirects}
-      keyExtractor={(it) => it.id}
-      contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 24 }}
-      ItemSeparatorComponent={() => <Divider style={{ backgroundColor: theme.colors.outlineVariant }} />}
-      renderItem={({ item }) => (
-        <List.Item
-          title={item.displayName}
-          description={item.last ?? ""}
-          titleStyle={{ color: theme.colors.onSurface }}
-          descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-          left={(props) => (
-            <Avatar.Text
-              {...props}
-              size={40}
-              label={initials(item.displayName)}
-              color={theme.colors.onPrimary}
-              style={{ backgroundColor: theme.colors.primary }}
-            />
-          )}
-          right={(props) => (
-            <View style={{ justifyContent: "center" }}>
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceVariant} />
-            </View>
-          )}
-          onPress={() => {
-            // TODO: Navigiere in DM-Thread; z. B. / (drawer) / reply?dmId=...
-            // router.push({ pathname: "/(drawer)/reply", params: { dmId: item.id } });
-          }}
-        />
-      )}
-      ListEmptyComponent={
-        <Empty title="Keine Direktnachrichten" subtitle="Starte eine neue Unterhaltung." />
-      }
-    />
+    <View style={{ flex: 1 }}>
+      {/* Button: Freund hinzufügen */}
+      <Button
+        mode="contained"
+        icon="account-plus"
+        style={{ marginHorizontal: 12, marginBottom: 12, marginTop: 8 }}
+        onPress={() => router.push("../addFriends")}
+      >
+        {t("chat.direct.addFriend")}
+      </Button>
+
+      <Button
+        mode="text"
+        onPress={() => router.push("../../friendRequests")}
+        style={{ marginHorizontal: 12, marginBottom: 12 }}
+      >
+        {t("chat.direct.showRequests")}
+      </Button>
+
+      <FlatList
+        data={filteredDirects}
+        keyExtractor={(it) => it.id}
+        contentContainerStyle={{
+          paddingHorizontal: 12,
+          paddingTop: 8,
+          paddingBottom: 24,
+        }}
+        ItemSeparatorComponent={() => (
+          <Divider style={{ backgroundColor: theme.colors.outlineVariant }} />
+        )}
+        renderItem={({ item }) => (
+          <List.Item
+            title={item.displayName}
+            description={item.last ?? ""}
+            titleStyle={{ color: theme.colors.onSurface }}
+            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+            left={(props) => (
+              <Avatar.Text
+                {...props}
+                size={40}
+                label={initials(item.displayName)}
+                color={theme.colors.onPrimary}
+                style={{ backgroundColor: theme.colors.primary }}
+              />
+            )}
+            right={() => (
+              <View style={{ justifyContent: "center" }}>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={theme.colors.onSurfaceVariant}
+                />
+              </View>
+            )}
+            onPress={() => {
+              router.push({
+                pathname: "/(drawer)/reply",
+                params: { dmId: item.id },
+              });
+            }}
+          />
+        )}
+        ListEmptyComponent={
+          <Empty
+            title={t("chat.empty.directTitle")}
+            subtitle={t("chat.empty.directSubtitle")}
+          />
+        }
+      />
+    </View>
   );
 
   return (
@@ -380,14 +502,25 @@ function Empty({ title, subtitle }: { title: string; subtitle?: string }) {
   const theme = useTheme();
   return (
     <View style={styles.empty}>
-      <Ionicons name="chatbubble-ellipses-outline" size={40} color={theme.colors.onSurfaceVariant} />
-      <Text variant="titleMedium" style={{ color: theme.colors.onSurface, marginTop: 8 }}>
+      <Ionicons
+        name="chatbubble-ellipses-outline"
+        size={40}
+        color={theme.colors.onSurfaceVariant}
+      />
+      <Text
+        variant="titleMedium"
+        style={{ color: theme.colors.onSurface, marginTop: 8 }}
+      >
         {title}
       </Text>
       {!!subtitle && (
         <Text
           variant="bodySmall"
-          style={{ color: theme.colors.onSurfaceVariant, marginTop: 4, textAlign: "center" }}
+          style={{
+            color: theme.colors.onSurfaceVariant,
+            marginTop: 4,
+            textAlign: "center",
+          }}
         >
           {subtitle}
         </Text>

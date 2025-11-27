@@ -1,0 +1,91 @@
+{
+  "settings": {
+    "appearanceTitle": "Appearance",
+    "languageTitle": "Language",
+    "theme": {
+      "system": {
+        "title": "System",
+        "description": "Follow device theme automatically"
+      },
+      "light": {
+        "title": "Light",
+        "description": "Use light appearance"
+      },
+      "dark": {
+        "title": "Dark",
+        "description": "Use dark appearance"
+      },
+      "activeLabel": "Active: {{mode}}",
+      "activeDark": "Dark",
+      "activeLight": "Light",
+      "followSystem": " (follows system)"
+    },
+    "language": {
+      "german": "German",
+      "english": "English",
+      "info": "Language setting is synced with your account."
+    }
+  },
+
+  "chat": {
+    "tabs": {
+      "rooms": "Rooms",
+      "direct": "Direct"
+    },
+    "search": {
+      "roomsPlaceholder": "Search rooms…",
+      "directPlaceholder": "Search direct messages…"
+    },
+    "rooms": {
+      "salzburg": {
+        "title": "Salzburg",
+        "subtitle": "General chat for Salzburg"
+      },
+      "oesterreich": {
+        "title": "Austria",
+        "subtitle": "News & events"
+      },
+      "wirtschaft": {
+        "title": "Business",
+        "subtitle": "Studies & practice"
+      }
+    },
+    "empty": {
+      "roomsTitle": "No chat rooms found",
+      "roomsSubtitle": "Adjust the search or create new rooms later.",
+      "directTitle": "No direct messages",
+      "directSubtitle": "Start a new conversation."
+    },
+    "loadingMessages": "Loading messages…",
+    "justNow": "Just now",
+    "inputPlaceholder": "Type a message…",
+    "send": "Send",
+    "direct": {
+      "addFriend": "Add friend",
+      "showRequests": "Show requests"
+    }
+  },
+
+  "auth": {
+    "title": "📱 Phone Login",
+    "loading": "Checking login ...",
+    "phonePlaceholder": "+43 ...",
+    "sendCode": "Send code",
+    "testLogin": "🧪 Test Login",
+    "codePlaceholder": "SMS code",
+    "usernamePlaceholder": "Username",
+    "confirm": "Confirm",
+
+    "error": "Error",
+    "phoneFormat": "Please enter a phone number in the format +43 ...",
+    "codeSentTitle": "Code sent",
+    "codeSentMsg": "Please enter the SMS code!",
+    "noConfirmation": "No active verification!",
+    "enterUsername": "Please enter a username.",
+    "usernameTaken": "Username already taken!",
+    "successTitle": "Success!",
+    "successMsg": "Login successful!",
+    "testSuccessTitle": "Test mode activated",
+    "testSuccessMsg": "You are now logged in as a test user!"
+  }
+}
