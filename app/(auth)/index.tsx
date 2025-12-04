@@ -1,9 +1,9 @@
 // app/(auth)/index.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { signInWithPhoneNumber, signInAnonymously } from "firebase/auth";
-import { auth } from "../../firebase";
+import { auth, db, firebaseConfig } from "../../firebase";
 import {
   doc,
   getDoc,
@@ -14,7 +14,6 @@ import {
   getDocs,
   addDoc,
 } from "firebase/firestore";
-import { db } from "../../firebase";
 import {
   Text,
   Button,
@@ -22,6 +21,7 @@ import {
   ActivityIndicator,
 } from "react-native-paper";
 import { useTranslation } from "react-i18next";
+import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
 
 // @ts-ignore
 declare global {
@@ -41,6 +41,9 @@ export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
 
+  // Recaptcha für Mobile
+  const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal | null>(null);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -57,46 +60,59 @@ export default function LoginScreen() {
 
   const sendCode = async () => {
     try {
-      if (!phone.startsWith("+")) {
+      const cleanPhone = phone.replace(/\s+/g, "");
+
+      if (!cleanPhone.startsWith("+")) {
         Alert.alert(t("auth.error"), t("auth.phoneFormat"));
         return;
       }
 
       let confirmationResult;
 
-    if (Platform.OS === "web") {
-      // @ts-ignore
-      const { RecaptchaVerifier } = await import("firebase/auth");
-
-      const container = document.getElementById("recaptcha-container");
-      if (!container) {
-        throw new Error("recaptcha-container not found in DOM");
-      }
-
-      if (!window.recaptchaVerifier) {
+      if (Platform.OS === "web") {
+        // Dynamischer Import für Web
         // @ts-ignore
-        window.recaptchaVerifier = new RecaptchaVerifier(
+        const { RecaptchaVerifier } = await import("firebase/auth");
+
+        const container = document.getElementById("recaptcha-container");
+        if (!container) {
+          throw new Error("recaptcha-container not found in DOM");
+        }
+
+        if (!window.recaptchaVerifier) {
+          // @ts-ignore
+          window.recaptchaVerifier = new RecaptchaVerifier(
+            auth, // v10: zuerst Auth
+            container, // dann Container
+            { size: "invisible" }
+          );
+        }
+
+        confirmationResult = await signInWithPhoneNumber(
           auth,
-          container,
-          { size: "invisible" }
+          cleanPhone,
+          window.recaptchaVerifier
         );
-      }
-
-      confirmationResult = await signInWithPhoneNumber(
-        auth,
-        phone,
-        window.recaptchaVerifier
-      );
-
       } else {
-        confirmationResult = await signInWithPhoneNumber(auth, phone);
+        // Mobile (Expo / iOS / Android) mit FirebaseRecaptchaVerifierModal
+        if (!recaptchaVerifier.current) {
+          Alert.alert(t("auth.error"), "reCAPTCHA nicht bereit.");
+          return;
+        }
+
+        confirmationResult = await signInWithPhoneNumber(
+          auth,
+          cleanPhone,
+          // @ts-ignore – Modal liefert intern den richtigen Verifier
+          recaptchaVerifier.current
+        );
       }
 
       setConfirmation(confirmationResult);
       Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
     } catch (err: any) {
       console.log("sendCode error:", err);
-      Alert.alert(t("auth.error"), err.message);
+      Alert.alert(t("auth.error"), err.message || String(err));
     }
   };
 
@@ -108,10 +124,10 @@ export default function LoginScreen() {
       }
 
       const userCred = await confirmation.confirm(code);
-      const userRef = doc(db, "users", userCred.user.uid);
+      const uid = userCred.user.uid;
+      const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
 
-      // Neues Profil?
       if (!snap.exists()) {
         if (!username.trim()) {
           Alert.alert(t("auth.error"), t("auth.enterUsername"));
@@ -131,11 +147,11 @@ export default function LoginScreen() {
 
         await addDoc(collection(db, "usernames"), {
           username: username.trim(),
-          uid: userCred.user.uid,
+          uid,
         });
 
         await setDoc(userRef, {
-          phone,
+          phone: phone.replace(/\s+/g, ""),
           username: username.trim(),
           role: "student",
         });
@@ -145,7 +161,7 @@ export default function LoginScreen() {
       router.replace("../(tabs)");
     } catch (err: any) {
       console.log("confirmCode error:", err);
-      Alert.alert(t("auth.error"), err.message);
+      Alert.alert(t("auth.error"), err.message || String(err));
     }
   };
 
@@ -155,7 +171,7 @@ export default function LoginScreen() {
       console.log("Test-User:", userCred.user.uid);
       Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
     } catch (err: any) {
-      Alert.alert(t("auth.error"), err.message);
+      Alert.alert(t("auth.error"), err.message || String(err));
     }
   };
 
@@ -190,7 +206,16 @@ export default function LoginScreen() {
         { backgroundColor: theme.colors.background },
       ]}
     >
-      {/* Web Recaptcha */}
+      {/* Recaptcha für Mobile */}
+      {Platform.OS !== "web" && (
+        <FirebaseRecaptchaVerifierModal
+          ref={recaptchaVerifier}
+          firebaseConfig={firebaseConfig}
+          attemptInvisibleVerification
+        />
+      )}
+
+      {/* Recaptcha für Web */}
       {Platform.OS === "web" &&
         typeof document !== "undefined" &&
         React.createElement("div", { id: "recaptcha-container" })}
