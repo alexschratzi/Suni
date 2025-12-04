@@ -1,4 +1,37 @@
-// components/chat/RoomMessages.tsx
+/**
+ * RoomMessages.tsx
+ * -----------------------------------------------
+ * Zeigt alle Nachrichten eines Chat-Raums (Salzburg, Österreich, Wirtschaft).
+ *
+ * Enthält:
+ *  - Back-Button
+ *  - Nachrichtenliste (live aus Firestore)
+ *  - Reply-Thread-Öffnen via router.push()
+ *  - Eingabezeile (TextInput + Send)
+ *
+ * Props:
+ *  - room                → aktueller Raum
+ *  - locale              → Datumsformat abhängig von der Sprache
+ *  - messages            → Nachrichtenliste
+ *  - loading             → ob die Nachrichten geladen werden
+ *  - input, setInput     → Textinput State
+ *  - inputHeight         → dynamische Höhe
+ *  - sendMessage()       → Funktion aus ChatScreen
+ *  - onBack()            → Zurück zu den Räumen
+ *  - t                   → Übersetzer aus i18n
+ *  - theme               → Farben aus Paper
+ *  - router              → expo-router Instanz
+ *
+ * Wird verwendet in:
+ *  - ChatScreen.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - Nachrichten-Layout ändern → HIER
+ *  - Verhalten beim Reply → HIER (openThread)
+ *  - Neue Features wie Bilder/Dateien anhängen → im unteren Input-Bereich
+ *  - Sende-Logik bleibt in ChatScreen.tsx
+ */
+
 import React from "react";
 import {
   View,

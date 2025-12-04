@@ -1,4 +1,22 @@
-// components/chat/EmptyState.tsx
+/**
+ * EmptyState.tsx
+ * -----------------------------------------------
+ * Zeigt einen hübschen Placeholder an, wenn eine Liste leer ist
+ * (z. B. keine Nachrichten, keine Freunde, keine Räume).
+ *
+ * Props:
+ *  - title: Haupttext
+ *  - subtitle: Optionaler Zusatztext
+ *
+ * Wird verwendet in:
+ *  - DirectList.tsx
+ *  - RoomsList.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - Wenn du ein globales Empty-State-Design willst (Icons, Farben, Layout),
+ *    kannst du es zentral hier ändern.
+ */
+
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";

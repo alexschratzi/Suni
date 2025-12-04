@@ -1,4 +1,25 @@
-// components/chat/ChatHeader.tsx
+/**
+ * ChatHeader.tsx
+ * -----------------------------------------------
+ * Der obere Teil des Chat-Screens.
+ *
+ * Enthält:
+ *  - SegmentedButtons (Rooms ↔ Direktnachrichten)
+ *  - Suchleiste (Searchbar)
+ *
+ * Props:
+ *  - tab / setTab       → Welcher Tab aktiv ist
+ *  - search / setSearch → Suchstring
+ *
+ * Wird verwendet in:
+ *  - ChatScreen.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - Tabs anpassen oder neue Tabs hinzufügen → HIER
+ *  - Suchverhalten ändern → HIER
+ *  - Styling/Layout ändern → HIER
+ */
+
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { SegmentedButtons, Searchbar, useTheme } from "react-native-paper";

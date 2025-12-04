@@ -1,4 +1,27 @@
-// components/chat/DirectList.tsx
+/**
+ * DirectList.tsx
+ * -----------------------------------------------
+ * Liste aller Direktnachrichten (1:1 Chats).
+ *
+ * Enthält:
+ *  - "Freund hinzufügen"-Button
+ *  - "Freundschaftsanfragen anzeigen"-Button
+ *  - Liste der Direct-Messages (dm_threads)
+ *
+ * Props:
+ *  - directs: Gefilterte DM-Liste
+ *  - router: expo-router Instanz für Navigation
+ *
+ * Wird verwendet in:
+ *  - ChatScreen.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - Navigation zu Threads ändern → HIER (router.push)
+ *  - Anzeige/Design der DMs anpassen
+ *  - Freundeslogik erweitern → Buttons hier anpassen
+ *  - Initialen-Logik wird aus utils.ts importiert
+ */
+
 import React from "react";
 import { View } from "react-native";
 import { FlatList } from "react-native";

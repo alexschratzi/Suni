@@ -1,9 +1,35 @@
-// components/chat/ChatScreen.tsx
 /**
- * Haupt-Screen-Logik für den Chat:
- * - State (tab, search, room, messages, directs, input …)
- * - Firestore-Listener
- * - Auswahl, welche Unterkomponente (RoomsList, DirectList, RoomMessages) angezeigt wird
+ * ChatScreen.tsx
+ * -----------------------------------------------
+ * Zentrale Steuerlogik für das Chat-Modul.
+ *
+ * Enthält:
+ *  - Tab-Auswahl ("rooms" | "direct")
+ *  - Suchfunktion
+ *  - Firestore-Listener:
+ *      → Räume (messages_salzburg / messages_oesterreich / messages_wirtschaft)
+ *      → Direktnachrichten (dm_threads)
+ *  - UI-Auswahl:
+ *      → ChatHeader
+ *      → RoomsList
+ *      → DirectList
+ *      → RoomMessages
+ *
+ * Wichtig:
+ *  - KEINE UI-Elemente außer dem Container.
+ *  - Alle UI ist in Unterkomponenten ausgelagert.
+ *
+ * Wird verwendet in:
+ *  - app/(drawer)/(tabs)/chat.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - NEUE RÄUME hinzufügen → HIER:
+ *        const ROOMS = { ... }
+ *        filteredRooms (Liste anpassen)
+ *  - Direct-Chat-Daten erweitern → HIER im Directs-Listener
+ *  - Nachrichtensenden → sendMessage()
+ *  - Navigation zu Threads/Räumen → HIER
+ *  - Wenn zusätzliche Tab-Typen gewünscht → ChatHeader + State hier ändern
  */
 
 import * as React from "react";

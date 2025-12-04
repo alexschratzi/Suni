@@ -1,4 +1,22 @@
-// components/chat/RoomsList.tsx
+/**
+ * RoomsList.tsx
+ * -----------------------------------------------
+ * Zeigt alle öffentlichen Räume (Salzburg, Österreich, Wirtschaft).
+ *
+ * Props:
+ *  - rooms: Gefilterte Liste der Räume (aus ChatScreen)
+ *  - onSelect(roomKey): Wird aufgerufen, wenn ein Raum geöffnet wird
+ *
+ * Wird verwendet in:
+ *  - ChatScreen.tsx
+ *
+ * Änderungen / Erweiterungen:
+ *  - Wenn du neue Räume hinzufügen willst:
+ *      → NICHT hier, sondern in ChatScreen.tsx unter ROOMS + filteredRooms
+ *  - Styling/Design der Karten hier anpassen
+ *  - Weitere Infos zu einem Raum anzeigen → HIER
+ */
+
 import React from "react";
 import { View } from "react-native";
 import { FlatList } from "react-native";
