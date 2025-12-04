@@ -13,7 +13,7 @@ import DefaultHeaderRight from "@/app/(drawer)/headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
   TimetableHeaderRight,
-} from "@/app/(drawer)/headers/timetable";
+} from "@/app/(drawer)/headers/TimetableHeader";
 
 // explicit tab → route mapping so TypeScript knows the exact route literals
 const TAB_ROUTES = {
