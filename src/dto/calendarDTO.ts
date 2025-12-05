@@ -4,6 +4,7 @@ export interface CalendarEntryDTO {
     user_id: string
     title_short:string
     ical_id?:string
+    date: Date
 }
 
 export interface Calendar {

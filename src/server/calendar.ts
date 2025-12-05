@@ -6,12 +6,14 @@ const mockEntries: CalendarEntryDTO[] = [
     user_id: "1234",
     title: "Doctor appointment",
     title_short: "Doctor",
+    date: new Date(2025, 11, 24)
   },
   {
     id: "2",
     user_id: "1234",
     title: "Project meeting with team",
     title_short: "Meeting",
+    date: new Date(2025, 1, 24)
   },
 ];
 
@@ -32,6 +34,10 @@ export async function getCalendarById(id: number): Promise<Calendar> {
   // Optional: simulate network delay
   await delay(300);
   return mockCalendar;
+}
+
+export async function getCalendarByIdDate(id: number, dateFrom: Date, dateTo: Date) {
+    return mockCalendar.entries.filter(e => e.date >= dateFrom && e.date <= dateTo);
 }
 
 export interface SaveCalendarResponse {
