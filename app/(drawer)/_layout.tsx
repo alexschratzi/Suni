@@ -59,8 +59,7 @@ export default function DrawerLayout() {
 
   // "Zurück" → always go back to the currently open tab page
   const goBackToTabs = () => {
-    const route = TAB_ROUTES[currentTab] ?? TAB_ROUTES.news;
-    router.navigate(route);
+    router.back();
   };
 
   return (
