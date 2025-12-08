@@ -201,6 +201,26 @@ export default function DrawerLayout() {
           ),
         }}
       />
+              {/* VISIBLE IN DRAWER: Freund hinzufügen */}
+      <Drawer.Screen
+        name="addFriends"
+        options={{
+          title: "Freund hinzufügen",
+          headerLeft: () => (
+            <Pressable
+              onPress={goBackToTabs}
+              style={{ paddingHorizontal: 16 }}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+            </Pressable>
+          ),
+        }}
+      />
+
 
       {/* VISIBLE IN DRAWER: Logout */}
       <Drawer.Screen
@@ -211,5 +231,6 @@ export default function DrawerLayout() {
         }}
       />
     </Drawer>
+
   );
 }

@@ -1,4 +1,4 @@
-// app/addFriend.tsx
+// app/(drawer)/addFriends.tsx
 import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import {
@@ -9,7 +9,7 @@ import {
   Snackbar,
   List,
 } from "react-native-paper";
-import { auth, db } from "../../firebase";
+import { auth, db } from "@/firebase";
 import {
   collection,
   query,
