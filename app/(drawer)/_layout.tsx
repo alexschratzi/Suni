@@ -9,11 +9,11 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useTheme, Text } from "react-native-paper";
 
-import DefaultHeaderRight from "@/app/(drawer)/headers/DefaultHeaderRight";
+import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
   TimetableHeaderRight,
-} from "@/app/(drawer)/headers/TimetableHeader";
+} from "@/components/headers/TimetableHeader";
 
 // explicit tab → route mapping so TypeScript knows the exact route literals
 const TAB_ROUTES = {
