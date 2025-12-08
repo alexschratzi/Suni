@@ -5,7 +5,15 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { PixelRatio, StyleSheet, View, Pressable } from "react-native";
+import {
+  PixelRatio,
+  StyleSheet,
+  View,
+  Pressable,
+  ScrollView,
+  Platform,
+  KeyboardAvoidingView,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CalendarBody,
@@ -225,10 +233,9 @@ export default function TimetableScreen() {
   );
 
   useEffect(() => {
-  const mondayIso = fmtYMD(weekStart); // "YYYY-MM-DD"
-  router.setParams({ currentMonday: mondayIso });
-}, [weekStart, router]);
-
+    const mondayIso = fmtYMD(weekStart); // "YYYY-MM-DD"
+    router.setParams({ currentMonday: mondayIso });
+  }, [weekStart, router]);
 
   const initialDate = fmtYMD(weekStart);
   const minDate = fmtYMD(addWeeks(baseMonday, -52));
@@ -321,7 +328,7 @@ export default function TimetableScreen() {
       style={[styles.root, { backgroundColor: paper.colors.background }]}
       onLayout={(e) => setCalendarAreaH(e.nativeEvent.layout.height)}
     >
-      {/* Main calendar (not squished) */}
+      {/* Main calendar (stays static, NOT affected by keyboard) */}
       <View style={{ flex: 1 }}>
         <CalendarContainer
           ref={calendarRef}
@@ -385,149 +392,176 @@ export default function TimetableScreen() {
       {editingEvent && editorForm && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
           {/* Scrim */}
-          <Pressable style={styles.scrim} onPress={closeEditor} />
-
-          {/* Right-side drawer */}
-          <Surface
-            elevation={3}
-            mode="elevated"
+          <Pressable
+            // ❗ use theme-based backdrop instead of hard-coded rgba
             style={[
-              styles.drawer,
-              {
-                backgroundColor: paper.colors.surface,
-                borderLeftColor: paper.colors.outlineVariant,
-              },
+              styles.scrim,
+              { backgroundColor: paper.colors.backdrop },
             ]}
+            onPress={closeEditor}
+          />
+
+          {/* KeyboardAvoidingView ONLY for the sidebar */}
+          <KeyboardAvoidingView
+            style={styles.drawerAvoider}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={64}
           >
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text variant="titleMedium" style={{ flex: 1 }}>
-                Event bearbeiten
-              </Text>
-              <IconButton icon="close" onPress={closeEditor} />
-            </View>
-
-            <Divider style={{ marginVertical: 8 }} />
-
-            <Text variant="labelSmall" style={styles.label}>
-              Title
-            </Text>
-            <TextInput
-              mode="outlined"
-              value={editorForm.fullTitle}
-              onChangeText={onChangeFullTitle}
-              dense
-            />
-
-            <Text variant="labelSmall" style={styles.label}>
-              Title abbr.
-            </Text>
-            <TextInput
-              mode="outlined"
-              value={editorForm.titleAbbr}
-              onChangeText={onChangeTitleAbbr}
-              dense
-            />
-
-            <Text variant="labelSmall" style={styles.label}>
-              From
-            </Text>
-            <Pressable
-              onPress={() =>
-                setActivePicker((prev) => (prev === "from" ? null : "from"))
-              }
+            <Surface
+              elevation={3}
+              mode="elevated"
+              style={[
+                styles.drawer,
+                {
+                  backgroundColor: paper.colors.surface,
+                  borderLeftColor: paper.colors.outlineVariant,
+                },
+              ]}
             >
-              <TextInput
-                mode="outlined"
-                value={formatDateTimeIso(editorForm.from)}
-                editable={false}
-                pointerEvents="none"
-                dense
-              />
-            </Pressable>
-            {activePicker === "from" && (
-              <DateTimePicker
-                value={new Date(editorForm.from)}
-                mode="datetime"
-                display="spinner"
-                onChange={handlePickerChange}
-                style={{ alignSelf: "stretch" }}
-              />
-            )}
+              <ScrollView
+                style={{ flex: 1 }}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text variant="titleMedium" style={{ flex: 1 }}>
+                    Event bearbeiten
+                  </Text>
+                  <IconButton icon="close" onPress={closeEditor} />
+                </View>
 
-            <Text variant="labelSmall" style={styles.label}>
-              Until
-            </Text>
-            <Pressable
-              onPress={() =>
-                setActivePicker((prev) => (prev === "until" ? null : "until"))
-              }
-            >
-              <TextInput
-                mode="outlined"
-                value={formatDateTimeIso(editorForm.until)}
-                editable={false}
-                pointerEvents="none"
-                dense
-              />
-            </Pressable>
-            {activePicker === "until" && (
-              <DateTimePicker
-                value={new Date(editorForm.until)}
-                mode="datetime"
-                display="spinner"
-                onChange={handlePickerChange}
-                style={{ alignSelf: "stretch" }}
-              />
-            )}
+                <Divider style={{ marginVertical: 8 }} />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Note
-            </Text>
-            <TextInput
-              mode="outlined"
-              value={editorForm.note}
-              onChangeText={(text) => updateForm({ note: text })}
-              multiline
-              numberOfLines={3}
-            />
+                <Text variant="labelSmall" style={styles.label}>
+                  Title
+                </Text>
+                <TextInput
+                  mode="outlined"
+                  value={editorForm.fullTitle}
+                  onChangeText={onChangeFullTitle}
+                  dense
+                />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Color
-            </Text>
-            <View style={styles.colorRow}>
-              {COLOR_OPTIONS.map((c) => {
-                const selected = editorForm.color === c;
-                return (
-                  <Pressable
-                    key={c}
-                    onPress={() => updateForm({ color: c })}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: c },
-                      selected && {
-                        borderWidth: 2,
-                        borderColor: paper.colors.primary,
-                      },
-                    ]}
+                <Text variant="labelSmall" style={styles.label}>
+                  Title abbr.
+                </Text>
+                <TextInput
+                  mode="outlined"
+                  value={editorForm.titleAbbr}
+                  onChangeText={onChangeTitleAbbr}
+                  dense
+                />
+
+                <Text variant="labelSmall" style={styles.label}>
+                  From
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setActivePicker((prev) =>
+                      prev === "from" ? null : "from"
+                    )
+                  }
+                >
+                  <TextInput
+                    mode="outlined"
+                    value={formatDateTimeIso(editorForm.from)}
+                    editable={false}
+                    pointerEvents="none"
+                    dense
                   />
-                );
-              })}
-            </View>
+                </Pressable>
+                {activePicker === "from" && (
+                  <DateTimePicker
+                    value={new Date(editorForm.from)}
+                    mode="datetime"
+                    display="spinner"
+                    onChange={handlePickerChange}
+                    style={{ alignSelf: "stretch" }}
+                  />
+                )}
 
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "flex-end",
-                marginTop: 16,
-                columnGap: 8,
-              }}
-            >
-              <Button onPress={closeEditor}>Cancel</Button>
-              <Button mode="contained" onPress={saveEditor}>
-                Save
-              </Button>
-            </View>
-          </Surface>
+                <Text variant="labelSmall" style={styles.label}>
+                  Until
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setActivePicker((prev) =>
+                      prev === "until" ? null : "until"
+                    )
+                  }
+                >
+                  <TextInput
+                    mode="outlined"
+                    value={formatDateTimeIso(editorForm.until)}
+                    editable={false}
+                    pointerEvents="none"
+                    dense
+                  />
+                </Pressable>
+                {activePicker === "until" && (
+                  <DateTimePicker
+                    value={new Date(editorForm.until)}
+                    mode="datetime"
+                    display="spinner"
+                    onChange={handlePickerChange}
+                    style={{ alignSelf: "stretch" }}
+                  />
+                )}
+
+                <Text variant="labelSmall" style={styles.label}>
+                  Note
+                </Text>
+                <TextInput
+                  mode="outlined"
+                  value={editorForm.note}
+                  onChangeText={(text) => updateForm({ note: text })}
+                  multiline
+                  numberOfLines={3}
+                />
+
+                <Text variant="labelSmall" style={styles.label}>
+                  Color
+                </Text>
+                <View style={styles.colorRow}>
+                  {COLOR_OPTIONS.map((c) => {
+                    const selected = editorForm.color === c;
+                    return (
+                      <Pressable
+                        key={c}
+                        onPress={() => updateForm({ color: c })}
+                        style={[
+                          styles.colorDot,
+                          {
+                            backgroundColor: c,
+                            // ❗ theme-based outline instead of fixed rgba
+                            borderColor: paper.colors.outlineVariant,
+                          },
+                          selected && {
+                            borderWidth: 2,
+                            borderColor: paper.colors.primary,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "flex-end",
+                    marginTop: 16,
+                    columnGap: 8,
+                  }}
+                >
+                  <Button onPress={closeEditor}>Cancel</Button>
+                  <Button mode="contained" onPress={saveEditor}>
+                    Save
+                  </Button>
+                </View>
+              </ScrollView>
+            </Surface>
+          </KeyboardAvoidingView>
         </View>
       )}
     </Surface>
@@ -610,14 +644,19 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    // backgroundColor now injected from theme in JSX
   },
-  drawer: {
+  // Container for the KeyboardAvoidingView (right 80% of the screen)
+  drawerAvoider: {
     position: "absolute",
     top: 0,
     bottom: 0,
     right: 0,
     width: "80%",
+  },
+  // Actual drawer Surface
+  drawer: {
+    flex: 1,
     padding: 16,
     borderLeftWidth: StyleSheet.hairlineWidth,
     justifyContent: "flex-start",
@@ -634,6 +673,6 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.2)",
+    // borderColor now injected from theme in JSX
   },
 });
