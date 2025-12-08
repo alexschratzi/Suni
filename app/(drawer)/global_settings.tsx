@@ -1,12 +1,13 @@
 // app/(drawer)/settings.tsx
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet } from "react-native";
 import {
   Text,
   RadioButton,
   useTheme,
   List,
   Divider,
+  Surface,
 } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -76,64 +77,69 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { backgroundColor: paperTheme.colors.surface },
-      ]}
+      style={{ backgroundColor: paperTheme.colors.background }}
+      contentContainerStyle={styles.container}
     >
       {/* Erscheinungsbild / Theme */}
-      <Text
-        variant="titleLarge"
-        style={[styles.title, { color: paperTheme.colors.onSurface }]}
-      >
-        {t("settings.appearanceTitle")}
-      </Text>
+      <List.Section>
+        <List.Subheader style={styles.subheader}>
+          {t("settings.appearanceTitle")}
+        </List.Subheader>
 
-      <View
-        style={[styles.card, { backgroundColor: paperTheme.colors.surface }]}
-      >
-        <RadioButton.Group
-          onValueChange={(v) => onThemeChange(v as ThemeMode)}
-          value={mode}
-        >
-          <List.Item
-            title={t("settings.theme.system.title")}
-            description={t("settings.theme.system.description")}
-            titleStyle={{ color: paperTheme.colors.onSurface }}
-            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
-            left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
-            right={() => <RadioButton value="system" />}
-            onPress={() => onThemeChange("system")}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.theme.light.title")}
-            description={t("settings.theme.light.description")}
-            titleStyle={{ color: paperTheme.colors.onSurface }}
-            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
-            left={(props) => (
-              <List.Icon {...props} icon="white-balance-sunny" />
-            )}
-            right={() => <RadioButton value="light" />}
-            onPress={() => onThemeChange("light")}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.theme.dark.title")}
-            description={t("settings.theme.dark.description")}
-            titleStyle={{ color: paperTheme.colors.onSurface }}
-            descriptionStyle={{ color: paperTheme.colors.onSurfaceVariant }}
-            left={(props) => <List.Icon {...props} icon="weather-night" />}
-            right={() => <RadioButton value="dark" />}
-            onPress={() => onThemeChange("dark")}
-          />
-        </RadioButton.Group>
-      </View>
+        <Surface style={styles.card} mode="elevated">
+          <RadioButton.Group
+            onValueChange={(v) => onThemeChange(v as ThemeMode)}
+            value={mode}
+          >
+            <List.Item
+              title={t("settings.theme.system.title")}
+              description={t("settings.theme.system.description")}
+              titleStyle={{ color: paperTheme.colors.onSurface }}
+              descriptionStyle={{
+                color: paperTheme.colors.onSurfaceVariant,
+              }}
+              left={(props) => (
+                <List.Icon {...props} icon="theme-light-dark" />
+              )}
+              right={() => <RadioButton value="system" />}
+              onPress={() => onThemeChange("system")}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.theme.light.title")}
+              description={t("settings.theme.light.description")}
+              titleStyle={{ color: paperTheme.colors.onSurface }}
+              descriptionStyle={{
+                color: paperTheme.colors.onSurfaceVariant,
+              }}
+              left={(props) => (
+                <List.Icon {...props} icon="white-balance-sunny" />
+              )}
+              right={() => <RadioButton value="light" />}
+              onPress={() => onThemeChange("light")}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.theme.dark.title")}
+              description={t("settings.theme.dark.description")}
+              titleStyle={{ color: paperTheme.colors.onSurface }}
+              descriptionStyle={{
+                color: paperTheme.colors.onSurfaceVariant,
+              }}
+              left={(props) => (
+                <List.Icon {...props} icon="weather-night" />
+              )}
+              right={() => <RadioButton value="dark" />}
+              onPress={() => onThemeChange("dark")}
+            />
+          </RadioButton.Group>
+        </Surface>
+      </List.Section>
 
       <Text
         variant="bodyMedium"
         style={{
-          marginTop: 16,
+          marginTop: 8,
           color: paperTheme.colors.onSurfaceVariant,
         }}
       >
@@ -142,45 +148,39 @@ export default function SettingsScreen() {
       </Text>
 
       {/* Sprache */}
-      <Text
-        variant="titleLarge"
-        style={[
-          styles.title,
-          { marginTop: 32, color: paperTheme.colors.onSurface },
-        ]}
-      >
-        {t("settings.languageTitle")}
-      </Text>
+      <List.Section style={{ marginTop: 24 }}>
+        <List.Subheader style={styles.subheader}>
+          {t("settings.languageTitle")}
+        </List.Subheader>
 
-      <View
-        style={[styles.card, { backgroundColor: paperTheme.colors.surface }]}
-      >
-        <RadioButton.Group
-          onValueChange={(v) => handleLanguageChange(v as LanguageCode)}
-          value={language}
-        >
-          <List.Item
-            title={t("settings.language.german")}
-            titleStyle={{ color: paperTheme.colors.onSurface }}
-            left={(props) => <List.Icon {...props} icon="flag-outline" />}
-            right={() => <RadioButton value="de" />}
-            onPress={() => handleLanguageChange("de")}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.language.english")}
-            titleStyle={{ color: paperTheme.colors.onSurface }}
-            left={(props) => <List.Icon {...props} icon="flag" />}
-            right={() => <RadioButton value="en" />}
-            onPress={() => handleLanguageChange("en")}
-          />
-        </RadioButton.Group>
-      </View>
+        <Surface style={styles.card} mode="elevated">
+          <RadioButton.Group
+            onValueChange={(v) => handleLanguageChange(v as LanguageCode)}
+            value={language}
+          >
+            <List.Item
+              title={t("settings.language.german")}
+              titleStyle={{ color: paperTheme.colors.onSurface }}
+              left={(props) => <List.Icon {...props} icon="flag-outline" />}
+              right={() => <RadioButton value="de" />}
+              onPress={() => handleLanguageChange("de")}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.language.english")}
+              titleStyle={{ color: paperTheme.colors.onSurface }}
+              left={(props) => <List.Icon {...props} icon="flag" />}
+              right={() => <RadioButton value="en" />}
+              onPress={() => handleLanguageChange("en")}
+            />
+          </RadioButton.Group>
+        </Surface>
+      </List.Section>
 
       <Text
         variant="bodyMedium"
         style={{
-          marginTop: 16,
+          marginTop: 8,
           color: paperTheme.colors.onSurfaceVariant,
         }}
       >
@@ -193,10 +193,11 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    minHeight: "100%",
+    paddingBottom: 32,
     gap: 12,
+    minHeight: "100%",
   },
-  title: {
+  subheader: {
     marginBottom: 4,
   },
   card: {

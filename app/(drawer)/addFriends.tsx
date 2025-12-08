@@ -1,14 +1,13 @@
 // app/addFriend.tsx
 import React, { useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { StyleSheet, ScrollView } from "react-native";
 import {
   Text,
   TextInput,
   Button,
   useTheme,
   Snackbar,
-  Card,
-  ActivityIndicator,
+  List,
 } from "react-native-paper";
 import { auth, db } from "../../firebase";
 import {
@@ -67,21 +66,15 @@ export default function AddFriendScreen() {
     const targetRef = doc(db, "users", targetUid);
 
     try {
-      // eigene ausgehende Anfragen
       await setDoc(
         myRef,
-        {
-          pendingSent: arrayUnion(targetUid),
-        },
+        { pendingSent: arrayUnion(targetUid) },
         { merge: true }
       );
 
-      // beim anderen: eingehende Anfrage
       await setDoc(
         targetRef,
-        {
-          pendingReceived: arrayUnion(me.uid),
-        },
+        { pendingReceived: arrayUnion(me.uid) },
         { merge: true }
       );
 
@@ -93,51 +86,85 @@ export default function AddFriendScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text variant="headlineSmall" style={{ marginBottom: 20 }}>
+    <ScrollView
+      style={{ backgroundColor: theme.colors.background }}
+      contentContainerStyle={styles.container}
+    >
+      {/* Title */}
+      <Text
+        variant="titleLarge"
+        style={[styles.title, { color: theme.colors.onBackground }]}
+      >
         Freund hinzufügen
       </Text>
 
+      {/* Search input (not a card!) */}
       <TextInput
         mode="outlined"
         label="Benutzername"
         placeholder="z. B. alex"
         value={username}
         onChangeText={setUsername}
-        style={{ marginBottom: 12 }}
+        style={styles.input}
       />
 
-      <Button mode="contained" onPress={searchUser}>
+      <Button mode="contained" onPress={searchUser} loading={loading}>
         Suchen
       </Button>
 
-      {loading && <ActivityIndicator style={{ marginTop: 20 }} />}
-
+      {/* Search result as menu */}
       {result && (
-        <Card mode="outlined" style={{ marginTop: 20 }}>
-          <Card.Title title={result.username} subtitle="User gefunden" />
-          <Card.Actions>
-            <Button
-              mode="contained"
-              icon="account-plus"
-              onPress={() => sendRequest(result.uid)}
-            >
-              Anfrage senden
-            </Button>
-          </Card.Actions>
-        </Card>
+        <List.Section style={styles.listSection}>
+          <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+            Suchergebnis
+          </List.Subheader>
+
+          <List.Item
+            title={result.username}
+            description="User gefunden"
+            titleStyle={{ color: theme.colors.onSurface }}
+            descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+            left={(props) => <List.Icon {...props} icon="account-circle" />}
+            right={(props) => (
+              <Button
+                mode="contained"
+                compact
+                icon="account-plus"
+                onPress={() => sendRequest(result.uid)}
+              >
+                Anfrage
+              </Button>
+            )}
+            onPress={() => sendRequest(result.uid)}
+          />
+        </List.Section>
       )}
 
-      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={2000}>
+      <Snackbar
+        visible={!!snack}
+        onDismiss={() => setSnack("")}
+        duration={2000}
+      >
         {snack}
       </Snackbar>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    padding: 20,
+    padding: 16,
+    paddingBottom: 32,
+    gap: 12,
+    minHeight: "100%",
+  },
+  title: {
+    marginBottom: 4,
+  },
+  input: {
+    marginBottom: 12,
+  },
+  listSection: {
+    marginTop: 20,
   },
 });
