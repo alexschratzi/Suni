@@ -642,6 +642,26 @@ export default function TimetableScreen() {
     closeEditor();
   };
 
+    const handleDeleteEvent = () => {
+    if (!editingEvent) return;
+
+    // iCal events cannot be deleted here – they come from the subscription.
+    if (editingEvent.source === "ical") {
+      closeEditor();
+      return;
+    }
+
+    setEvents((prev) => {
+      const updatedList = prev.filter((e) => e.id !== editingEvent.id);
+      void saveLocalEvents(updatedList);
+      void syncLocalEventsToServer(updatedList, userId);
+      return updatedList;
+    });
+
+    closeEditor();
+  };
+
+
   const handlePickerChange = (
     event: DateTimePickerEvent,
     date?: Date | undefined,
@@ -972,7 +992,7 @@ export default function TimetableScreen() {
                   })}
                 </View>
 
-                <View
+                                <View
                   style={{
                     flexDirection: "row",
                     justifyContent: "flex-end",
@@ -980,11 +1000,21 @@ export default function TimetableScreen() {
                     columnGap: 8,
                   }}
                 >
-                  <Button onPress={closeEditor}>Cancel</Button>
+                  {/* Delete button only for local (non-iCal) events */}
+                  {editingEvent?.source === "local" && (
+                    <Button
+                      onPress={handleDeleteEvent}
+                      textColor={paper.colors.error}
+                    >
+                      Löschen
+                    </Button>
+                  )}
+
                   <Button mode="contained" onPress={saveEditor}>
-                    Save
+                    Speichern
                   </Button>
                 </View>
+
               </ScrollView>
             </Surface>
           </KeyboardAvoidingView>
