@@ -43,8 +43,16 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { Ev } from "@/types/timetable";
 import { mapPaperToCalendarTheme } from "@/components/timetable/mapPaperToCalendarTheme";
+
+// ⬇️ NEW: server-side iCal helpers (push + get_ical)
+import {
+  syncICalSubscriptions,
+  getICalSubscriptions,
+} from "@/src/server/calendar"; // <-- adjust path
 
 dayjs.locale("de");
 
@@ -81,6 +89,17 @@ const COLOR_OPTIONS = [
   "#ffa94d", // orange
 ];
 
+// ⬇️ NEW: local representation of stored iCal subscriptions
+type ICalSubscription = {
+  id: string;
+  name: string;
+  url: string;
+  color: string;
+};
+
+// ⬇️ NEW: AsyncStorage key shared with settings screen
+const ICAL_ASYNC_KEY = "ical_subscriptions_v1";
+
 export default function TimetableScreen() {
   const paper = useTheme();
   const router = useRouter();
@@ -106,6 +125,91 @@ export default function TimetableScreen() {
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
 
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+
+  // ⬇️ NEW: (optional) loading flag for iCal sync – could be used to gate fetching of events later
+  const [iCalSyncing, setICalSyncing] = useState(true);
+
+  // ⬇️ TODO: replace with real user id once you have auth
+  const userId = "1234";
+
+  /* ------------------------------------------------------------------------ */
+  /* iCal SYNC ON LOAD (push + get_ical)                                      */
+  /* ------------------------------------------------------------------------ */
+
+  const loadLocalICalSubscriptions = useCallback(
+    async (): Promise<ICalSubscription[]> => {
+      try {
+        const raw = await AsyncStorage.getItem(ICAL_ASYNC_KEY);
+        if (!raw) return [];
+        return JSON.parse(raw);
+      } catch (e) {
+        console.warn("Failed to load local iCal subs:", e);
+        return [];
+      }
+    },
+    []
+  );
+
+  const saveLocalICalSubscriptions = useCallback(
+    async (subs: ICalSubscription[]) => {
+      try {
+        await AsyncStorage.setItem(ICAL_ASYNC_KEY, JSON.stringify(subs));
+      } catch (e) {
+        console.warn("Failed to save local iCal subs:", e);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    const syncICalOnMount = async () => {
+      try {
+        setICalSyncing(true);
+
+        // 1) load what we have stored locally (from settings or previous runs)
+        const localSubs = await loadLocalICalSubscriptions();
+
+        // 2) push local → server and get canonical list back
+        //    syncICalSubscriptions internally:
+        //    - calls updateICal (push ical)
+        //    - then getICalSubscriptions (get_ical)
+        const syncedFromServer = await syncICalSubscriptions(
+          userId,
+          localSubs.map((s) => ({
+            name: s.name,
+            url: s.url,
+            color: s.color,
+          }))
+        );
+
+        // 3) normalize + store canonical list locally so settings screen can just read it
+        const normalized: ICalSubscription[] = syncedFromServer.map((s) => ({
+          id: s.id,
+          name: s.name,
+          url: s.url,
+          color: s.color,
+        }));
+
+        await saveLocalICalSubscriptions(normalized);
+
+        // ⬇️ If you later want to fetch & merge ICS events into `events`, this is
+        //     the perfect place to trigger that, using `normalized`.
+      } catch (e) {
+        console.warn("Failed to sync iCal subscriptions on timetable load:", e);
+
+        // fallback: keep whatever is in local storage, don't crash the screen
+        // (could also show a toast/snackbar)
+      } finally {
+        setICalSyncing(false);
+      }
+    };
+
+    syncICalOnMount();
+  }, [loadLocalICalSubscriptions, saveLocalICalSubscriptions, userId]);
+
+  /* ------------------------------------------------------------------------ */
+  /* EXISTING TIMETABLE LOGIC                                                 */
+  /* ------------------------------------------------------------------------ */
 
   const openEditorForEvent = useCallback((ev: EvWithMeta) => {
     const fullTitle = ev.fullTitle ?? ev.title ?? "";
@@ -393,7 +497,6 @@ export default function TimetableScreen() {
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
           {/* Scrim */}
           <Pressable
-            // ❗ use theme-based backdrop instead of hard-coded rgba
             style={[
               styles.scrim,
               { backgroundColor: paper.colors.backdrop },
@@ -533,7 +636,6 @@ export default function TimetableScreen() {
                           styles.colorDot,
                           {
                             backgroundColor: c,
-                            // ❗ theme-based outline instead of fixed rgba
                             borderColor: paper.colors.outlineVariant,
                           },
                           selected && {
@@ -644,9 +746,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    // backgroundColor now injected from theme in JSX
   },
-  // Container for the KeyboardAvoidingView (right 80% of the screen)
   drawerAvoider: {
     position: "absolute",
     top: 0,
@@ -654,7 +754,6 @@ const styles = StyleSheet.create({
     right: 0,
     width: "80%",
   },
-  // Actual drawer Surface
   drawer: {
     flex: 1,
     padding: 16,
@@ -673,6 +772,5 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1,
-    // borderColor now injected from theme in JSX
   },
 });
