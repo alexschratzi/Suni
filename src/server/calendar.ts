@@ -1,4 +1,5 @@
 // src/server/calendar.ts
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Calendar,
   CalendarEntryDTO,
@@ -6,7 +7,33 @@ import {
   ICalSubscriptionDTO,
 } from "../dto/calendarDTO";
 
-const mockEntries: CalendarEntryDTO[] = [
+/**
+ * "Mock server" that simulates persistence using AsyncStorage.
+ *
+ * It exposes:
+ *  - iCal subscriptions:
+ *      - updateICal
+ *      - getICalSubscriptions
+ *      - deleteICalSubscription
+ *      - syncICalSubscriptions
+ *  - Events:
+ *      - getCalendarById
+ *      - getCalendarByIdDate
+ *      - saveCalendar  (bulk)
+ *      - saveCalendarEntry
+ *      - deleteCalendarEntry
+ */
+
+export interface SaveCalendarResponse {
+  ok: boolean;
+}
+
+// AsyncStorage keys
+const ENTRIES_KEY = "mock_calendar_entries_v1";
+const ICAL_KEY = "mock_ical_subscriptions_v1";
+
+// Seed data for first run
+const DEFAULT_ENTRIES: CalendarEntryDTO[] = [
   {
     id: "1",
     user_id: "1234",
@@ -23,14 +50,8 @@ const mockEntries: CalendarEntryDTO[] = [
   },
 ];
 
-const mockCalendar: Calendar = {
-  entries: mockEntries,
-};
-
-// --- NEW: mock iCal subscriptions -------------------------------------------
-
-let mockICalSubscriptions: ICalSubscriptionDTO[] = [
-  // Example pre-existing subscription
+const DEFAULT_ICAL_SUBSCRIPTIONS: ICalSubscriptionDTO[] = [
+  // Start empty; you can add a seed subscription if you want:
   // {
   //   id: "sub-1",
   //   user_id: "1234",
@@ -40,45 +61,108 @@ let mockICalSubscriptions: ICalSubscriptionDTO[] = [
   // },
 ];
 
-export interface SaveCalendarResponse {
-  ok: boolean;
+/* -------------------------------------------------------------------------- */
+/* Helpers: load/save from AsyncStorage                                       */
+/* -------------------------------------------------------------------------- */
+
+async function loadEntries(): Promise<CalendarEntryDTO[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ENTRIES_KEY);
+    if (!raw) {
+      // First run: seed default entries and persist them
+      await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(DEFAULT_ENTRIES));
+      return DEFAULT_ENTRIES;
+    }
+    const parsed: CalendarEntryDTO[] = JSON.parse(raw);
+
+    // Restore Date objects from JSON strings
+    return parsed.map((e) => ({
+      ...e,
+      date: new Date(e.date),
+    }));
+  } catch (e) {
+    console.warn("Failed to load calendar entries from storage:", e);
+    return DEFAULT_ENTRIES;
+  }
 }
 
-// --- iCal subscription helpers ----------------------------------------------
+async function saveEntries(entries: CalendarEntryDTO[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
+  } catch (e) {
+    console.warn("Failed to save calendar entries to storage:", e);
+  }
+}
+
+async function loadICalSubscriptions(): Promise<ICalSubscriptionDTO[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ICAL_KEY);
+    if (!raw) {
+      await AsyncStorage.setItem(
+        ICAL_KEY,
+        JSON.stringify(DEFAULT_ICAL_SUBSCRIPTIONS),
+      );
+      return DEFAULT_ICAL_SUBSCRIPTIONS;
+    }
+    const parsed: ICalSubscriptionDTO[] = JSON.parse(raw);
+    return parsed;
+  } catch (e) {
+    console.warn("Failed to load iCal subscriptions from storage:", e);
+    return DEFAULT_ICAL_SUBSCRIPTIONS;
+  }
+}
+
+async function saveICalSubscriptions(
+  subs: ICalSubscriptionDTO[],
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ICAL_KEY, JSON.stringify(subs));
+  } catch (e) {
+    console.warn("Failed to save iCal subscriptions to storage:", e);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* iCal subscription API                                                      */
+/* -------------------------------------------------------------------------- */
 
 /**
- * Push a single iCal subscription to the "server".
- * Equivalent to POST /ical-subscriptions
+ * Create or update a single iCal subscription (upsert by userId + url).
+ * Simulates POST/PUT /ical-subscriptions.
  */
 export async function updateICal(
   payload: CreateICalSubscriptionRequest,
 ): Promise<ICalSubscriptionDTO> {
   await delay(300);
 
-  // Simple upsert by (userId + url)
-  const existingIndex = mockICalSubscriptions.findIndex(
-    (s) => s.user_id === payload.userId && s.url === payload.url,
+  const { userId, name, url, color } = payload;
+  const subs = await loadICalSubscriptions();
+
+  const existingIndex = subs.findIndex(
+    (s) => s.user_id === userId && s.url === url,
   );
 
   if (existingIndex !== -1) {
     const updated: ICalSubscriptionDTO = {
-      ...mockICalSubscriptions[existingIndex],
-      name: payload.name,
-      color: payload.color,
+      ...subs[existingIndex],
+      name,
+      color,
     };
-    mockICalSubscriptions[existingIndex] = updated;
+    subs[existingIndex] = updated;
+    await saveICalSubscriptions(subs);
     return updated;
   }
 
   const newSub: ICalSubscriptionDTO = {
-    id: `sub-${Date.now()}`,
-    user_id: payload.userId,
-    name: payload.name,
-    url: payload.url,
-    color: payload.color,
+    id: `sub-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    user_id: userId,
+    name,
+    url,
+    color,
   };
 
-  mockICalSubscriptions.push(newSub);
+  subs.push(newSub);
+  await saveICalSubscriptions(subs);
   return newSub;
 }
 
@@ -89,22 +173,38 @@ export async function getICalSubscriptions(
   userId: string,
 ): Promise<ICalSubscriptionDTO[]> {
   await delay(200);
-  return mockICalSubscriptions.filter((s) => s.user_id === userId);
+  const subs = await loadICalSubscriptions();
+  return subs.filter((s) => s.user_id === userId);
 }
 
 /**
- * "Sync" local iCal subscriptions with the server.
+ * DELETE /ical-subscriptions/:id?userId=...
+ */
+export async function deleteICalSubscription(
+  userId: string,
+  id: string,
+): Promise<void> {
+  await delay(200);
+  const subs = await loadICalSubscriptions();
+  const filtered = subs.filter(
+    (sub) => !(sub.user_id === userId && sub.id === id),
+  );
+  await saveICalSubscriptions(filtered);
+}
+
+/**
+ * Sync local iCal subscriptions from the client with the server.
  *
- * - localSubs = what the app has stored locally (e.g. AsyncStorage)
- * - server merges them (upsert by url) and returns the final canonical list.
+ * - localSubs: what the client currently has stored locally (no id/user_id)
+ * - Server upserts them (by url) and then returns the full canonical list.
  *
- * This is effectively: push local → get_ical result.
+ * This is still available, but your timetable currently just reads
+ * from the server instead of pushing local → server for deletions.
  */
 export async function syncICalSubscriptions(
   userId: string,
   localSubs: Omit<ICalSubscriptionDTO, "id" | "user_id">[],
 ): Promise<ICalSubscriptionDTO[]> {
-  // First, upsert all local subscriptions
   for (const sub of localSubs) {
     await updateICal({
       userId,
@@ -114,46 +214,122 @@ export async function syncICalSubscriptions(
     });
   }
 
-  // Then return the full, updated list from the "server"
   const serverSubs = await getICalSubscriptions(userId);
   return serverSubs;
 }
 
-// --- Existing mock calendar API ---------------------------------------------
+/* -------------------------------------------------------------------------- */
+/* Calendar events API                                                        */
+/* -------------------------------------------------------------------------- */
 
 /**
- * Simulate GET /calendar
+ * Simulate GET /calendar/:id
  */
 export async function getCalendarById(_id: number): Promise<Calendar> {
   await delay(300);
+  const entries = await loadEntries();
+  const subs = await loadICalSubscriptions();
+
   return {
-    ...mockCalendar,
-    subscriptions: mockICalSubscriptions,
+    entries,
+    subscriptions: subs,
   };
 }
 
+/**
+ * Simulate GET /calendar/:id?from=...&to=...
+ */
 export async function getCalendarByIdDate(
   _id: number,
   dateFrom: Date,
   dateTo: Date,
-) {
-  // Just filter entries for now; you could also expand iCal subscriptions here.
-  return mockCalendar.entries.filter(
+): Promise<CalendarEntryDTO[]> {
+  await delay(200);
+  const entries = await loadEntries();
+
+  return entries.filter(
     (e) => e.date >= dateFrom && e.date <= dateTo,
   );
 }
 
 /**
  * Simulate POST/PUT /calendar
+ *
+ * Bulk overwrite:
+ * - Whatever you send as calendar.entries becomes the authoritative list.
  */
 export async function saveCalendar(
-  _calendar: Calendar,
+  calendar: Calendar,
 ): Promise<SaveCalendarResponse> {
   await delay(300);
+  await saveEntries(calendar.entries);
   return { ok: true };
 }
 
-// --- Helpers ----------------------------------------------------------------
+/**
+ * Simulate POST/PUT /calendar/entries (single entry)
+ *
+ * Upsert:
+ *  - If entry.id exists → update that entry
+ *  - Else → create a new id and append
+ */
+export async function saveCalendarEntry(
+  entry: CalendarEntryDTO,
+): Promise<CalendarEntryDTO> {
+  await delay(200);
+
+  const entries = await loadEntries();
+  let result: CalendarEntryDTO;
+
+  if (entry.id) {
+    const idx = entries.findIndex((e) => e.id === entry.id);
+    if (idx !== -1) {
+      const updated: CalendarEntryDTO = {
+        ...entries[idx],
+        ...entry,
+      };
+      entries[idx] = updated;
+      result = updated;
+    } else {
+      const newEntry: CalendarEntryDTO = {
+        ...entry,
+        id: entry.id || `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      };
+      entries.push(newEntry);
+      result = newEntry;
+    }
+  } else {
+    const newEntry: CalendarEntryDTO = {
+      ...entry,
+      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    };
+    entries.push(newEntry);
+    result = newEntry;
+  }
+
+  await saveEntries(entries);
+  return result;
+}
+
+/**
+ * Simulate DELETE /calendar/entries/:id?userId=...
+ */
+export async function deleteCalendarEntry(
+  userId: string,
+  id: string,
+): Promise<void> {
+  await delay(200);
+
+  const entries = await loadEntries();
+  const filtered = entries.filter(
+    (e) => !(e.user_id === userId && e.id === id),
+  );
+  await saveEntries(filtered);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

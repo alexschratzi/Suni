@@ -1,6 +1,6 @@
 // app/(drawer)/settings/timetable.tsx
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, ScrollView } from "react-native";
 import {
   ActivityIndicator,
   Dialog,
@@ -20,7 +20,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   updateICal,
   getICalSubscriptions,
-} from "../../../src/server/calendar"; // adjust if you use path aliases
+  deleteICalSubscription,
+} from "../../../src/server/calendar";
 
 type ICalSubscription = {
   id: string;
@@ -51,6 +52,31 @@ const COLOR_PRESETS = [
   "#607D8B",
 ];
 
+/**
+ * Try to fetch the iCal URL and check if it looks like an actual ICS file.
+ * Returns true if:
+ *  - response is OK (2xx)
+ *  - body contains "BEGIN:VCALENDAR"
+ */
+async function validateIcalUrl(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      return false;
+    }
+
+    const text = await res.text();
+    if (!text || !text.includes("BEGIN:VCALENDAR")) {
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.warn("Failed to validate iCal URL", e);
+    return false;
+  }
+}
+
 export default function TimetableSettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -68,6 +94,9 @@ export default function TimetableSettingsScreen() {
     url: "",
     color: "#2196F3",
   });
+
+  const [editingSub, setEditingSub] = useState<ICalSubscription | null>(null);
+  const isEditing = !!editingSub;
 
   // TODO: replace with real user id once auth is available
   const userId = "1234";
@@ -96,18 +125,31 @@ export default function TimetableSettingsScreen() {
   };
 
   /* ------------------------------------------------------------------------ */
-  /* On mount: just load from AsyncStorage                                    */
-  /* (Timetable screen does the actual sync with server on load)              */
+  /* On mount: prefer server, fall back to local cache                        */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     const init = async () => {
       try {
         setLoadingSubs(true);
-        const localSubs = await loadLocalSubscriptions();
-        setSubscriptions(localSubs);
-      } catch (e) {
-        console.error("Failed to load iCal subscriptions:", e);
+
+        try {
+          // 1) Try to load canonical list from server
+          const serverSubs = await getICalSubscriptions(userId);
+          const mapped: ICalSubscription[] = serverSubs.map((s) => ({
+            id: s.id,
+            name: s.name,
+            url: s.url,
+            color: s.color,
+          }));
+          setSubscriptions(mapped);
+          await saveLocalSubscriptions(mapped);
+        } catch (serverError) {
+          console.warn("Failed to load iCal subscriptions from server:", serverError);
+          // 2) Fallback to local-only cache
+          const localSubs = await loadLocalSubscriptions();
+          setSubscriptions(localSubs);
+        }
       } finally {
         setLoadingSubs(false);
       }
@@ -123,12 +165,24 @@ export default function TimetableSettingsScreen() {
   const randomPresetColor = () =>
     COLOR_PRESETS[Math.floor(Math.random() * COLOR_PRESETS.length)];
 
-  const openDialog = () => {
+  const openCreateDialog = () => {
     setError(null);
+    setEditingSub(null);
     setForm({
       name: "",
       url: "",
-      color: randomPresetColor(), // random color for each new subscription
+      color: randomPresetColor(),
+    });
+    setDialogVisible(true);
+  };
+
+  const openEditDialog = (sub: ICalSubscription) => {
+    setError(null);
+    setEditingSub(sub);
+    setForm({
+      name: sub.name,
+      url: sub.url,
+      color: sub.color || "#2196F3",
     });
     setDialogVisible(true);
   };
@@ -136,27 +190,81 @@ export default function TimetableSettingsScreen() {
   const closeDialog = () => {
     if (saving) return;
     setDialogVisible(false);
+    setEditingSub(null);
+    setError(null);
   };
 
   const handleSaveSubscription = async () => {
-    if (!form.name.trim() || !form.url.trim()) {
+    const trimmedName = form.name.trim();
+    const trimmedUrl = form.url.trim();
+
+    if (!trimmedName) {
+      setError("Name darf nicht leer sein.");
+      return;
+    }
+    if (!isEditing && !trimmedUrl) {
       setError("Name und iCal-URL dürfen nicht leer sein.");
       return;
+    }
+
+    // Uniqueness checks (name + URL)
+    const lowerName = trimmedName.toLowerCase();
+
+    const hasNameConflict = subscriptions.some((s) => {
+      if (isEditing && editingSub && s.id === editingSub.id) return false;
+      return s.name.trim().toLowerCase() === lowerName;
+    });
+
+    if (hasNameConflict) {
+      setError(
+        "Es existiert bereits ein iCal-Abonnement mit diesem Namen. Bitte wähle einen eindeutigen Namen.",
+      );
+      return;
+    }
+
+    if (!isEditing) {
+      const lowerUrl = trimmedUrl.toLowerCase();
+      const hasUrlConflict = subscriptions.some(
+        (s) => s.url.trim().toLowerCase() === lowerUrl,
+      );
+
+      if (hasUrlConflict) {
+        setError(
+          "Es existiert bereits ein iCal-Abonnement mit dieser iCal-URL. Bitte verwende einen eindeutigen Link.",
+        );
+        return;
+      }
     }
 
     try {
       setSaving(true);
       setError(null);
 
-      // PUSH iCal to server
+      let urlToUse = trimmedUrl;
+
+      // Creation: validate URL
+      if (!isEditing) {
+        const valid = await validateIcalUrl(trimmedUrl);
+        if (!valid) {
+          setError(
+            "Die iCal-URL konnte nicht erreicht werden oder ist ungültig. Bitte überprüfe den Link.",
+          );
+          return;
+        }
+      } else if (editingSub) {
+        // Editing: URL is locked, always use the original
+        urlToUse = editingSub.url;
+      }
+
+      // Call updateICal for both create and edit (backend upserts by userId+url)
       await updateICal({
         userId,
-        name: form.name.trim(),
-        url: form.url.trim(),
+        name: trimmedName,
+        url: urlToUse,
         color: form.color,
       });
 
-      // GET_ICAL from server (canonical list)
+      // Fetch canonical list from server
       const serverSubs = await getICalSubscriptions(userId);
 
       const mapped: ICalSubscription[] = serverSubs.map((s) => ({
@@ -170,6 +278,7 @@ export default function TimetableSettingsScreen() {
       await saveLocalSubscriptions(mapped);
 
       setDialogVisible(false);
+      setEditingSub(null);
     } catch (e) {
       console.error(e);
       setError("Speichern fehlgeschlagen. Bitte später erneut versuchen.");
@@ -179,10 +288,22 @@ export default function TimetableSettingsScreen() {
   };
 
   const handleRemoveSubscription = async (id: string) => {
-    // For now: only local removal. Add a delete API later if needed.
-    const next = subscriptions.filter((s) => s.id !== id);
-    setSubscriptions(next);
-    await saveLocalSubscriptions(next);
+    try {
+      await deleteICalSubscription(userId, id);
+
+      const serverSubs = await getICalSubscriptions(userId);
+      const mapped: ICalSubscription[] = serverSubs.map((s) => ({
+        id: s.id,
+        name: s.name,
+        url: s.url,
+        color: s.color,
+      }));
+
+      setSubscriptions(mapped);
+      await saveLocalSubscriptions(mapped);
+    } catch (e) {
+      console.error("Failed to delete iCal subscription:", e);
+    }
   };
 
   /* ------------------------------------------------------------------------ */
@@ -191,9 +312,9 @@ export default function TimetableSettingsScreen() {
 
   return (
     <>
-      <Surface
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
-        elevation={0}
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        contentContainerStyle={styles.container}
       >
         <Text variant="titleLarge" style={styles.title}>
           Stundenplan-Einstellungen
@@ -208,82 +329,94 @@ export default function TimetableSettingsScreen() {
         </Text>
 
         {/* Navigation section */}
-        <Surface
-          style={{ borderRadius: 12, overflow: "hidden", marginBottom: 16 }}
-          elevation={1}
-        >
-          <List.Section>
-            <List.Subheader>Navigation</List.Subheader>
+        <Surface style={{ borderRadius: 12, marginBottom: 16 }} elevation={1}>
+          <View style={{ borderRadius: 12, overflow: "hidden" }}>
+            <List.Section>
+              <List.Subheader>Navigation</List.Subheader>
 
-            <List.Item
-              title="Zu heute springen"
-              description="Kalender auf den aktuellen Tag / die aktuelle Woche zurücksetzen"
-              left={(props) => <List.Icon {...props} icon="calendar-today" />}
-              onPress={() =>
-                router.push({
-                  pathname: "/(drawer)/(tabs)/timetable",
-                  params: { jumpToToday: "1" },
-                })
-              }
-            />
-          </List.Section>
+              <List.Item
+                title="Zu heute springen"
+                description="Kalender auf den aktuellen Tag / die aktuelle Woche zurücksetzen"
+                left={(props) => (
+                  <List.Icon {...props} icon="calendar-today" />
+                )}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(drawer)/(tabs)/timetable",
+                    params: { jumpToToday: "1" },
+                  })
+                }
+              />
+            </List.Section>
+          </View>
         </Surface>
 
         {/* iCal subscriptions section */}
-        <Surface style={{ borderRadius: 12, overflow: "hidden" }} elevation={1}>
-          <List.Section>
-            <List.Subheader>iCal-Abonnements</List.Subheader>
+        <Surface style={{ borderRadius: 12 }} elevation={1}>
+          <View style={{ borderRadius: 12, overflow: "hidden" }}>
+            <List.Section>
+              <List.Subheader>iCal-Abonnements</List.Subheader>
 
-            {loadingSubs && (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" />
-                <Text
-                  variant="bodySmall"
-                  style={{ marginLeft: 8, color: theme.colors.onSurfaceVariant }}
-                >
-                  Lädt iCal-Abonnements...
-                </Text>
-              </View>
-            )}
+              {loadingSubs && (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" />
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      marginLeft: 8,
+                      color: theme.colors.onSurfaceVariant,
+                    }}
+                  >
+                    Lädt iCal-Abonnements...
+                  </Text>
+                </View>
+              )}
 
-            {subscriptions.map((sub) => (
-              <List.Item
-                key={sub.id}
-                title={sub.name}
-                description={sub.url}
-                left={() => (
-                  <View style={styles.colorDotContainer}>
-                    <View
-                      style={[
-                        styles.colorDot,
-                        { backgroundColor: sub.color || theme.colors.primary },
-                      ]}
+              {subscriptions.map((sub) => (
+                <List.Item
+                  key={sub.id}
+                  title={sub.name}
+                  description={sub.url}
+                  onPress={() => openEditDialog(sub)}
+                  left={() => (
+                    <View style={styles.colorDotContainer}>
+                      <View
+                        style={[
+                          styles.colorDot,
+                          {
+                            backgroundColor:
+                              sub.color || theme.colors.primary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  )}
+                  right={() => (
+                    <IconButton
+                      icon="delete"
+                      onPress={() => handleRemoveSubscription(sub.id)}
                     />
-                  </View>
-                )}
-                right={() => (
-                  <IconButton
-                    icon="delete"
-                    onPress={() => handleRemoveSubscription(sub.id)}
-                  />
-                )}
+                  )}
+                />
+              ))}
+
+              <List.Item
+                title="Neue iCal-Verknüpfung"
+                description="iCal-Link, Name und Farbe hinzufügen"
+                left={(props) => <List.Icon {...props} icon="plus" />}
+                onPress={openCreateDialog}
               />
-            ))}
-
-            <List.Item
-              title="Neue iCal-Verknüpfung"
-              description="iCal-Link, Name und Farbe hinzufügen"
-              left={(props) => <List.Icon {...props} icon="plus" />}
-              onPress={openDialog}
-            />
-          </List.Section>
+            </List.Section>
+          </View>
         </Surface>
-      </Surface>
+      </ScrollView>
 
-      {/* Dialog for new iCal subscription */}
+      {/* Dialog for create / edit iCal subscription */}
       <Portal>
         <Dialog visible={dialogVisible} onDismiss={closeDialog}>
-          <Dialog.Title>Neue iCal-Verknüpfung</Dialog.Title>
+          <Dialog.Title>
+            {isEditing ? "iCal-Verknüpfung bearbeiten" : "Neue iCal-Verknüpfung"}
+          </Dialog.Title>
           <Dialog.Content>
             <TextInput
               label="Name"
@@ -298,9 +431,11 @@ export default function TimetableSettingsScreen() {
               style={{ marginBottom: 8 }}
               autoCapitalize="none"
               autoCorrect={false}
+              editable={!isEditing}
+              disabled={isEditing}
             />
 
-            {/* Paper-optimized color row: just "Farbe" + dot on the right */}
+            {/* Color selection row */}
             <List.Item
               title="Farbe"
               onPress={() => setColorPickerVisible(true)}
@@ -345,7 +480,10 @@ export default function TimetableSettingsScreen() {
           <Dialog.Content>
             <Text
               variant="bodySmall"
-              style={{ marginBottom: 8, color: theme.colors.onSurfaceVariant }}
+              style={{
+                marginBottom: 8,
+                color: theme.colors.onSurfaceVariant,
+              }}
             >
               Tippe auf eine Farbe, um sie zu übernehmen.
             </Text>
@@ -394,7 +532,6 @@ export default function TimetableSettingsScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
     padding: 16,
   },
   title: {

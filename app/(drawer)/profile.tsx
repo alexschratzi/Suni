@@ -1,3 +1,4 @@
+// app/(drawer)/profile.tsx
 import React, { useEffect, useState } from "react";
 import { Alert, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
