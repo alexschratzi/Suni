@@ -7,7 +7,11 @@ export interface CalendarEntryDTO {
   title_short: string;
   ical_id?: string;
   date: Date;
+  end_date?: Date;
+  note?: string;
+  color?: string;
 }
+
 
 export interface ICalSubscriptionDTO {
   id: string;

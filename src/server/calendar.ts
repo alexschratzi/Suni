@@ -69,22 +69,23 @@ async function loadEntries(): Promise<CalendarEntryDTO[]> {
   try {
     const raw = await AsyncStorage.getItem(ENTRIES_KEY);
     if (!raw) {
-      // First run: seed default entries and persist them
       await AsyncStorage.setItem(ENTRIES_KEY, JSON.stringify(DEFAULT_ENTRIES));
       return DEFAULT_ENTRIES;
     }
     const parsed: CalendarEntryDTO[] = JSON.parse(raw);
 
-    // Restore Date objects from JSON strings
+    // ⬇️ make sure date & end_date are real Date objects again
     return parsed.map((e) => ({
       ...e,
       date: new Date(e.date),
+      end_date: e.end_date ? new Date(e.end_date) : undefined,
     }));
   } catch (e) {
     console.warn("Failed to load calendar entries from storage:", e);
     return DEFAULT_ENTRIES;
   }
 }
+
 
 async function saveEntries(entries: CalendarEntryDTO[]): Promise<void> {
   try {

@@ -334,30 +334,39 @@ export default function TimetableScreen() {
   /* Calendar DTO <-> Event mapping + server sync                             */
   /* ------------------------------------------------------------------------ */
 
-  function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
+    function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
     const fullTitle = entry.title;
     const titleAbbr = entry.title_short || makeTitleAbbr(fullTitle);
+
     const start = new Date(entry.date);
-    const end = new Date(start.getTime() + DEFAULT_EVENT_DURATION_MIN * 60000);
+    const end = entry.end_date
+      ? new Date(entry.end_date)
+      : new Date(start.getTime() + DEFAULT_EVENT_DURATION_MIN * 60000);
 
     return {
       id: entry.id,
       title: titleAbbr,
       start: { dateTime: start.toISOString() },
       end: { dateTime: end.toISOString() },
-      color: "#4dabf7",
+      color: entry.color || "#4dabf7",
       fullTitle,
       titleAbbr,
       isTitleAbbrCustom: !!entry.title_short,
+      note: entry.note,
       source: "local",
     };
   }
 
-  function mapEventToDto(ev: EvWithMeta, userId: string): CalendarEntryDTO {
+
+    function mapEventToDto(ev: EvWithMeta, userId: string): CalendarEntryDTO {
     const fullTitle = ev.fullTitle || ev.title || "";
     const titleAbbr = ev.titleAbbr || makeTitleAbbr(fullTitle || "Untitled");
+
     const startIso = toISO(ev.start);
+    const endIso = toISO(ev.end);
+
     const startDate = new Date(startIso);
+    const endDate = new Date(endIso);
 
     return {
       id: ev.id,
@@ -365,8 +374,12 @@ export default function TimetableScreen() {
       title: fullTitle || titleAbbr,
       title_short: titleAbbr,
       date: startDate,
+      end_date: endDate,
+      note: ev.note,
+      color: ev.color,
     };
   }
+
 
   async function syncLocalEventsToServer(
     allEvents: EvWithMeta[],
