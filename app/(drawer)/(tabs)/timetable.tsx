@@ -1,4 +1,5 @@
 // app/(drawer)/(tabs)/timetable.tsx
+import { subscribeICalChanged } from "@/src/utils/calendarSyncEvents";
 import React, {
   useCallback,
   useEffect,
@@ -467,6 +468,14 @@ export default function TimetableScreen() {
       syncOnFocus();
     }, [syncOnFocus]),
   );
+
+   // Re-sync calendar immediately when iCal links are changed in settings
+  useEffect(() => {
+    const unsubscribe = subscribeICalChanged(() => {
+      syncOnFocus();
+    });
+    return unsubscribe;
+  }, [syncOnFocus]);
 
   /* ------------------------------------------------------------------------ */
   /* Existing timetable logic                                                 */
