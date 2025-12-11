@@ -65,7 +65,7 @@ export default function DirectList({ directs, router }: Props) {
 
       <Button
         mode="text"
-        onPress={() => router.push("../(drawer)/friendRequests")}
+        onPress={() => router.push("../(drawer)/friendRequest")}
         style={{ marginHorizontal: 12, marginBottom: 12 }}
       >
         Freundschaftsanfragen anzeigen
