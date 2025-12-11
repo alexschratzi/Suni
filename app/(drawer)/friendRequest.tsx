@@ -1,5 +1,5 @@
-// app/friendRequests.tsx
-import React, { useEffect, useState } from "react";
+// app/(drawer)/friendRequests.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import {
   Text,
@@ -8,21 +8,29 @@ import {
   Button,
   Snackbar,
   ActivityIndicator,
+  Avatar,
+  useTheme,
 } from "react-native-paper";
-import { auth, db } from "../firebase";
+import { auth, db } from "@/firebase";
 import {
   doc,
   onSnapshot,
   arrayUnion,
   arrayRemove,
   setDoc,
+  getDoc,
 } from "firebase/firestore";
+import { initials } from "@/utils/utils";
+
+type ProfileMap = Record<string, { username?: string } | undefined>;
 
 export default function FriendRequestsScreen() {
   const [requests, setRequests] = useState<string[]>([]);
+  const [profiles, setProfiles] = useState<ProfileMap>({});
   const [snack, setSnack] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const theme = useTheme();
   const me = auth.currentUser;
 
   useEffect(() => {
@@ -39,7 +47,32 @@ export default function FriendRequestsScreen() {
     });
 
     return () => unsub();
-  }, []);
+  }, [me]);
+
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(requests.filter((uid) => !profiles[uid]))
+    );
+
+    if (!missing.length) return;
+
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (uid) => {
+          const snap = await getDoc(doc(db, "users", uid));
+          const username = snap.exists() ? snap.data().username : undefined;
+          return [uid, { username }] as const;
+        })
+      );
+
+      setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    })();
+  }, [profiles, requests]);
+
+  const displayName = useMemo(
+    () => (uid: string) => profiles[uid]?.username || uid,
+    [profiles]
+  );
 
   const accept = async (otherUid: string) => {
     if (!me) return;
@@ -48,6 +81,17 @@ export default function FriendRequestsScreen() {
     const otherRef = doc(db, "users", otherUid);
 
     try {
+      const [mySnap, otherSnap] = await Promise.all([
+        getDoc(myRef),
+        getDoc(otherRef),
+      ]);
+
+      const myFriends: string[] = mySnap.data()?.friends || [];
+      if (myFriends.includes(otherUid)) {
+        setSnack("Ihr seid bereits befreundet");
+        return;
+      }
+
       // 1. Freunde + Pending aktualisieren
       await setDoc(
         myRef,
@@ -67,19 +111,23 @@ export default function FriendRequestsScreen() {
         { merge: true }
       );
 
-      // 2. DM-Thread erstellen
+      // 2. DM-Thread erstellen, falls er noch nicht existiert
       const threadId =
         me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
+      const threadRef = doc(db, "dm_threads", threadId);
+      const threadSnap = await getDoc(threadRef);
 
-      await setDoc(
-        doc(db, "dm_threads", threadId),
-        {
-          users: [me.uid, otherUid],
-          lastMessage: "",
-          lastTimestamp: null,
-        },
-        { merge: true }
-      );
+      if (!threadSnap.exists()) {
+        await setDoc(
+          threadRef,
+          {
+            users: [me.uid, otherUid],
+            lastMessage: "",
+            lastTimestamp: null,
+          },
+          { merge: true }
+        );
+      }
 
       setSnack("Freund hinzugefügt!");
     } catch (err) {
@@ -122,7 +170,7 @@ export default function FriendRequestsScreen() {
     );
 
   return (
-    <View>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Text variant="titleLarge" style={{ padding: 16 }}>
         Anfragen
       </Text>
@@ -134,8 +182,17 @@ export default function FriendRequestsScreen() {
       {requests.map((uid) => (
         <List.Item
           key={uid}
-          title={uid}
+          title={displayName(uid)}
           description="Möchte mit dir befreundet sein"
+          left={(props) => (
+            <Avatar.Text
+              {...props}
+              size={40}
+              label={initials(displayName(uid))}
+              color={theme.colors.onPrimary}
+              style={{ backgroundColor: theme.colors.primary }}
+            />
+          )}
           right={() => (
             <View style={{ flexDirection: "row" }}>
               <Button onPress={() => accept(uid)}>Annehmen</Button>

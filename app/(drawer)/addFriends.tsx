@@ -18,6 +18,7 @@ import {
   setDoc,
   doc,
   arrayUnion,
+  getDoc,
 } from "firebase/firestore";
 
 export default function AddFriendScreen() {
@@ -62,10 +63,43 @@ export default function AddFriendScreen() {
   const sendRequest = async (targetUid: string) => {
     if (!me) return;
 
+    if (targetUid === me.uid) {
+      setSnack("Du kannst dich nicht selbst hinzufügen");
+      return;
+    }
+
     const myRef = doc(db, "users", me.uid);
     const targetRef = doc(db, "users", targetUid);
 
     try {
+      const [mySnap, targetSnap] = await Promise.all([
+        getDoc(myRef),
+        getDoc(targetRef),
+      ]);
+
+      const myData = mySnap.data() || {};
+      const targetData = targetSnap.data() || {};
+
+      if ((myData.friends || []).includes(targetUid)) {
+        setSnack("Ihr seid bereits befreundet");
+        return;
+      }
+
+      if ((myData.pendingSent || []).includes(targetUid)) {
+        setSnack("Anfrage bereits gesendet");
+        return;
+      }
+
+      if ((myData.pendingReceived || []).includes(targetUid)) {
+        setSnack("Dieser Nutzer hat dir bereits geschrieben");
+        return;
+      }
+
+      if ((targetData.pendingReceived || []).includes(me.uid)) {
+        setSnack("Anfrage ist schon offen");
+        return;
+      }
+
       await setDoc(
         myRef,
         { pendingSent: arrayUnion(targetUid) },

@@ -58,7 +58,7 @@ export default function DirectList({ directs, router }: Props) {
         mode="contained"
         icon="account-plus"
         style={{ marginHorizontal: 12, marginBottom: 12, marginTop: 8 }}
-        onPress={() => router.push("../(drawer)/(tabs)/addFriends")}
+        onPress={() => router.push("../(drawer)/addFriends")}
       >
         Freund hinzufügen
       </Button>

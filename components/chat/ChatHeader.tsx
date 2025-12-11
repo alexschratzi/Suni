@@ -32,11 +32,23 @@ type Props = {
   setTab: (t: TabKey) => void;
   search: string;
   setSearch: (v: string) => void;
+  pendingCount?: number;
 };
 
-export default function ChatHeader({ tab, setTab, search, setSearch }: Props) {
+export default function ChatHeader({
+  tab,
+  setTab,
+  search,
+  setSearch,
+  pendingCount = 0,
+}: Props) {
   const theme = useTheme();
   const { t } = useTranslation();
+
+  const directLabel =
+    pendingCount > 0
+      ? `${t("chat.tabs.direct")} (${pendingCount})`
+      : t("chat.tabs.direct");
 
   return (
     <View style={styles.container}>
@@ -45,7 +57,7 @@ export default function ChatHeader({ tab, setTab, search, setSearch }: Props) {
         onValueChange={(v) => setTab(v as TabKey)}
         buttons={[
           { value: "rooms", label: t("chat.tabs.rooms"), icon: "chat" },
-          { value: "direct", label: t("chat.tabs.direct"), icon: "account" },
+          { value: "direct", label: directLabel, icon: "account" },
         ]}
         style={styles.segment}
       />

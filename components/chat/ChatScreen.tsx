@@ -45,6 +45,7 @@ import {
   query,
   serverTimestamp,
   doc,
+  getDoc,
 } from "firebase/firestore";
 import { where } from "firebase/firestore/lite";
 import { useTranslation } from "react-i18next";
@@ -57,6 +58,16 @@ import DirectList, { Direct } from "./DirectList";
 import RoomMessages from "./RoomMessages";
 
 type TabKey = "rooms" | "direct";
+
+type UserProfile = {
+  username?: string;
+};
+
+type RawDirect = {
+  id: string;
+  otherUid: string;
+  last?: string;
+};
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -82,7 +93,11 @@ export default function ChatScreen() {
   const [inputHeight, setInputHeight] = useState(40);
 
   // Direktnachrichten
-  const [directs, setDirects] = useState<Direct[]>([]);
+  const [rawDirects, setRawDirects] = useState<RawDirect[]>([]);
+  const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>(
+    {}
+  );
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Username aus Firestore laden
   useEffect(() => {
@@ -91,7 +106,9 @@ export default function ChatScreen() {
     const userRef = doc(db, "users", auth.currentUser.uid);
     const unsubscribe = onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
-        setUsername(snap.data().username);
+        const data = snap.data();
+        setUsername(data.username);
+        setPendingCount((data.pendingReceived || []).length);
       }
     });
 
@@ -110,9 +127,17 @@ export default function ChatScreen() {
 
     setLoadingMsgs(true);
 
-    const q = query(collection(db, ROOMS[room]), orderBy("timestamp", "desc"));
+    const q = query(
+      collection(db, ROOMS[room]),
+      orderBy("timestamp", "desc"),
+      orderBy("username")
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const msgs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
       setMessages(msgs);
       setLoadingMsgs(false);
     });
@@ -131,20 +156,60 @@ export default function ChatScreen() {
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      const arr: Direct[] = snap.docs.map((d) => {
+      const arr: RawDirect[] = snap.docs.map((d) => {
         const data = d.data();
-        const otherUid = data.users.find((u: string) => u !== uid);
+        const otherUid = data.users.find((u: string) => u !== uid) || uid;
         return {
           id: d.id,
-          displayName: otherUid,
+          otherUid,
           last: data.lastMessage ?? "",
         };
       });
-      setDirects(arr);
+      setRawDirects(arr);
     });
 
     return () => unsubscribe();
   }, []);
+
+  // fehlende User-Profile für Directs nachladen
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(
+        rawDirects
+          .map((d) => d.otherUid)
+          .filter((uid) => !userProfiles[uid])
+      )
+    );
+
+    if (!missing.length) return;
+
+    (async () => {
+      const entries = await Promise.all(
+        missing.map(async (uid) => {
+          const snap = await getDoc(doc(db, "users", uid));
+          const profile: UserProfile = snap.exists()
+            ? { username: snap.data().username }
+            : {};
+          return [uid, profile] as const;
+        })
+      );
+
+      setUserProfiles((prev) => ({
+        ...prev,
+        ...Object.fromEntries(entries),
+      }));
+    })();
+  }, [rawDirects, userProfiles]);
+
+  const directs: Direct[] = useMemo(
+    () =>
+      rawDirects.map((d) => ({
+        id: d.id,
+        displayName: userProfiles[d.otherUid]?.username || d.otherUid,
+        last: d.last ?? "",
+      })),
+    [rawDirects, userProfiles]
+  );
 
   // Rooms filtern
   const filteredRooms: RoomItem[] = useMemo(() => {
@@ -213,6 +278,7 @@ export default function ChatScreen() {
         setTab={setTab}
         search={search}
         setSearch={setSearch}
+        pendingCount={pendingCount}
       />
 
       {/* Rooms-Ansicht */}
