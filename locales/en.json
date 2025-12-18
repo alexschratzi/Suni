@@ -23,7 +23,7 @@
     "language": {
       "german": "German",
       "english": "English",
-      "info": "Language setting is synced with your account."
+      "info": "Language setting is stored locally and follows the device language by default."
     }
   },
 

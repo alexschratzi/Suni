@@ -13,8 +13,6 @@ import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useAppTheme, ThemeMode } from "../../components/theme/AppThemeProvider";
-import { auth, db } from "../../firebase";
-import { doc, setDoc } from "firebase/firestore";
 
 type LanguageCode = "de" | "en";
 
@@ -37,25 +35,11 @@ export default function SettingsScreen() {
     // i18n wechseln
     await i18n.changeLanguage(value);
 
-    // lokal speichern
+    // lokal speichern (keine Remote-Synchronisierung)
     try {
       await AsyncStorage.setItem("appLanguage", value);
     } catch (e) {
       console.warn("Failed to save language to AsyncStorage", e);
-    }
-
-    // im User-Dokument speichern (geräteübergreifend)
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        await setDoc(
-          doc(db, "users", user.uid),
-          { lang: value },
-          { merge: true }
-        );
-      } catch (e) {
-        console.warn("Failed to update language in Firestore", e);
-      }
     }
   };
 

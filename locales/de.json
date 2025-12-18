@@ -23,7 +23,7 @@
     "language": {
       "german": "Deutsch",
       "english": "Englisch",
-      "info": "Die Spracheinstellung wird mit deinem Konto synchronisiert."
+      "info": "Die Spracheinstellung wird lokal gespeichert und nutzt standardmäßig die Gerätesprache."
     }
   },
 
