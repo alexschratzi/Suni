@@ -46,6 +46,9 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  setDoc,
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 import { where } from "firebase/firestore/lite";
 import { useTranslation } from "react-i18next";
@@ -67,6 +70,7 @@ type RawDirect = {
   id: string;
   otherUid: string;
   last?: string;
+  hidden?: boolean;
 };
 
 export default function ChatScreen() {
@@ -165,6 +169,7 @@ export default function ChatScreen() {
           id: d.id,
           otherUid,
           last: data.lastMessage ?? "",
+          hidden: (data.hiddenBy || []).includes(uid),
         };
       });
       setRawDirects(arr);
@@ -209,6 +214,7 @@ export default function ChatScreen() {
         id: d.id,
         displayName: userProfiles[d.otherUid]?.username || d.otherUid,
         last: d.last ?? "",
+        hidden: d.hidden ?? false,
       })),
     [rawDirects, userProfiles]
   );
@@ -246,13 +252,14 @@ export default function ChatScreen() {
   // Directs filtern
   const filteredDirects = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return directs;
+    if (!q) return directs.filter((d) => !d.hidden);
 
-    return directs.filter(
-      (d) =>
-        d.displayName.toLowerCase().includes(q) ||
-        (d.last ?? "").toLowerCase().includes(q)
-    );
+    const match = (d: Direct) =>
+      d.displayName.toLowerCase().includes(q) ||
+      (d.last ?? "").toLowerCase().includes(q);
+
+    // Bei Suche auch ausgeblendete berücksichtigen
+    return directs.filter(match);
   }, [directs, search]);
 
   // Raum-Nachrichten filtern: ausgeblendete Sender (blockiert)
@@ -305,6 +312,22 @@ export default function ChatScreen() {
         <DirectList
           directs={filteredDirects}
           router={router}
+          onToggleHidden={async (id, makeHidden) => {
+            const uid = auth.currentUser?.uid;
+            if (!uid) return;
+            const threadRef = doc(db, "dm_threads", id);
+            try {
+              await setDoc(
+                threadRef,
+                {
+                  hiddenBy: makeHidden ? arrayUnion(uid) : arrayRemove(uid),
+                },
+                { merge: true }
+              );
+            } catch (err) {
+              console.error("Fehler beim Ausblenden:", err);
+            }
+          }}
         />
       )}
 

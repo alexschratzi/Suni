@@ -182,6 +182,11 @@ export default function FriendsScreen() {
         return;
       }
 
+      // DM-Thread erstellen, falls er noch nicht existiert
+      const threadId = me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
+      const threadRef = doc(db, "dm_threads", threadId);
+      const threadSnap = await getDoc(threadRef);
+
       await setDoc(
         myRef,
         {
@@ -200,11 +205,6 @@ export default function FriendsScreen() {
         { merge: true }
       );
 
-      // DM-Thread erstellen, falls er noch nicht existiert
-      const threadId = me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
-      const threadRef = doc(db, "dm_threads", threadId);
-      const threadSnap = await getDoc(threadRef);
-
       if (!threadSnap.exists()) {
         await setDoc(
           threadRef,
@@ -212,6 +212,7 @@ export default function FriendsScreen() {
             users: [me.uid, otherUid],
             lastMessage: "",
             lastTimestamp: null,
+            hiddenBy: [],
           },
           { merge: true }
         );

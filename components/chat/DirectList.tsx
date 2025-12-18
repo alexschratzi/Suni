@@ -20,14 +20,16 @@ export type Direct = {
   id: string;
   displayName: string;
   last?: string;
+  hidden?: boolean;
 };
 
 type Props = {
   directs: Direct[];
   router: Router;
+  onToggleHidden: (id: string, makeHidden: boolean) => void;
 };
 
-export default function DirectList({ directs, router }: Props) {
+export default function DirectList({ directs, router, onToggleHidden }: Props) {
   const theme = useTheme();
 
   return (
@@ -69,12 +71,21 @@ export default function DirectList({ directs, router }: Props) {
               />
             )}
             right={() => (
-              <View style={{ justifyContent: "center" }}>
+              <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
                 <Ionicons
                   name="chevron-forward"
                   size={20}
                   color={theme.colors.onSurfaceVariant}
                 />
+                <Button
+                  compact
+                  mode="text"
+                  textColor={item.hidden ? theme.colors.primary : theme.colors.onSurfaceVariant}
+                  style={{ marginTop: 2 }}
+                  onPress={() => onToggleHidden(item.id, !item.hidden)}
+                >
+                  {item.hidden ? "Einblenden" : "Ausblenden"}
+                </Button>
               </View>
             )}
             onPress={() => {
