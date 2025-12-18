@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  getDoc,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import {
   Text,
@@ -36,13 +38,17 @@ export default function ReplyScreen() {
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   // Username laden
   useEffect(() => {
     if (!auth.currentUser) return;
     const userRef = doc(db, "users", auth.currentUser.uid);
     const unsubscribe = onSnapshot(userRef, (snap) => {
-      if (snap.exists()) setUsername(snap.data().username);
+      if (snap.exists()) {
+        setUsername(snap.data().username);
+        setBlocked(snap.data().blocked || []);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -54,7 +60,13 @@ export default function ReplyScreen() {
       const repliesRef = collection(db, "dm_threads", dmId as string, "messages");
       const q = query(repliesRef, orderBy("timestamp", "asc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        setReplies(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const filtered = all.filter((r) => {
+          const sender = (r as any).sender as string | undefined;
+          if (!sender) return true;
+          return !blocked.includes(sender);
+        });
+        setReplies(filtered);
       });
       return () => unsubscribe();
     }
@@ -64,11 +76,17 @@ export default function ReplyScreen() {
       const repliesRef = collection(db, room as string, messageId as string, "replies");
       const q = query(repliesRef, orderBy("timestamp", "asc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        setReplies(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const filtered = all.filter((r) => {
+          const sender = (r as any).sender as string | undefined;
+          if (!sender) return true;
+          return !blocked.includes(sender);
+        });
+        setReplies(filtered);
       });
       return () => unsubscribe();
     }
-  }, [room, messageId, dmId]);
+  }, [room, messageId, dmId, blocked]);
 
   // Nachricht senden
   const sendReply = async () => {
@@ -77,15 +95,30 @@ export default function ReplyScreen() {
     try {
       // === Direktnachricht (DM) ===
       if (dmId) {
-        const ref = collection(db, "dm_threads", dmId as string, "messages");
-        await addDoc(ref, {
-          sender: auth.currentUser?.uid,
-          username,
-          text: input,
-          timestamp: serverTimestamp(),
-        });
+        const threadRef = doc(db, "dm_threads", dmId as string);
+        const threadSnap = await getDoc(threadRef);
+        const users: string[] = (threadSnap.data()?.users as string[]) || [];
+        const otherUid = users.find((u) => u !== auth.currentUser?.uid);
 
-        // letzes message speichern (für Vorschau)
+        if (otherUid && auth.currentUser?.uid) {
+          const [meDoc, otherDoc] = await Promise.all([
+            getDoc(doc(db, "users", auth.currentUser.uid)),
+            getDoc(doc(db, "users", otherUid)),
+          ]);
+          const myBlocked: string[] = meDoc.data()?.blocked || [];
+          const otherBlocked: string[] = otherDoc.data()?.blocked || [];
+
+          if (myBlocked.includes(otherUid)) {
+            Alert.alert("Blockiert", "Du hast diesen Nutzer blockiert.");
+            return;
+          }
+          if (otherBlocked.includes(auth.currentUser.uid)) {
+            Alert.alert("Blockiert", "Dieser Nutzer hat dich blockiert.");
+            return;
+          }
+        }
+
+        const ref = collection(db, "dm_threads", dmId as string, "messages");
         await addDoc(ref, {
           sender: auth.currentUser?.uid,
           username,
@@ -101,6 +134,7 @@ export default function ReplyScreen() {
       if (room && messageId) {
         const repliesRef = collection(db, room as string, messageId as string, "replies");
         await addDoc(repliesRef, {
+          sender: auth.currentUser?.uid,
           username,
           text: input,
           timestamp: serverTimestamp(),
@@ -109,7 +143,7 @@ export default function ReplyScreen() {
         setInputHeight(40);
       }
     } catch (err) {
-      console.error("❌ Fehler beim Senden:", err);
+      console.error("Fehler beim Senden:", err);
     }
   };
 
@@ -120,14 +154,13 @@ export default function ReplyScreen() {
       keyboardVerticalOffset={110}
     >
       <Surface style={{ flex: 1, padding: 20, backgroundColor: theme.colors.background }}>
-        
         {/* Header */}
         <Surface style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
           <IconButton icon="arrow-left" onPress={() => router.back()} />
           <Text variant="titleMedium">Antworten</Text>
         </Surface>
 
-        {/* Original Nachricht — nur in Gruppenchats */}
+        {/* Original Nachricht - nur in Gruppenchats */}
         {!dmId && (
           <Surface
             style={{
@@ -171,7 +204,7 @@ export default function ReplyScreen() {
         <Surface style={{ flexDirection: "row", marginTop: 10 }}>
           <TextInput
             mode="outlined"
-            label="Antwort…"
+            label="Antwort"
             value={input}
             onChangeText={setInput}
             multiline

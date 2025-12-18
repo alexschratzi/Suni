@@ -83,6 +83,7 @@ export default function ChatScreen() {
   // User / Raum
   const [username, setUsername] = useState("");
   const [room, setRoom] = useState<RoomKey | null>(null);
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   // Nachrichten im Raum
   const [messages, setMessages] = useState<any[]>([]);
@@ -109,6 +110,7 @@ export default function ChatScreen() {
         const data = snap.data();
         setUsername(data.username);
         setPendingCount((data.pendingReceived || []).length);
+        setBlocked(data.blocked || []);
       }
     });
 
@@ -253,12 +255,24 @@ export default function ChatScreen() {
     );
   }, [directs, search]);
 
+  // Raum-Nachrichten filtern: ausgeblendete Sender (blockiert)
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter((m) => {
+        const sender = (m as any).sender as string | undefined;
+        if (!sender) return true;
+        return !blocked.includes(sender);
+      }),
+    [messages, blocked]
+  );
+
   // Nachricht schicken
   const sendMessage = async () => {
     if (!input.trim() || !room || !username) return;
 
     try {
       await addDoc(collection(db, ROOMS[room]), {
+        sender: auth.currentUser?.uid,
         username,
         text: input,
         timestamp: serverTimestamp(),
@@ -299,7 +313,7 @@ export default function ChatScreen() {
         <RoomMessages
           room={room}
           locale={locale}
-          messages={messages}
+          messages={visibleMessages}
           loading={loadingMsgs}
           input={input}
           setInput={setInput}

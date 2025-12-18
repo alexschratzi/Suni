@@ -44,6 +44,7 @@ export default function FriendsScreen() {
 
   const [incoming, setIncoming] = useState<string[]>([]);
   const [outgoing, setOutgoing] = useState<string[]>([]);
+  const [blocked, setBlocked] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<ProfileMap>({});
   const [loadingLists, setLoadingLists] = useState(true);
 
@@ -55,6 +56,7 @@ export default function FriendsScreen() {
       const data = snap.data() || {};
       setIncoming(data.pendingReceived || []);
       setOutgoing(data.pendingSent || []);
+      setBlocked(data.blocked || []);
       setLoadingLists(false);
     });
 
@@ -62,7 +64,7 @@ export default function FriendsScreen() {
   }, [me]);
 
   useEffect(() => {
-    const all = [...incoming, ...outgoing];
+    const all = [...incoming, ...outgoing, ...blocked];
     const missing = Array.from(new Set(all.filter((uid) => !profiles[uid])));
     if (!missing.length) return;
 
@@ -76,7 +78,7 @@ export default function FriendsScreen() {
       );
       setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
-  }, [incoming, outgoing, profiles]);
+  }, [incoming, outgoing, blocked, profiles]);
 
   const displayName = useMemo(
     () => (uid: string) => profiles[uid]?.username || uid,
@@ -130,6 +132,14 @@ export default function FriendsScreen() {
       const myData = mySnap.data() || {};
       const targetData = targetSnap.data() || {};
 
+      if ((targetData.blocked || []).includes(me.uid)) {
+        setSnack("Du wurdest blockiert");
+        return;
+      }
+      if ((myData.blocked || []).includes(targetUid)) {
+        setSnack("Du hast diesen Nutzer blockiert");
+        return;
+      }
       if ((myData.friends || []).includes(targetUid)) {
         setSnack("Ihr seid bereits befreundet");
         return;
@@ -231,6 +241,62 @@ export default function FriendsScreen() {
     }
   };
 
+  const blockUser = async (otherUid: string) => {
+    if (!me) return;
+    const myRef = doc(db, "users", me.uid);
+    const otherRef = doc(db, "users", otherUid);
+
+    try {
+      const [mySnap, otherSnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
+      const myData = mySnap.data() || {};
+
+      if ((myData.blocked || []).includes(otherUid)) {
+        setSnack("Bereits blockiert");
+        return;
+      }
+
+      // block + aufräumen (pending/friends)
+      await setDoc(
+        myRef,
+        {
+          blocked: arrayUnion(otherUid),
+          friends: arrayRemove(otherUid),
+          pendingSent: arrayRemove(otherUid),
+          pendingReceived: arrayRemove(otherUid),
+        },
+        { merge: true }
+      );
+
+      // Gegenüber räumen wir pending/friends ebenfalls auf
+      await setDoc(
+        otherRef,
+        {
+          friends: arrayRemove(me.uid),
+          pendingSent: arrayRemove(me.uid),
+          pendingReceived: arrayRemove(me.uid),
+        },
+        { merge: true }
+      );
+
+      setSnack("Nutzer blockiert");
+    } catch (err) {
+      console.error("Fehler beim Blockieren:", err);
+      setSnack("Fehler beim Blockieren");
+    }
+  };
+
+  const unblockUser = async (otherUid: string) => {
+    if (!me) return;
+    const myRef = doc(db, "users", me.uid);
+    try {
+      await setDoc(myRef, { blocked: arrayRemove(otherUid) }, { merge: true });
+      setSnack("Blockierung aufgehoben");
+    } catch (err) {
+      console.error("Fehler beim Entblocken:", err);
+      setSnack("Fehler beim Entblocken");
+    }
+  };
+
   if (!me) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
@@ -299,9 +365,19 @@ export default function FriendsScreen() {
                 />
               )}
               right={() => (
-                <Button compact mode="contained" onPress={() => sendRequest(result.uid)}>
-                  Anfrage
-                </Button>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Button compact mode="contained" onPress={() => sendRequest(result.uid)}>
+                    Anfrage
+                  </Button>
+                  <Button
+                    compact
+                    mode="text"
+                    onPress={() => blockUser(result.uid)}
+                    style={{ marginLeft: 6 }}
+                  >
+                    Blockieren
+                  </Button>
+                </View>
               )}
               onPress={() => sendRequest(result.uid)}
             />
@@ -338,12 +414,20 @@ export default function FriendsScreen() {
                 />
               )}
               right={() => (
-                <View style={{ flexDirection: "row" }}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Button compact onPress={() => accept(uid)}>
                     Annehmen
                   </Button>
-                  <Button compact textColor="red" onPress={() => decline(uid)}>
+                  <Button compact textColor="red" onPress={() => decline(uid)} style={{ marginLeft: 4 }}>
                     Ablehnen
+                  </Button>
+                  <Button
+                    compact
+                    textColor={theme.colors.error}
+                    onPress={() => blockUser(uid)}
+                    style={{ marginLeft: 4 }}
+                  >
+                    Blockieren
                   </Button>
                 </View>
               )}
@@ -381,9 +465,53 @@ export default function FriendsScreen() {
                 />
               )}
               right={() => (
-                <View style={{ justifyContent: "center" }}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text style={{ color: theme.colors.onSurfaceVariant }}>Gesendet</Text>
+                  <Button
+                    compact
+                    textColor={theme.colors.error}
+                    onPress={() => blockUser(uid)}
+                    style={{ marginLeft: 8 }}
+                  >
+                    Blockieren
+                  </Button>
                 </View>
+              )}
+            />
+          ))
+        )}
+      </Surface>
+
+      <Surface style={styles.card} mode="elevated">
+        <View style={styles.sectionHeader}>
+          <Text variant="titleMedium" style={styles.cardTitle}>
+            Blockierte Nutzer
+          </Text>
+        </View>
+
+        {blocked.length === 0 ? (
+          <Text style={{ color: theme.colors.onSurfaceVariant }}>Keine blockierten Nutzer</Text>
+        ) : (
+          blocked.map((uid) => (
+            <List.Item
+              key={uid}
+              title={displayName(uid)}
+              description="Blockiert"
+              titleStyle={{ color: theme.colors.onSurface }}
+              descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+              left={(props) => (
+                <Avatar.Text
+                  {...props}
+                  size={40}
+                  label={initials(displayName(uid))}
+                  color={theme.colors.onPrimary}
+                  style={{ backgroundColor: theme.colors.errorContainer }}
+                />
+              )}
+              right={() => (
+                <Button compact onPress={() => unblockUser(uid)}>
+                  Entblocken
+                </Button>
               )}
             />
           ))
