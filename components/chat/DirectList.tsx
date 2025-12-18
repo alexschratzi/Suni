@@ -1,38 +1,16 @@
 /**
  * DirectList.tsx
  * -----------------------------------------------
- * Liste aller Direktnachrichten (1:1 Chats).
- *
- * Enthält:
- *  - "Freund hinzufügen"-Button
- *  - "Freundschaftsanfragen anzeigen"-Button
- *  - Liste der Direct-Messages (dm_threads)
+ * Liste aller Direktnachrichten (1:1 Chats) plus Shortcut zu Freunde/Anfragen.
  *
  * Props:
  *  - directs: Gefilterte DM-Liste
  *  - router: expo-router Instanz für Navigation
- *
- * Wird verwendet in:
- *  - ChatScreen.tsx
- *
- * Änderungen / Erweiterungen:
- *  - Navigation zu Threads ändern → HIER (router.push)
- *  - Anzeige/Design der DMs anpassen
- *  - Freundeslogik erweitern → Buttons hier anpassen
- *  - Initialen-Logik wird aus utils.ts importiert
  */
 
 import React from "react";
-import { View } from "react-native";
-import { FlatList } from "react-native";
-import {
-  Button,
-  Divider,
-  List,
-  Avatar,
-  useTheme,
-  Text,
-} from "react-native-paper";
+import { View, FlatList } from "react-native";
+import { Button, Divider, List, Avatar, useTheme, Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import EmptyState from "./EmptyState";
@@ -55,20 +33,13 @@ export default function DirectList({ directs, router }: Props) {
   return (
     <View style={{ flex: 1 }}>
       <Button
-        mode="contained"
-        icon="account-plus"
-        style={{ marginHorizontal: 12, marginBottom: 12, marginTop: 8 }}
-        onPress={() => router.push("../(drawer)/addFriends")}
+        mode="contained-tonal"
+        compact
+        icon="account-multiple"
+        style={{ alignSelf: "flex-start", marginHorizontal: 12, marginVertical: 10 }}
+        onPress={() => router.push("/(drawer)/friends")}
       >
-        Freund hinzufügen
-      </Button>
-
-      <Button
-        mode="text"
-        onPress={() => router.push("../(drawer)/friendRequests")}
-        style={{ marginHorizontal: 12, marginBottom: 12 }}
-      >
-        Freundschaftsanfragen anzeigen
+        Freunde & Anfragen
       </Button>
 
       <FlatList
@@ -115,10 +86,7 @@ export default function DirectList({ directs, router }: Props) {
           />
         )}
         ListEmptyComponent={
-          <EmptyState
-            title="Keine Direktnachrichten"
-            subtitle="Füge Freunde hinzu, um Chats zu starten."
-          />
+          <EmptyState title="Keine Direktnachrichten" subtitle="Füge Freunde hinzu, um Chats zu starten." />
         }
       />
     </View>

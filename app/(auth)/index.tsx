@@ -40,6 +40,7 @@ export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
   // Recaptcha für Mobile
   const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal | null>(null);
@@ -58,9 +59,21 @@ export default function LoginScreen() {
     init();
   }, []);
 
+  const checkExistingProfile = async (cleanPhone: string) => {
+    try {
+      const q = query(collection(db, "users"), where("phone", "==", cleanPhone));
+      const result = await getDocs(q);
+      setHasProfile(!result.empty);
+    } catch (err) {
+      console.log("checkExistingProfile error:", err);
+      setHasProfile(false); // lieber Username abfragen als zu frÇ"h skippen
+    }
+  };
+
   const sendCode = async () => {
     try {
       const cleanPhone = phone.replace(/\s+/g, "");
+      setHasProfile(null);
 
       if (!cleanPhone.startsWith("+")) {
         Alert.alert(t("auth.error"), t("auth.phoneFormat"));
@@ -109,6 +122,7 @@ export default function LoginScreen() {
       }
 
       setConfirmation(confirmationResult);
+      await checkExistingProfile(cleanPhone);
       Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
     } catch (err: any) {
       console.log("sendCode error:", err);
@@ -123,39 +137,54 @@ export default function LoginScreen() {
         return;
       }
 
+      const cleanPhone = phone.replace(/\s+/g, "");
       const userCred = await confirmation.confirm(code);
       const uid = userCred.user.uid;
       const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
 
-      if (!snap.exists()) {
-        if (!username.trim()) {
-          Alert.alert(t("auth.error"), t("auth.enterUsername"));
-          return;
-        }
+      const existingUsername = snap.data()?.username;
 
-        const q = query(
-          collection(db, "usernames"),
-          where("username", "==", username.trim())
-        );
-        const existing = await getDocs(q);
+      // Direkt rein, falls Profil + Username schon vorhanden
+      if (snap.exists() && existingUsername) {
+        Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
+        router.replace("../(tabs)");
+        return;
+      }
 
-        if (!existing.empty) {
-          Alert.alert(t("auth.error"), t("auth.usernameTaken"));
-          return;
-        }
+      // Kein Username vorhanden -> Eingabe verlangen
+      setHasProfile(false);
 
-        await addDoc(collection(db, "usernames"), {
-          username: username.trim(),
-          uid,
-        });
+      if (!username.trim()) {
+        Alert.alert(t("auth.error"), t("auth.enterUsername"));
+        return;
+      }
 
-        await setDoc(userRef, {
-          phone: phone.replace(/\s+/g, ""),
+      const q = query(
+        collection(db, "usernames"),
+        where("username", "==", username.trim())
+      );
+      const existing = await getDocs(q);
+
+      if (!existing.empty) {
+        Alert.alert(t("auth.error"), t("auth.usernameTaken"));
+        return;
+      }
+
+      await addDoc(collection(db, "usernames"), {
+        username: username.trim(),
+        uid,
+      });
+
+      await setDoc(
+        userRef,
+        {
+          phone: cleanPhone,
           username: username.trim(),
           role: "student",
-        });
-      }
+        },
+        { merge: true }
+      );
 
       Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
       router.replace("../(tabs)");
@@ -250,10 +279,11 @@ export default function LoginScreen() {
             placeholder={t("auth.codePlaceholder")}
             placeholderTextColor={theme.colors.onSurfaceVariant}
             keyboardType="number-pad"
-            value={code}
-            onChangeText={setCode}
-          />
+          value={code}
+          onChangeText={setCode}
+        />
 
+        {hasProfile === false && (
           <TextInput
             style={inputStyle}
             placeholder={t("auth.usernamePlaceholder")}
@@ -261,11 +291,12 @@ export default function LoginScreen() {
             value={username}
             onChangeText={setUsername}
           />
+        )}
 
-          <Button mode="contained" onPress={confirmCode} style={styles.button}>
-            {t("auth.confirm")}
-          </Button>
-        </>
+        <Button mode="contained" onPress={confirmCode} style={styles.button}>
+          {t("auth.confirm")}
+        </Button>
+      </>
       )}
     </View>
   );

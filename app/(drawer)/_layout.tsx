@@ -6,16 +6,16 @@ import { useRouter, useSegments } from "expo-router";
 import { DrawerToggleButton } from "@react-navigation/drawer";
 import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "../../firebase";
 import { useTheme, Text } from "react-native-paper";
 
+import { auth } from "../../firebase";
 import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
   TimetableHeaderRight,
 } from "@/components/headers/TimetableHeader";
 
-// explicit tab → route mapping so TypeScript knows the exact route literals
+// explicit tab route mapping so TypeScript knows the exact route literals
 const TAB_ROUTES = {
   news: "/(drawer)/(tabs)/news",
   uni: "/(drawer)/(tabs)/uni",
@@ -57,7 +57,7 @@ export default function DrawerLayout() {
 
   if (!ready || !user) return null;
 
-  // "Zurück" → always go back to the currently open tab page
+  // "Zurueck" always go back to the currently open tab page
   const goBackToTabs = () => {
     router.back();
   };
@@ -74,7 +74,7 @@ export default function DrawerLayout() {
         drawerInactiveTintColor: theme.colors.onSurfaceVariant,
       }}
     >
-      {/* MAIN APP (tabs) – hidden from drawer */}
+      {/* MAIN APP (tabs) — hidden from drawer */}
       <Drawer.Screen
         name="(tabs)"
         options={{
@@ -201,31 +201,12 @@ export default function DrawerLayout() {
           ),
         }}
       />
-      {/* VISIBLE IN DRAWER: Freund hinzufügen */}
-      <Drawer.Screen
-        name="addFriends"
-        options={{
-          title: "Freund hinzufügen",
-          headerLeft: () => (
-            <Pressable
-              onPress={goBackToTabs}
-              style={{ paddingHorizontal: 16 }}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={theme.colors.onSurface}
-              />
-            </Pressable>
-          ),
-        }}
-      />
 
-      {/* VISIBLE IN DRAWER: Freundschaftsanfragen */}
+      {/* VISIBLE IN DRAWER: Freunde (Add + Requests together) */}
       <Drawer.Screen
-        name="friendRequests"
+        name="friends"
         options={{
-          title: "Freundschaftsanfragen",
+          title: "Freunde",
           headerLeft: () => (
             <Pressable
               onPress={goBackToTabs}

@@ -1,4 +1,4 @@
-// firebase.ts
+﻿// firebase.ts
 import { initializeApp, getApp, getApps } from "firebase/app";
 import {
   getAuth,
@@ -21,18 +21,23 @@ export const firebaseConfig = {
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Auth – Web = getAuth, Native (Expo Go / EAS) = initializeAuth mit AsyncStorage
+// Auth — Web = getAuth, Native (Expo Go / EAS) = initializeAuth mit AsyncStorage (persisted login)
 let authInstance: Auth;
 
 if (Platform.OS === "web") {
   authInstance = getAuth(app);
 } else {
-  authInstance =
-    // Initialize nur einmal
-    (getApps().length && getAuth(app)) ||
-    initializeAuth(app, {
+  const globalForAuth = globalThis as typeof globalThis & {
+    __suniAuth?: Auth;
+  };
+
+  if (!globalForAuth.__suniAuth) {
+    globalForAuth.__suniAuth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
+  }
+
+  authInstance = globalForAuth.__suniAuth;
 }
 
 export const auth = authInstance;
