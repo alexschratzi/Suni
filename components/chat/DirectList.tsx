@@ -1,11 +1,6 @@
 /**
  * DirectList.tsx
- * -----------------------------------------------
  * Liste aller Direktnachrichten (1:1 Chats) plus Shortcut zu Freunde/Anfragen.
- *
- * Props:
- *  - directs: Gefilterte DM-Liste
- *  - router: expo-router Instanz für Navigation
  */
 
 import React from "react";
@@ -15,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import EmptyState from "./EmptyState";
 import { initials } from "../../utils/utils";
+import { useTranslation } from "react-i18next";
 
 export type Direct = {
   id: string;
@@ -27,10 +23,12 @@ type Props = {
   directs: Direct[];
   router: Router;
   onToggleHidden: (id: string, makeHidden: boolean) => void;
+  accentColor: string;
 };
 
-export default function DirectList({ directs, router, onToggleHidden }: Props) {
+export default function DirectList({ directs, router, onToggleHidden, accentColor }: Props) {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <View style={{ flex: 1 }}>
@@ -41,7 +39,7 @@ export default function DirectList({ directs, router, onToggleHidden }: Props) {
         style={{ alignSelf: "flex-start", marginHorizontal: 12, marginVertical: 10 }}
         onPress={() => router.push("/(drawer)/friends")}
       >
-        Freunde & Anfragen
+        {t("chat.direct.showRequests")}
       </Button>
 
       <FlatList
@@ -67,7 +65,7 @@ export default function DirectList({ directs, router, onToggleHidden }: Props) {
                 size={40}
                 label={initials(item.displayName)}
                 color={theme.colors.onPrimary}
-                style={{ backgroundColor: theme.colors.primary }}
+                style={{ backgroundColor: accentColor }}
               />
             )}
             right={() => (
@@ -84,7 +82,7 @@ export default function DirectList({ directs, router, onToggleHidden }: Props) {
                   style={{ marginTop: 2 }}
                   onPress={() => onToggleHidden(item.id, !item.hidden)}
                 >
-                  {item.hidden ? "Einblenden" : "Ausblenden"}
+                  {item.hidden ? t("chat.direct.unhide") : t("chat.direct.hide")}
                 </Button>
               </View>
             )}
@@ -97,7 +95,10 @@ export default function DirectList({ directs, router, onToggleHidden }: Props) {
           />
         )}
         ListEmptyComponent={
-          <EmptyState title="Keine Direktnachrichten" subtitle="Füge Freunde hinzu, um Chats zu starten." />
+          <EmptyState
+            title={t("chat.empty.directTitle")}
+            subtitle={t("chat.empty.directSubtitle")}
+          />
         }
       />
     </View>

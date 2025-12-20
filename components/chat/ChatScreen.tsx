@@ -88,6 +88,7 @@ export default function ChatScreen() {
   const [username, setUsername] = useState("");
   const [room, setRoom] = useState<RoomKey | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
+  const [chatColor, setChatColor] = useState<string | null>(null);
 
   // Nachrichten im Raum
   const [messages, setMessages] = useState<any[]>([]);
@@ -115,6 +116,9 @@ export default function ChatScreen() {
         setUsername(data.username);
         setPendingCount((data.pendingReceived || []).length);
         setBlocked(data.blocked || []);
+        if (data.settings?.chatThemeColor) {
+          setChatColor(data.settings.chatThemeColor as string);
+        }
       }
     });
 
@@ -328,6 +332,7 @@ export default function ChatScreen() {
               console.error("Fehler beim Ausblenden:", err);
             }
           }}
+          accentColor={chatColor || theme.colors.primary}
         />
       )}
 
@@ -346,6 +351,7 @@ export default function ChatScreen() {
           onBack={() => setRoom(null)}
           t={t}
           theme={theme}
+          accentColor={chatColor || theme.colors.primary}
           router={router}
         />
       )}

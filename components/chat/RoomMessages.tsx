@@ -74,6 +74,7 @@ type Props = {
   t: (key: string) => string;
   theme: any;
   router: Router;
+  accentColor: string;
 };
 
 export default function RoomMessages(props: Props) {
@@ -91,6 +92,7 @@ export default function RoomMessages(props: Props) {
     t,
     theme,
     router,
+    accentColor,
   } = props;
 
   const roomTitle =
@@ -126,7 +128,7 @@ export default function RoomMessages(props: Props) {
         ]}
       >
         <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
+          <Ionicons name="arrow-back" size={24} color={accentColor} />
         </TouchableOpacity>
         <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
           {roomTitle}
@@ -232,7 +234,7 @@ export default function RoomMessages(props: Props) {
           }
         />
         <Button
-          mode="contained"
+          mode="contained" buttonColor={accentColor}
           onPress={sendMessage}
           disabled={!input.trim()}
           style={{ marginLeft: 6 }}

@@ -1,5 +1,7 @@
 {
   "settings": {
+    "title": "Settings",
+    "subtitle": "Everything on one page. Tap a section or scroll.",
     "appearanceTitle": "Appearance",
     "languageTitle": "Language",
     "theme": {
@@ -24,6 +26,65 @@
       "german": "German",
       "english": "English",
       "info": "Language setting is stored locally and follows the device language by default."
+    },
+    "sections": {
+      "general": "General",
+      "calendar": "Calendar",
+      "chat": "Chat",
+      "friends": "Friends",
+      "uni": "University",
+      "data": "Data & cache",
+      "security": "Security",
+      "accessibility": "Accessibility"
+    },
+    "general": {
+      "notifications": "Notifications",
+      "notificationsDesc": "Global push / in-app"
+    },
+    "calendar": {
+      "defaultView": "Default view",
+      "weekStart": "Week start",
+      "reminders": "Reminders",
+      "holidays": "Holidays"
+    },
+    "chatSection": {
+      "readReceipts": "Read receipts",
+      "notifications": "Notifications",
+      "notificationsDesc": "Push / sound / vibration",
+      "notifyMention": "Mentions",
+      "notifyMentionDesc": "Notify when you are mentioned",
+      "notifyDirect": "Direct messages",
+      "notifyDirectDesc": "Notify on new private messages",
+      "notifyRooms": "Room activity",
+      "notifyRoomsDesc": "Notify when someone posts in your current rooms",
+      "mediaDownload": "Media auto-download",
+      "theme": "Chat theme"
+    },
+    "friendsSection": {
+      "whoCanRequest": "Who can send requests?",
+      "autoAccept": "Auto-accept",
+      "blocked": "Blocked users"
+    },
+    "uniSection": {
+      "degree": "Degree",
+      "faculty": "Faculty",
+      "newsPush": "Uni news push"
+    },
+    "dataSection": {
+      "clearMedia": "Clear media cache",
+      "resetOffline": "Reset offline data",
+      "export": "Export / Backup"
+    },
+    "securitySection": {
+      "pin": "App PIN / biometrics",
+      "devices": "Device sessions",
+      "twofa": "Two-factor auth"
+    },
+    "accessibilitySection": {
+      "fontSize": "Font size",
+      "contrast": "Contrast mode",
+      "reduceMotion": "Reduce animations",
+      "haptics": "Haptics"
     }
   },
 
@@ -62,7 +123,54 @@
     "send": "Send",
     "direct": {
       "addFriend": "Add friend",
-      "showRequests": "Show requests"
+      "showRequests": "Show requests",
+      "hide": "Hide",
+      "unhide": "Unhide"
+    }
+  },
+
+  "friends": {
+    "title": "Friends",
+    "subtitle": "Search users, send requests, manage incoming/outgoing.",
+    "searchLabel": "Friend finder",
+    "searchButton": "Search & send request",
+    "incomingTitle": "Incoming requests",
+    "incomingEmpty": "No open requests",
+    "outgoingTitle": "Sent requests",
+    "outgoingEmpty": "Nothing pending",
+    "blockedTitle": "Blocked users",
+    "blockedEmpty": "No blocked users",
+    "accept": "Accept",
+    "decline": "Decline",
+    "block": "Block",
+    "unblock": "Unblock",
+    "sentLabel": "Sent",
+    "request": "Request",
+    "findUser": "User found",
+    "errors": {
+      "notFound": "User not found",
+      "search": "Error while searching",
+      "send": "Error sending request",
+      "accept": "Error accepting",
+      "decline": "Error declining",
+      "block": "Error blocking",
+      "unblock": "Error unblocking"
+    },
+    "snacks": {
+      "needLogin": "Not logged in",
+      "enterUsername": "Please enter a username",
+      "self": "You cannot add yourself",
+      "alreadyFriends": "Already friends",
+      "pendingSent": "Request already sent",
+      "pendingReceived": "This user already wrote you",
+      "alreadyOpen": "Request is already open",
+      "blockedByOther": "You have been blocked",
+      "youBlocked": "You blocked this user",
+      "sent": "Friend request sent",
+      "added": "Friend added!",
+      "declined": "Request declined",
+      "blocked": "User blocked",
+      "unblocked": "Block removed"
     }
   },
 

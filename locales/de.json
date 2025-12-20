@@ -1,5 +1,7 @@
 {
   "settings": {
+    "title": "Einstellungen",
+    "subtitle": "Alles auf einer Seite. Tippe auf einen Abschnitt oder scrolle.",
     "appearanceTitle": "Erscheinungsbild",
     "languageTitle": "Sprache",
     "theme": {
@@ -24,6 +26,65 @@
       "german": "Deutsch",
       "english": "Englisch",
       "info": "Die Spracheinstellung wird lokal gespeichert und nutzt standardmäßig die Gerätesprache."
+    },
+    "sections": {
+      "general": "Allgemein",
+      "calendar": "Kalender",
+      "chat": "Chat",
+      "friends": "Freunde",
+      "uni": "Universität",
+      "data": "Daten & Cache",
+      "security": "Sicherheit",
+      "accessibility": "Barrierefreiheit"
+    },
+    "general": {
+      "notifications": "Mitteilungen",
+      "notificationsDesc": "Globale Push / In-App"
+    },
+    "calendar": {
+      "defaultView": "Standard-Ansicht",
+      "weekStart": "Wochenstart",
+      "reminders": "Erinnerungen",
+      "holidays": "Feiertage"
+    },
+    "chatSection": {
+      "readReceipts": "Lesebestätigungen",
+      "notifications": "Benachrichtigungen",
+      "notificationsDesc": "Push / Ton / Vibration",
+      "notifyMention": "Erwähnungen",
+      "notifyMentionDesc": "Benachrichtigen, wenn du erwähnt wirst",
+      "notifyDirect": "Private Nachrichten",
+      "notifyDirectDesc": "Benachrichtigen bei neuen privaten Nachrichten",
+      "notifyRooms": "Raum-Aktivität",
+      "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Räumen postet",
+      "mediaDownload": "Medien-Auto-Download",
+      "theme": "Chat-Theme"
+    },
+    "friendsSection": {
+      "whoCanRequest": "Wer darf Anfragen schicken?",
+      "autoAccept": "Automatisch annehmen",
+      "blocked": "Blockierte Nutzer"
+    },
+    "uniSection": {
+      "degree": "Studiengang",
+      "faculty": "Fakultät",
+      "newsPush": "Uni-News Push"
+    },
+    "dataSection": {
+      "clearMedia": "Mediencache löschen",
+      "resetOffline": "Offline-Daten zurücksetzen",
+      "export": "Export / Backup"
+    },
+    "securitySection": {
+      "pin": "App-PIN / Biometrie",
+      "devices": "Gerätesitzungen",
+      "twofa": "Zwei-Faktor-Auth"
+    },
+    "accessibilitySection": {
+      "fontSize": "Schriftgröße",
+      "contrast": "Kontrastmodus",
+      "reduceMotion": "Animationen reduzieren",
+      "haptics": "Haptik"
     }
   },
 
@@ -62,7 +123,54 @@
     "send": "Senden",
     "direct": {
       "addFriend": "Freund hinzufügen",
-      "showRequests": "Anfragen anzeigen"
+      "showRequests": "Anfragen anzeigen",
+      "hide": "Ausblenden",
+      "unhide": "Einblenden"
+    }
+  },
+
+  "friends": {
+    "title": "Freunde",
+    "subtitle": "Suche Nutzer, schicke Anfragen und verwalte eingehende sowie gesendete Requests.",
+    "searchLabel": "Freund finden",
+    "searchButton": "Suchen & Anfrage senden",
+    "incomingTitle": "Eingehende Anfragen",
+    "incomingEmpty": "Keine offenen Anfragen",
+    "outgoingTitle": "Gesendete Anfragen",
+    "outgoingEmpty": "Nichts offen",
+    "blockedTitle": "Blockierte Nutzer",
+    "blockedEmpty": "Keine blockierten Nutzer",
+    "accept": "Annehmen",
+    "decline": "Ablehnen",
+    "block": "Blockieren",
+    "unblock": "Entblocken",
+    "sentLabel": "Gesendet",
+    "request": "Anfrage",
+    "findUser": "User gefunden",
+    "errors": {
+      "notFound": "User nicht gefunden",
+      "search": "Fehler bei der Suche",
+      "send": "Fehler beim Senden der Anfrage",
+      "accept": "Fehler beim Annehmen",
+      "decline": "Fehler beim Ablehnen",
+      "block": "Fehler beim Blockieren",
+      "unblock": "Fehler beim Entblocken"
+    },
+    "snacks": {
+      "needLogin": "Nicht eingeloggt",
+      "enterUsername": "Bitte Username eingeben",
+      "self": "Du kannst dich nicht selbst hinzufügen",
+      "alreadyFriends": "Ihr seid bereits befreundet",
+      "pendingSent": "Anfrage bereits gesendet",
+      "pendingReceived": "Dieser Nutzer hat dir bereits geschrieben",
+      "alreadyOpen": "Anfrage ist schon offen",
+      "blockedByOther": "Du wurdest blockiert",
+      "youBlocked": "Du hast diesen Nutzer blockiert",
+      "sent": "Freundschaftsanfrage gesendet",
+      "added": "Freund hinzugefügt!",
+      "declined": "Anfrage abgelehnt",
+      "blocked": "Nutzer blockiert",
+      "unblocked": "Blockierung aufgehoben"
     }
   },
 

@@ -28,6 +28,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { initials } from "@/utils/utils";
+import { useTranslation } from "react-i18next";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
 type SearchResult = { username: string; uid: string };
@@ -36,6 +37,7 @@ export default function FriendsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const me = auth.currentUser;
+  const { t } = useTranslation();
 
   const [searchValue, setSearchValue] = useState("");
   const [searching, setSearching] = useState(false);
@@ -87,13 +89,13 @@ export default function FriendsScreen() {
 
   const searchUser = async () => {
     if (!me) {
-      setSnack("Nicht eingeloggt");
+      setSnack(t("friends.snacks.needLogin"));
       return;
     }
 
     const value = searchValue.trim();
     if (!value) {
-      setSnack("Bitte Username eingeben");
+      setSnack(t("friends.snacks.enterUsername"));
       return;
     }
 
@@ -104,13 +106,13 @@ export default function FriendsScreen() {
 
       if (snap.empty) {
         setResult(null);
-        setSnack("User nicht gefunden");
+        setSnack(t("friends.errors.notFound"));
       } else {
         setResult(snap.docs[0].data() as SearchResult);
       }
     } catch (err) {
       console.error("Fehler bei Suche:", err);
-      setSnack("Fehler bei der Suche");
+      setSnack(t("friends.errors.search"));
     } finally {
       setSearching(false);
     }
@@ -118,9 +120,8 @@ export default function FriendsScreen() {
 
   const sendRequest = async (targetUid: string) => {
     if (!me) return;
-
     if (targetUid === me.uid) {
-      setSnack("Du kannst dich nicht selbst hinzufügen");
+      setSnack(t("friends.snacks.self"));
       return;
     }
 
@@ -133,37 +134,37 @@ export default function FriendsScreen() {
       const targetData = targetSnap.data() || {};
 
       if ((targetData.blocked || []).includes(me.uid)) {
-        setSnack("Du wurdest blockiert");
+        setSnack(t("friends.snacks.blockedByOther"));
         return;
       }
       if ((myData.blocked || []).includes(targetUid)) {
-        setSnack("Du hast diesen Nutzer blockiert");
+        setSnack(t("friends.snacks.youBlocked"));
         return;
       }
       if ((myData.friends || []).includes(targetUid)) {
-        setSnack("Ihr seid bereits befreundet");
+        setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
       if ((myData.pendingSent || []).includes(targetUid)) {
-        setSnack("Anfrage bereits gesendet");
+        setSnack(t("friends.snacks.pendingSent"));
         return;
       }
       if ((myData.pendingReceived || []).includes(targetUid)) {
-        setSnack("Dieser Nutzer hat dir bereits geschrieben");
+        setSnack(t("friends.snacks.pendingReceived"));
         return;
       }
       if ((targetData.pendingReceived || []).includes(me.uid)) {
-        setSnack("Anfrage ist schon offen");
+        setSnack(t("friends.snacks.alreadyOpen"));
         return;
       }
 
       await setDoc(myRef, { pendingSent: arrayUnion(targetUid) }, { merge: true });
       await setDoc(targetRef, { pendingReceived: arrayUnion(me.uid) }, { merge: true });
 
-      setSnack("Freundschaftsanfrage gesendet");
+      setSnack(t("friends.snacks.sent"));
     } catch (err) {
       console.error("Fehler beim Senden der Anfrage:", err);
-      setSnack("Fehler beim Senden der Anfrage");
+      setSnack(t("friends.errors.send"));
     }
   };
 
@@ -178,7 +179,7 @@ export default function FriendsScreen() {
 
       const myFriends: string[] = mySnap.data()?.friends || [];
       if (myFriends.includes(otherUid)) {
-        setSnack("Ihr seid bereits befreundet");
+        setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
 
@@ -218,10 +219,10 @@ export default function FriendsScreen() {
         );
       }
 
-      setSnack("Freund hinzugefügt!");
+      setSnack(t("friends.snacks.added"));
     } catch (err) {
       console.error("Fehler beim Annehmen:", err);
-      setSnack("Fehler beim Annehmen");
+      setSnack(t("friends.errors.accept"));
     }
   };
 
@@ -235,10 +236,10 @@ export default function FriendsScreen() {
       await setDoc(myRef, { pendingReceived: arrayRemove(otherUid) }, { merge: true });
       await setDoc(otherRef, { pendingSent: arrayRemove(me.uid) }, { merge: true });
 
-      setSnack("Anfrage abgelehnt");
+      setSnack(t("friends.snacks.declined"));
     } catch (err) {
       console.error("Fehler beim Ablehnen:", err);
-      setSnack("Fehler beim Ablehnen");
+      setSnack(t("friends.errors.decline"));
     }
   };
 
@@ -248,15 +249,14 @@ export default function FriendsScreen() {
     const otherRef = doc(db, "users", otherUid);
 
     try {
-      const [mySnap, otherSnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
+      const [mySnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
       const myData = mySnap.data() || {};
 
       if ((myData.blocked || []).includes(otherUid)) {
-        setSnack("Bereits blockiert");
+        setSnack(t("friends.snacks.blocked"));
         return;
       }
 
-      // block + aufräumen (pending/friends)
       await setDoc(
         myRef,
         {
@@ -268,7 +268,6 @@ export default function FriendsScreen() {
         { merge: true }
       );
 
-      // Gegenüber räumen wir pending/friends ebenfalls auf
       await setDoc(
         otherRef,
         {
@@ -279,10 +278,10 @@ export default function FriendsScreen() {
         { merge: true }
       );
 
-      setSnack("Nutzer blockiert");
+      setSnack(t("friends.snacks.blocked"));
     } catch (err) {
       console.error("Fehler beim Blockieren:", err);
-      setSnack("Fehler beim Blockieren");
+      setSnack(t("friends.errors.block"));
     }
   };
 
@@ -291,17 +290,17 @@ export default function FriendsScreen() {
     const myRef = doc(db, "users", me.uid);
     try {
       await setDoc(myRef, { blocked: arrayRemove(otherUid) }, { merge: true });
-      setSnack("Blockierung aufgehoben");
+      setSnack(t("friends.snacks.unblocked"));
     } catch (err) {
       console.error("Fehler beim Entblocken:", err);
-      setSnack("Fehler beim Entblocken");
+      setSnack(t("friends.errors.unblock"));
     }
   };
 
   if (!me) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <Text>Bitte erneut anmelden.</Text>
+        <Text>{t("friends.snacks.needLogin")}</Text>
       </View>
     );
   }
@@ -315,10 +314,10 @@ export default function FriendsScreen() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text variant="titleLarge" style={{ color: theme.colors.onSurface }}>
-              Freunde
+              {t("friends.title")}
             </Text>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              Suche Nutzer, schicke Anfragen und verwalte eingehende sowie gesendete Requests.
+              {t("friends.subtitle")}
             </Text>
           </View>
           <Button
@@ -327,14 +326,14 @@ export default function FriendsScreen() {
             icon="account-circle"
             onPress={() => router.push("/(drawer)/profile")}
           >
-            Profil
+            {t("profile.title", "Profil")}
           </Button>
         </View>
       </Surface>
 
       <Surface style={styles.card} mode="elevated">
         <Text variant="titleMedium" style={styles.cardTitle}>
-          Freund finden
+          {t("friends.searchLabel")}
         </Text>
         <TextInput
           mode="outlined"
@@ -345,7 +344,7 @@ export default function FriendsScreen() {
           style={{ marginBottom: 12 }}
         />
         <Button mode="contained" onPress={searchUser} loading={searching}>
-          Suchen & Anfrage senden
+          {t("friends.searchButton")}
         </Button>
 
         {result && (
@@ -353,7 +352,7 @@ export default function FriendsScreen() {
             <Divider style={{ marginVertical: 12 }} />
             <List.Item
               title={result.username}
-              description="User gefunden"
+              description={t("friends.findUser")}
               titleStyle={{ color: theme.colors.onSurface }}
               descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
               left={(props) => (
@@ -368,7 +367,7 @@ export default function FriendsScreen() {
               right={() => (
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Button compact mode="contained" onPress={() => sendRequest(result.uid)}>
-                    Anfrage
+                    {t("friends.request")}
                   </Button>
                   <Button
                     compact
@@ -376,7 +375,7 @@ export default function FriendsScreen() {
                     onPress={() => blockUser(result.uid)}
                     style={{ marginLeft: 6 }}
                   >
-                    Blockieren
+                    {t("friends.block")}
                   </Button>
                 </View>
               )}
@@ -389,20 +388,20 @@ export default function FriendsScreen() {
       <Surface style={styles.card} mode="elevated">
         <View style={styles.sectionHeader}>
           <Text variant="titleMedium" style={styles.cardTitle}>
-            Eingehende Anfragen
+            {t("friends.incomingTitle")}
           </Text>
         </View>
 
         {loadingLists ? (
           <ActivityIndicator style={{ marginVertical: 8 }} />
         ) : incoming.length === 0 ? (
-          <Text style={{ color: theme.colors.onSurfaceVariant }}>Keine offenen Anfragen</Text>
+          <Text style={{ color: theme.colors.onSurfaceVariant }}>{t("friends.incomingEmpty")}</Text>
         ) : (
           incoming.map((uid) => (
             <List.Item
               key={uid}
               title={displayName(uid)}
-              description="Möchte mit dir befreundet sein"
+              description={t("friends.request")}
               titleStyle={{ color: theme.colors.onSurface }}
               descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
               left={(props) => (
@@ -417,10 +416,10 @@ export default function FriendsScreen() {
               right={() => (
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Button compact onPress={() => accept(uid)}>
-                    Annehmen
+                    {t("friends.accept")}
                   </Button>
                   <Button compact textColor="red" onPress={() => decline(uid)} style={{ marginLeft: 4 }}>
-                    Ablehnen
+                    {t("friends.decline")}
                   </Button>
                   <Button
                     compact
@@ -428,7 +427,7 @@ export default function FriendsScreen() {
                     onPress={() => blockUser(uid)}
                     style={{ marginLeft: 4 }}
                   >
-                    Blockieren
+                    {t("friends.block")}
                   </Button>
                 </View>
               )}
@@ -440,20 +439,20 @@ export default function FriendsScreen() {
       <Surface style={styles.card} mode="elevated">
         <View style={styles.sectionHeader}>
           <Text variant="titleMedium" style={styles.cardTitle}>
-            Gesendete Anfragen
+            {t("friends.outgoingTitle")}
           </Text>
         </View>
 
         {loadingLists ? (
           <ActivityIndicator style={{ marginVertical: 8 }} />
         ) : outgoing.length === 0 ? (
-          <Text style={{ color: theme.colors.onSurfaceVariant }}>Nichts offen</Text>
+          <Text style={{ color: theme.colors.onSurfaceVariant }}>{t("friends.outgoingEmpty")}</Text>
         ) : (
           outgoing.map((uid) => (
             <List.Item
               key={uid}
               title={displayName(uid)}
-              description="Wartet auf Antwort"
+              description={t("friends.sentLabel")}
               titleStyle={{ color: theme.colors.onSurface }}
               descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
               left={(props) => (
@@ -467,14 +466,14 @@ export default function FriendsScreen() {
               )}
               right={() => (
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ color: theme.colors.onSurfaceVariant }}>Gesendet</Text>
+                  <Text style={{ color: theme.colors.onSurfaceVariant }}>{t("friends.sentLabel")}</Text>
                   <Button
                     compact
                     textColor={theme.colors.error}
                     onPress={() => blockUser(uid)}
                     style={{ marginLeft: 8 }}
                   >
-                    Blockieren
+                    {t("friends.block")}
                   </Button>
                 </View>
               )}
@@ -486,18 +485,18 @@ export default function FriendsScreen() {
       <Surface style={styles.card} mode="elevated">
         <View style={styles.sectionHeader}>
           <Text variant="titleMedium" style={styles.cardTitle}>
-            Blockierte Nutzer
+            {t("friends.blockedTitle")}
           </Text>
         </View>
 
         {blocked.length === 0 ? (
-          <Text style={{ color: theme.colors.onSurfaceVariant }}>Keine blockierten Nutzer</Text>
+          <Text style={{ color: theme.colors.onSurfaceVariant }}>{t("friends.blockedEmpty")}</Text>
         ) : (
           blocked.map((uid) => (
             <List.Item
               key={uid}
               title={displayName(uid)}
-              description="Blockiert"
+              description={t("friends.block")}
               titleStyle={{ color: theme.colors.onSurface }}
               descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
               left={(props) => (
@@ -511,7 +510,7 @@ export default function FriendsScreen() {
               )}
               right={() => (
                 <Button compact onPress={() => unblockUser(uid)}>
-                  Entblocken
+                  {t("friends.unblock")}
                 </Button>
               )}
             />
