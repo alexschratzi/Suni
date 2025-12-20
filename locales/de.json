@@ -2,7 +2,7 @@
   "settings": {
     "title": "Einstellungen",
     "subtitle": "Alles auf einer Seite. Tippe auf einen Abschnitt oder scrolle.",
-    "appearanceTitle": "Erscheinungsbild",
+    "appearanceTitle": "Theme",
     "languageTitle": "Sprache",
     "theme": {
       "system": {
