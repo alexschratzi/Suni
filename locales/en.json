@@ -95,8 +95,12 @@
     },
     "accessibilitySection": {
       "fontSize": "Font size",
+      "textSizeDesc": "Applies to app text and buttons",
       "contrast": "Contrast mode",
       "contrastDesc": "Higher contrast for better readability",
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large",
       "reduceMotion": "Reduce animations",
       "haptics": "Haptics"
     },

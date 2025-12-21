@@ -95,8 +95,12 @@
     },
     "accessibilitySection": {
       "fontSize": "Schriftgröße",
+      "textSizeDesc": "Gilt für App-Texte und Buttons",
       "contrast": "Kontrastmodus",
       "contrastDesc": "Höherer Kontrast für bessere Lesbarkeit",
+      "small": "Klein",
+      "medium": "Mittel",
+      "large": "Groß",
       "reduceMotion": "Animationen reduzieren",
       "haptics": "Haptik"
     },

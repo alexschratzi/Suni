@@ -15,6 +15,7 @@ import {
 } from "react-native-paper";
 
 export type ThemeMode = "light" | "dark" | "system";
+export type TextScale = "small" | "medium" | "large";
 
 type AppThemeContextValue = {
   mode: ThemeMode;                      // ausgewählte Einstellung
@@ -24,10 +25,13 @@ type AppThemeContextValue = {
   toggleTheme: () => void;
   highContrast: boolean;
   setHighContrast: (v: boolean) => void;
+  textScale: TextScale;
+  setTextScale: (v: TextScale) => void;
 };
 
 const STORAGE_KEY = "@amadeus:themeMode";
 const STORAGE_CONTRAST_KEY = "@amadeus:contrast";
+const STORAGE_TEXTSCALE_KEY = "@amadeus:textScale";
 
 const AppThemeContext = createContext<AppThemeContextValue | undefined>(
   undefined
@@ -39,6 +43,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     Appearance.getColorScheme() === "dark" ? "dark" : "light"
   );
   const [highContrast, setHighContrast] = useState(false);
+  const [textScale, setTextScale] = useState<TextScale>("medium");
 
   // gespeicherte Wahl laden
   useEffect(() => {
@@ -62,6 +67,20 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_CONTRAST_KEY);
         if (saved === "true") setHighContrast(true);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  // gespeicherte Textgröße laden
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STORAGE_TEXTSCALE_KEY);
+        if (saved === "small" || saved === "medium" || saved === "large") {
+          setTextScale(saved);
+        }
       } catch {
         // ignore
       }
@@ -95,6 +114,14 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     })();
   }, [highContrast]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem(STORAGE_TEXTSCALE_KEY, textScale);
+      } catch {}
+    })();
+  }, [textScale]);
 
   const effectiveMode: "light" | "dark" =
     mode === "system" ? systemScheme : mode;
@@ -141,8 +168,22 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
           };
 
     const colors = highContrast ? { ...base.colors, ...contrastColors } : base.colors;
-    return { ...base, colors };
-  }, [effectiveMode, highContrast]);
+    const fontScale =
+      textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
+
+    const scaledFonts = Object.fromEntries(
+      Object.entries(base.fonts).map(([k, v]) => [
+        k,
+        {
+          ...v,
+          fontSize: Math.round((v.fontSize ?? 14) * fontScale),
+          lineHeight: v.lineHeight ? Math.round(v.lineHeight * fontScale) : undefined,
+        },
+      ])
+    );
+
+    return { ...base, colors, fonts: scaledFonts };
+  }, [effectiveMode, highContrast, textScale]);
 
   const value = useMemo<AppThemeContextValue>(
     () => ({
@@ -154,8 +195,10 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         setMode((prev) => (prev === "dark" ? "light" : "dark")),
       highContrast,
       setHighContrast,
+      textScale,
+      setTextScale,
     }),
-    [mode, effectiveMode, highContrast]
+    [mode, effectiveMode, highContrast, textScale]
   );
 
   return (

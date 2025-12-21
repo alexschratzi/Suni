@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 
-import { useAppTheme, ThemeMode } from "../../components/theme/AppThemeProvider";
+import { useAppTheme, ThemeMode, TextScale } from "../../components/theme/AppThemeProvider";
 import { auth, db } from "../../firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -37,8 +37,11 @@ const TodoTag = ({ label = "TODO" }) => (
 
 export default function SettingsScreen() {
   const paperTheme = useTheme();
-  const { mode, effectiveMode, setMode, highContrast, setHighContrast } = useAppTheme();
+  const { mode, effectiveMode, setMode, highContrast, setHighContrast, textScale, setTextScale } =
+    useAppTheme();
   const { t, i18n } = useTranslation();
+  const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
+  const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
   const SECTION_META: { key: SectionKey; label: string }[] = [
     { key: "general", label: t("settings.sections.general") },
     { key: "calendar", label: t("settings.sections.calendar") },
@@ -57,6 +60,7 @@ export default function SettingsScreen() {
   );
   const [themeMenu, setThemeMenu] = useState(false);
   const [langMenu, setLangMenu] = useState(false);
+  const [textMenu, setTextMenu] = useState(false);
   const [notifGlobal, setNotifGlobal] = useState(true);
   const [notifChat, setNotifChat] = useState(true);
   const [notifMention, setNotifMention] = useState(true);
@@ -161,6 +165,11 @@ export default function SettingsScreen() {
           uniEvents: typeof cats.uniEvents === "boolean" ? cats.uniEvents : true,
           cityEvents: typeof cats.cityEvents === "boolean" ? cats.cityEvents : true,
         });
+        if (settings.textScale === "small" || settings.textScale === "large") {
+          setTextScale(settings.textScale);
+        } else {
+          setTextScale("medium");
+        }
       } finally {
         setLoadingPrefs(false);
       }
@@ -181,6 +190,7 @@ export default function SettingsScreen() {
       uni?: boolean;
       culture?: boolean;
     };
+    textScale?: TextScale;
   }) => {
     if (!auth.currentUser) return;
     const newGlobal = next.global ?? notifGlobal;
@@ -195,6 +205,7 @@ export default function SettingsScreen() {
       uniEvents: next.categories?.uniEvents ?? eventCategories.uniEvents,
       cityEvents: next.categories?.cityEvents ?? eventCategories.cityEvents,
     };
+    const newTextScale = next.textScale ?? textScale;
     setNotifGlobal(newGlobal);
     setNotifChat(newChat);
     setNotifMention(newMention);
@@ -203,6 +214,7 @@ export default function SettingsScreen() {
     setChatColor(newColor);
     setEventsEnabled(newEventsEnabled);
     setEventCategories(newCats);
+    setTextScale(newTextScale);
     try {
       await setDoc(
         doc(db, "users", auth.currentUser.uid),
@@ -220,6 +232,7 @@ export default function SettingsScreen() {
               enabled: newEventsEnabled,
               categories: newCats,
             },
+            textScale: newTextScale,
           },
         },
         { merge: true }
@@ -614,7 +627,43 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
         <List.Section>
           <List.Subheader style={styles.subheader}>{t("settings.sections.accessibility")}</List.Subheader>
-          <List.Item title={t("settings.accessibilitySection.fontSize")} description="App-intern" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.accessibilitySection.fontSize")}
+            description={textSizeLabel}
+            right={() => (
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  setTextMenu((v) => !v);
+                  setThemeMenu(false);
+                  setLangMenu(false);
+                }}
+                compact
+                icon={textMenu ? "chevron-up" : "chevron-down"}
+              >
+                {t("settings.theme.select", "Auswählen")}
+              </Button>
+            )}
+          />
+          {textMenu && (
+            <Surface style={styles.inlineMenu} mode="flat">
+              {(["small", "medium", "large"] as TextScale[]).map((size, idx, arr) => (
+                <View key={size}>
+                  <Button
+                    mode="text"
+                    onPress={() => {
+                      saveNotifications({ textScale: size });
+                      setTextMenu(false);
+                    }}
+                    contentStyle={styles.inlineBtn}
+                  >
+                    {t(`settings.accessibilitySection.${size}`)}
+                  </Button>
+                  {idx < arr.length - 1 && <Divider />}
+                </View>
+              ))}
+            </Surface>
+          )}
           <Divider />
           <List.Item
             title={t("settings.accessibilitySection.contrast")}
