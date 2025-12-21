@@ -21,7 +21,7 @@ export function TimetableHeaderTitle() {
   const { currentMonday } = useGlobalSearchParams<{ currentMonday?: string }>();
 
   const title = useMemo(() => {
-    if (!currentMonday) return "Suni";
+    if (!currentMonday) return "Amadeus";
     return dayjs(currentMonday).format("MMMM"); // e.g. "Jänner"
   }, [currentMonday]);
 

@@ -88,7 +88,7 @@ export default function DrawerLayout() {
                 variant="titleMedium"
                 style={{ color: theme.colors.onSurface }}
               >
-                Suni
+                Amadeus
               </Text>
             ),
           headerRight: () =>

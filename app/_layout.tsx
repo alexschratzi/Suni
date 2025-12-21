@@ -3,20 +3,20 @@ import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "../firebase"; // ggf. Pfad anpassen
-import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ✅ richtiger Pfad/Name
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebase"; // ggf. Pfad anpassen
+import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ƒo. richtiger Pfad/Name
 import { StatusBar } from "expo-status-bar";
 import "../i18n/i18n";
-
-
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [provisioning, setProvisioning] = useState(false);
 
-  // 1) Auth-Listener: setzt user & ready bei jeder Änderung
+  // Auth-Listener: setzt user & ready bei jeder Änderung
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -25,7 +25,79 @@ export default function RootLayout() {
     return unsub;
   }, []);
 
-  // 2) Navigation reagiert auf JEDEN Wechsel von `user` oder route-segment
+  // User-Dokument anlegen/auffüllen (leere Arrays), damit Friends/Requests immer "update" sind
+  useEffect(() => {
+    if (!user) return;
+    if (provisioning) return;
+    setProvisioning(true);
+
+    const ensureUserDoc = async () => {
+      try {
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          await setDoc(
+            ref,
+            {
+              uid: user.uid,
+              username: user.displayName ?? "",
+              phone: user.phoneNumber ?? "",
+              role: "student",
+              pendingSent: [],
+              pendingReceived: [],
+              friends: [],
+              blocked: [],
+              settings: {
+                chatThemeColor: "#9b59b6",
+                notifications: {
+                  global: true,
+                  chat: true,
+                  direct: true,
+                  mention: true,
+                  rooms: true,
+                },
+              },
+            },
+            { merge: true }
+          );
+        } else {
+          // Fülle fehlende Arrays/Felder auf, überschreibe bestehende nicht
+          const data = snap.data() || {};
+          await setDoc(
+            ref,
+            {
+              pendingSent: data.pendingSent ?? [],
+              pendingReceived: data.pendingReceived ?? [],
+              friends: data.friends ?? [],
+              blocked: data.blocked ?? [],
+              settings:
+                data.settings ??
+                {
+                  chatThemeColor: "#9b59b6",
+                  notifications: {
+                    global: true,
+                    chat: true,
+                    direct: true,
+                    mention: true,
+                    rooms: true,
+                  },
+                },
+            },
+            { merge: true }
+          );
+        }
+      } catch (err) {
+        console.warn("ensureUserDoc failed", err);
+      } finally {
+        setProvisioning(false);
+      }
+    };
+
+    ensureUserDoc();
+  }, [user, provisioning]);
+
+  // Navigation reagiert auf JEDEN Wechsel von `user` oder route-segment
   useEffect(() => {
     if (!ready) return;
 
@@ -42,7 +114,6 @@ export default function RootLayout() {
     }
   }, [ready, user, segments, router]);
 
-  
   if (!ready) {
     return (
       <AppThemeProvider>
@@ -56,7 +127,6 @@ export default function RootLayout() {
   return (
     <AppThemeProvider>
       <Stack screenOptions={{ headerShown: false }} />
-      
     </AppThemeProvider>
   );
 }

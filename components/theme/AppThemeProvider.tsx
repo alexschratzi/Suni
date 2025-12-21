@@ -24,7 +24,7 @@ type AppThemeContextValue = {
   toggleTheme: () => void;
 };
 
-const STORAGE_KEY = "@suni:themeMode";
+const STORAGE_KEY = "@amadeus:themeMode";
 
 const AppThemeContext = createContext<AppThemeContextValue | undefined>(
   undefined
