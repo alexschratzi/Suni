@@ -13,8 +13,14 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 2. Start the app
 
    ```bash
-   npx expo start
+   npx expo run:android
    ```
+   or:
+   ```bash
+   npx expo run:ios
+   ```
+
+
 
 In the output, you'll find options to open the app in a
 
