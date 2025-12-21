@@ -93,7 +93,7 @@ export default function EmbeddedBrowser({
                 onNavigationStateChange={onNavStateChange}
                 onLoadProgress={({nativeEvent}) => setProgress(nativeEvent.progress)}
                 onLoadEnd={() => setProgress(0)}
-                onContentProcessDidTerminate={() => webRef.current?.reload()} // iOS recovery
+                onContentProcessDidTerminate={() => webRef.current?.reload()}
                 setSupportMultipleWindows={false}
                 javaScriptEnabled
                 domStorageEnabled
