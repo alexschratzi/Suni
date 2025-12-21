@@ -31,8 +31,8 @@ type SectionKey =
   | "accessibility"
   | "info";
 
-const TodoTag = ({ label = "TODO" }) => (
-  <Text style={styles.todo}>{label}</Text>
+const TodoTag = ({ label = "TODO", scale = 1 }: { label?: string; scale?: number }) => (
+  <Text style={[styles.todo, { fontSize: Math.round(12 * scale) }]}>{label}</Text>
 );
 
 export default function SettingsScreen() {
@@ -42,6 +42,13 @@ export default function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
   const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
+  const listItemTextStyles = React.useMemo(
+    () => ({
+      titleStyle: { fontSize: Math.round(16 * scale) },
+      descriptionStyle: { fontSize: Math.round(14 * scale) },
+    }),
+    [scale]
+  );
   const SECTION_META: { key: SectionKey; label: string }[] = [
     { key: "general", label: t("settings.sections.general") },
     { key: "calendar", label: t("settings.sections.calendar") },
@@ -186,9 +193,9 @@ export default function SettingsScreen() {
     color?: string | null;
     eventsEnabled?: boolean;
     categories?: {
-      party?: boolean;
-      uni?: boolean;
-      culture?: boolean;
+      uniParties?: boolean;
+      uniEvents?: boolean;
+      cityEvents?: boolean;
     };
     textScale?: TextScale;
   }) => {
@@ -381,6 +388,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.general.notifications")}
             description={t("settings.general.notificationsDesc", "Globale Push/In-App")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={notifGlobal}
@@ -400,22 +408,41 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.calendar.defaultView")}
             description="Woche / Monat"
-            right={() => <TodoTag />}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
           />
           <Divider />
-          <List.Item title={t("settings.calendar.weekStart")} description="Montag / Sonntag" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.calendar.weekStart")}
+            description="Montag / Sonntag"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.calendar.reminders")} description="Vor Termin, Push" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.calendar.reminders")}
+            description="Vor Termin, Push"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.calendar.holidays")} description="Land auswählen" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.calendar.holidays")}
+            description="Land auswählen"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
           <List.Item
             title={t("settings.events.enabled")}
             description={t("settings.events.enabledDesc")}
+            {...listItemTextStyles}
             onPress={() => setEventSettingsOpen((v) => !v)}
             right={() => (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ color: paperTheme.colors.onSurfaceVariant, fontSize: 16 }}>
+                <Text
+                  style={{ color: paperTheme.colors.onSurfaceVariant, fontSize: Math.round(16 * scale) }}
+                >
                   {eventSettingsOpen ? "▼" : "▶"}
                 </Text>
                 <Switch
@@ -438,6 +465,7 @@ export default function SettingsScreen() {
               <List.Item
                 title={t("settings.events.uniParties")}
                 description={t("settings.events.uniPartiesDesc")}
+                {...listItemTextStyles}
                 right={() => (
                   <Switch
                     value={eventCategories.uniParties}
@@ -450,6 +478,7 @@ export default function SettingsScreen() {
               <List.Item
                 title={t("settings.events.uniEvents")}
                 description={t("settings.events.uniEventsDesc")}
+                {...listItemTextStyles}
                 right={() => (
                   <Switch
                     value={eventCategories.uniEvents}
@@ -462,6 +491,7 @@ export default function SettingsScreen() {
               <List.Item
                 title={t("settings.events.cityEvents")}
                 description={t("settings.events.cityEventsDesc")}
+                {...listItemTextStyles}
                 right={() => (
                   <Switch
                     value={eventCategories.cityEvents}
@@ -481,11 +511,17 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
         <List.Section>
           <List.Subheader style={styles.subheader}>{t("settings.sections.chat")}</List.Subheader>
-          <List.Item title={t("settings.chatSection.readReceipts")} description="An/Aus" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.chatSection.readReceipts")}
+            description="An/Aus"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
           <List.Item
             title={t("settings.chatSection.notifications")}
             description={t("settings.chatSection.notificationsDesc", "Push / Sound / Vibration")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={notifChat}
@@ -498,6 +534,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.chatSection.notifyMention")}
             description={t("settings.chatSection.notifyMentionDesc")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={notifMention}
@@ -510,6 +547,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.chatSection.notifyDirect")}
             description={t("settings.chatSection.notifyDirectDesc")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={notifDirect}
@@ -522,6 +560,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.chatSection.notifyRooms")}
             description={t("settings.chatSection.notifyRoomsDesc")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={notifRooms}
@@ -531,11 +570,17 @@ export default function SettingsScreen() {
             )}
           />
           <Divider />
-          <List.Item title={t("settings.chatSection.mediaDownload")} description="WLAN/Mobil/Aus" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.chatSection.mediaDownload")}
+            description="WLAN/Mobil/Aus"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
           <List.Item
             title={t("settings.chatSection.theme")}
             description="Farben/Blasen"
+            {...listItemTextStyles}
             right={() => (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 {["#6750A4", "#0EA5E9", "#22C55E", "#EAB308", "#EF4444"].map((c) => (
@@ -566,16 +611,23 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.friendsSection.whoCanRequest")}
             description="Alle / Nur bekannte / Niemand"
-            right={() => <TodoTag />}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
           />
           <Divider />
           <List.Item
             title={t("settings.friendsSection.autoAccept")}
             description="Nur bekannte Kontakte"
-            right={() => <TodoTag />}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
           />
           <Divider />
-          <List.Item title={t("settings.friendsSection.blocked")} description="Verwalten" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.friendsSection.blocked")}
+            description="Verwalten"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
         </List.Section>
         </Surface>
       </View>
@@ -585,11 +637,26 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
         <List.Section>
           <List.Subheader style={styles.subheader}>{t("settings.sections.uni")}</List.Subheader>
-          <List.Item title={t("settings.uniSection.degree")} description="Auswahl" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.uniSection.degree")}
+            description="Auswahl"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.uniSection.faculty")} description="Auswahl" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.uniSection.faculty")}
+            description="Auswahl"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.uniSection.newsPush")} description="An/Aus" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.uniSection.newsPush")}
+            description="An/Aus"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
         </List.Section>
         </Surface>
       </View>
@@ -599,11 +666,23 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
         <List.Section>
           <List.Subheader style={styles.subheader}>{t("settings.sections.data")}</List.Subheader>
-          <List.Item title={t("settings.dataSection.clearMedia")} right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.dataSection.clearMedia")}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.dataSection.resetOffline")} right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.dataSection.resetOffline")}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.dataSection.export")} right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.dataSection.export")}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
         </List.Section>
         </Surface>
       </View>
@@ -613,11 +692,26 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
         <List.Section>
           <List.Subheader style={styles.subheader}>{t("settings.sections.security")}</List.Subheader>
-          <List.Item title={t("settings.securitySection.pin")} description="Zum Öffnen" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.securitySection.pin")}
+            description="Zum Öffnen"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.securitySection.devices")} description="Aktive Sitzungen" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.securitySection.devices")}
+            description="Aktive Sitzungen"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.securitySection.twofa")} description="Optional" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.securitySection.twofa")}
+            description="Optional"
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
         </List.Section>
         </Surface>
       </View>
@@ -630,6 +724,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.accessibilitySection.fontSize")}
             description={textSizeLabel}
+            {...listItemTextStyles}
             right={() => (
               <Button
                 mode="outlined"
@@ -668,6 +763,7 @@ export default function SettingsScreen() {
           <List.Item
             title={t("settings.accessibilitySection.contrast")}
             description={t("settings.accessibilitySection.contrastDesc")}
+            {...listItemTextStyles}
             right={() => (
               <Switch
                 value={highContrast}
@@ -676,9 +772,17 @@ export default function SettingsScreen() {
             )}
           />
           <Divider />
-          <List.Item title={t("settings.accessibilitySection.reduceMotion")} right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.accessibilitySection.reduceMotion")}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
           <Divider />
-          <List.Item title={t("settings.accessibilitySection.haptics")} right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.accessibilitySection.haptics")}
+            {...listItemTextStyles}
+            right={() => <TodoTag scale={scale} />}
+          />
         </List.Section>
         </Surface>
       </View>
@@ -688,15 +792,35 @@ export default function SettingsScreen() {
         <Surface style={styles.card} mode="elevated">
           <List.Section>
             <List.Subheader style={styles.subheader}>{t("settings.sections.info")}</List.Subheader>
-            <List.Item title={t("settings.infoSection.faq")} right={() => <TodoTag />} />
+            <List.Item
+              title={t("settings.infoSection.faq")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
             <Divider />
-            <List.Item title={t("settings.infoSection.privacy")} right={() => <TodoTag />} />
+            <List.Item
+              title={t("settings.infoSection.privacy")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
             <Divider />
-            <List.Item title={t("settings.infoSection.terms")} right={() => <TodoTag />} />
+            <List.Item
+              title={t("settings.infoSection.terms")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
             <Divider />
-            <List.Item title={t("settings.infoSection.imprint")} right={() => <TodoTag />} />
+            <List.Item
+              title={t("settings.infoSection.imprint")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
             <Divider />
-            <List.Item title={t("settings.infoSection.contact")} right={() => <TodoTag />} />
+            <List.Item
+              title={t("settings.infoSection.contact")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
           </List.Section>
         </Surface>
       </View>
