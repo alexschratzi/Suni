@@ -24,10 +24,14 @@ import CookieManager from "@react-native-cookies/cookies";
 import {
     CookieJsonRecord,
     scrapeStudentProfile,
-} from "../../src/server/uniScraper"; // adjust relative path as needed
+} from "../../src/server/uniScraper"; // adjust relative path as needed#
+import { router } from "expo-router";
 
+type Props = {
+  onOpenGrades?: () => void;
+};
 
-export default function LinkHub() {
+export default function LinkHub({ onOpenGrades }: Props) {
     const { university } = useUniversity();
     const [browserUrl, setBrowserUrl] = React.useState<string | null>(null);
     const [links, setLinks] = React.useState<LinkItem[]>([]);
@@ -273,6 +277,14 @@ export default function LinkHub() {
                     }
                     ListFooterComponent={
                         <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                            <Button
+                                mode="outlined"
+                                style={{ marginBottom: 10 }}
+                                onPress={onOpenGrades}
+                                disabled={!university}
+                                >
+                                Noten
+                            </Button>
                             <Button
                                 mode="outlined"
                                 style={{ marginTop: 6, marginBottom: 10 }}

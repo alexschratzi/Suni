@@ -21,10 +21,11 @@ const BASE_URL = "https://uni-scraper.eliasbader.de";
 const STUDENT_PROFILE_CACHE_KEY = "StudentProfile"
 
 export async function scrapeStudentProfile(
-    args: ScrapeStudentProfileArgs
+    args: ScrapeStudentProfileArgs,
+    useCached: boolean = false
 ): Promise<StudentProfile> {
     let sp_cached = await readStudentProfileCache();
-    if(sp_cached) return sp_cached;
+    if(sp_cached && useCached) return sp_cached;
 
     const resp = await fetch(`${BASE_URL}/scrape`, {
         method: "POST",
@@ -71,9 +72,16 @@ async function readStudentProfileCache() {
     if(!data) return null;
 
     if(data["timestamp"] >= Date.now() - CACHE_TIME_VALID) {
-        return data["data"]
+        return data["data"]["data"]
     }
 
     return null;
+}
 
+export async function getCachedStudentProfile(): Promise<StudentProfile | null> {
+  return await readStudentProfileCache();
+}
+
+export async function clearStudentProfileCache(): Promise<void> {
+  await AsyncStorage.removeItem(STUDENT_PROFILE_CACHE_KEY);
 }
