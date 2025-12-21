@@ -17,14 +17,17 @@ import {
 export type ThemeMode = "light" | "dark" | "system";
 
 type AppThemeContextValue = {
-  mode: ThemeMode;                      // gewählte Einstellung
+  mode: ThemeMode;                      // ausgewählte Einstellung
   effectiveMode: "light" | "dark";      // tatsächlich aktiv
   isDark: boolean;
   setMode: (m: ThemeMode) => void;
   toggleTheme: () => void;
+  highContrast: boolean;
+  setHighContrast: (v: boolean) => void;
 };
 
 const STORAGE_KEY = "@amadeus:themeMode";
+const STORAGE_CONTRAST_KEY = "@amadeus:contrast";
 
 const AppThemeContext = createContext<AppThemeContextValue | undefined>(
   undefined
@@ -35,6 +38,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const [systemScheme, setSystemScheme] = useState<"light" | "dark">(
     Appearance.getColorScheme() === "dark" ? "dark" : "light"
   );
+  const [highContrast, setHighContrast] = useState(false);
 
   // gespeicherte Wahl laden
   useEffect(() => {
@@ -46,6 +50,18 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         } else {
           setMode("system");
         }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  // gespeicherten Kontrast laden
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STORAGE_CONTRAST_KEY);
+        if (saved === "true") setHighContrast(true);
       } catch {
         // ignore
       }
@@ -69,13 +85,64 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [mode]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_CONTRAST_KEY,
+          highContrast ? "true" : "false"
+        );
+      } catch {}
+    })();
+  }, [highContrast]);
+
   const effectiveMode: "light" | "dark" =
     mode === "system" ? systemScheme : mode;
 
   const paperTheme = useMemo(() => {
     const base = effectiveMode === "dark" ? MD3DarkTheme : MD3LightTheme;
-    return { ...base };
-  }, [effectiveMode]);
+    const contrastColors =
+      effectiveMode === "dark"
+        ? {
+            primary: "#ffd700", // kräftiges Gelb für maximale Sichtbarkeit
+            onPrimary: "#000000",
+            secondary: "#ffffff",
+            onSecondary: "#000000",
+            secondaryContainer: "#111111",
+            onSecondaryContainer: "#ffffff",
+            surface: "#000000",
+            onSurface: "#ffffff",
+            surfaceVariant: "#111111",
+            onSurfaceVariant: "#f1f5f9",
+            background: "#000000",
+            onBackground: "#ffffff",
+            outline: "#ffd700",
+            outlineVariant: "#ffd700",
+            tertiary: "#8cf0ff",
+            onTertiary: "#001b20",
+          }
+        : {
+            primary: "#000000",
+            onPrimary: "#ffffff",
+            secondary: "#111827",
+            onSecondary: "#ffffff",
+            secondaryContainer: "#e5e7eb",
+            onSecondaryContainer: "#000000",
+            surface: "#ffffff",
+            onSurface: "#000000",
+            surfaceVariant: "#f3f4f6",
+            onSurfaceVariant: "#111827",
+            background: "#ffffff",
+            onBackground: "#000000",
+            outline: "#000000",
+            outlineVariant: "#111827",
+            tertiary: "#0f172a",
+            onTertiary: "#ffffff",
+          };
+
+    const colors = highContrast ? { ...base.colors, ...contrastColors } : base.colors;
+    return { ...base, colors };
+  }, [effectiveMode, highContrast]);
 
   const value = useMemo<AppThemeContextValue>(
     () => ({
@@ -85,8 +152,10 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       setMode,
       toggleTheme: () =>
         setMode((prev) => (prev === "dark" ? "light" : "dark")),
+      highContrast,
+      setHighContrast,
     }),
-    [mode, effectiveMode]
+    [mode, effectiveMode, highContrast]
   );
 
   return (

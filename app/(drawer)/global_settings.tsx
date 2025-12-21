@@ -28,7 +28,8 @@ type SectionKey =
   | "uni"
   | "data"
   | "security"
-  | "accessibility";
+  | "accessibility"
+  | "info";
 
 const TodoTag = ({ label = "TODO" }) => (
   <Text style={styles.todo}>{label}</Text>
@@ -36,7 +37,7 @@ const TodoTag = ({ label = "TODO" }) => (
 
 export default function SettingsScreen() {
   const paperTheme = useTheme();
-  const { mode, effectiveMode, setMode } = useAppTheme();
+  const { mode, effectiveMode, setMode, highContrast, setHighContrast } = useAppTheme();
   const { t, i18n } = useTranslation();
   const SECTION_META: { key: SectionKey; label: string }[] = [
     { key: "general", label: t("settings.sections.general") },
@@ -47,6 +48,7 @@ export default function SettingsScreen() {
     { key: "data", label: t("settings.sections.data") },
     { key: "security", label: t("settings.sections.security") },
     { key: "accessibility", label: t("settings.sections.accessibility") },
+    { key: "info", label: t("settings.sections.info") },
   ];
   const params = useLocalSearchParams();
 
@@ -62,6 +64,13 @@ export default function SettingsScreen() {
   const [notifRooms, setNotifRooms] = useState(true);
   const [loadingPrefs, setLoadingPrefs] = useState(false);
   const [chatColor, setChatColor] = useState<string | null>(null);
+  const [eventsEnabled, setEventsEnabled] = useState(true);
+  const [eventSettingsOpen, setEventSettingsOpen] = useState(false);
+  const [eventCategories, setEventCategories] = useState<{
+    uniParties: boolean;
+    uniEvents: boolean;
+    cityEvents: boolean;
+  }>({ uniParties: true, uniEvents: true, cityEvents: true });
 
   const scrollRef = useRef<ScrollView | null>(null);
   const [positions, setPositions] = useState<Record<SectionKey, number>>(
@@ -105,7 +114,7 @@ export default function SettingsScreen() {
     };
   }, [i18n]);
 
-const activeThemeLabel =
+  const activeThemeLabel =
     mode === "system"
       ? t("settings.theme.system.title")
       : effectiveMode === "dark"
@@ -128,7 +137,7 @@ const activeThemeLabel =
     return () => clearTimeout(timeout);
   }, [pendingScroll, positions]);
 
-  // Notification-Settings laden
+  // Preferences laden
   useEffect(() => {
     const loadPrefs = async () => {
       if (!auth.currentUser) return;
@@ -144,6 +153,14 @@ const activeThemeLabel =
         if (typeof notif.direct === "boolean") setNotifDirect(notif.direct);
         if (typeof notif.rooms === "boolean") setNotifRooms(notif.rooms);
         if (typeof settings.chatThemeColor === "string") setChatColor(settings.chatThemeColor);
+        const events = settings.eventPrefs || {};
+        if (typeof events.enabled === "boolean") setEventsEnabled(events.enabled);
+        const cats = events.categories || {};
+        setEventCategories({
+          uniParties: typeof cats.uniParties === "boolean" ? cats.uniParties : true,
+          uniEvents: typeof cats.uniEvents === "boolean" ? cats.uniEvents : true,
+          cityEvents: typeof cats.cityEvents === "boolean" ? cats.cityEvents : true,
+        });
       } finally {
         setLoadingPrefs(false);
       }
@@ -158,6 +175,12 @@ const activeThemeLabel =
     direct?: boolean;
     rooms?: boolean;
     color?: string | null;
+    eventsEnabled?: boolean;
+    categories?: {
+      party?: boolean;
+      uni?: boolean;
+      culture?: boolean;
+    };
   }) => {
     if (!auth.currentUser) return;
     const newGlobal = next.global ?? notifGlobal;
@@ -166,12 +189,20 @@ const activeThemeLabel =
     const newDirect = next.direct ?? notifDirect;
     const newRooms = next.rooms ?? notifRooms;
     const newColor = next.color ?? chatColor;
+    const newEventsEnabled = next.eventsEnabled ?? eventsEnabled;
+    const newCats = {
+      uniParties: next.categories?.uniParties ?? eventCategories.uniParties,
+      uniEvents: next.categories?.uniEvents ?? eventCategories.uniEvents,
+      cityEvents: next.categories?.cityEvents ?? eventCategories.cityEvents,
+    };
     setNotifGlobal(newGlobal);
     setNotifChat(newChat);
     setNotifMention(newMention);
     setNotifDirect(newDirect);
     setNotifRooms(newRooms);
     setChatColor(newColor);
+    setEventsEnabled(newEventsEnabled);
+    setEventCategories(newCats);
     try {
       await setDoc(
         doc(db, "users", auth.currentUser.uid),
@@ -185,6 +216,10 @@ const activeThemeLabel =
               rooms: newRooms,
             },
             chatThemeColor: newColor,
+            eventPrefs: {
+              enabled: newEventsEnabled,
+              categories: newCats,
+            },
           },
         },
         { merge: true }
@@ -344,7 +379,7 @@ const activeThemeLabel =
         </Surface>
       </View>
 
-      {/* Kalender */}
+      {/* Kalender + Events */}
       <View onLayout={handleSectionLayout("calendar")}>
         <Surface style={styles.card} mode="elevated">
         <List.Section>
@@ -360,6 +395,70 @@ const activeThemeLabel =
           <List.Item title={t("settings.calendar.reminders")} description="Vor Termin, Push" right={() => <TodoTag />} />
           <Divider />
           <List.Item title={t("settings.calendar.holidays")} description="Land auswählen" right={() => <TodoTag />} />
+          <Divider />
+          <List.Item
+            title={t("settings.events.enabled")}
+            description={t("settings.events.enabledDesc")}
+            onPress={() => setEventSettingsOpen((v) => !v)}
+            right={() => (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ color: paperTheme.colors.onSurfaceVariant, fontSize: 16 }}>
+                  {eventSettingsOpen ? "▼" : "▶"}
+                </Text>
+                <Switch
+                  value={eventsEnabled}
+                  onValueChange={(v) => saveNotifications({ eventsEnabled: v })}
+                  disabled={loadingPrefs}
+                />
+              </View>
+            )}
+          />
+          {eventSettingsOpen && (
+            <View style={{ paddingLeft: 12 }}>
+              <Divider />
+              <Text
+                variant="bodySmall"
+                style={{ color: paperTheme.colors.onSurfaceVariant, marginLeft: 8, marginBottom: 4 }}
+              >
+                {t("settings.events.categoriesDesc")}
+              </Text>
+              <List.Item
+                title={t("settings.events.uniParties")}
+                description={t("settings.events.uniPartiesDesc")}
+                right={() => (
+                  <Switch
+                    value={eventCategories.uniParties}
+                    onValueChange={(v) => saveNotifications({ categories: { uniParties: v } })}
+                    disabled={!eventsEnabled || loadingPrefs}
+                  />
+                )}
+              />
+              <Divider />
+              <List.Item
+                title={t("settings.events.uniEvents")}
+                description={t("settings.events.uniEventsDesc")}
+                right={() => (
+                  <Switch
+                    value={eventCategories.uniEvents}
+                    onValueChange={(v) => saveNotifications({ categories: { uniEvents: v } })}
+                    disabled={!eventsEnabled || loadingPrefs}
+                  />
+                )}
+              />
+              <Divider />
+              <List.Item
+                title={t("settings.events.cityEvents")}
+                description={t("settings.events.cityEventsDesc")}
+                right={() => (
+                  <Switch
+                    value={eventCategories.cityEvents}
+                    onValueChange={(v) => saveNotifications({ categories: { cityEvents: v } })}
+                    disabled={!eventsEnabled || loadingPrefs}
+                  />
+                )}
+              />
+            </View>
+          )}
         </List.Section>
         </Surface>
       </View>
@@ -436,7 +535,7 @@ const activeThemeLabel =
                     onPress={() => saveNotifications({ color: c })}
                     style={{ marginHorizontal: 2 }}
                   >
-                    {chatColor === c ? "✓" : ""}
+                    {chatColor === c ? "•" : ""}
                   </Button>
                 ))}
               </View>
@@ -517,12 +616,39 @@ const activeThemeLabel =
           <List.Subheader style={styles.subheader}>{t("settings.sections.accessibility")}</List.Subheader>
           <List.Item title={t("settings.accessibilitySection.fontSize")} description="App-intern" right={() => <TodoTag />} />
           <Divider />
-          <List.Item title={t("settings.accessibilitySection.contrast")} description="Hochkontrast" right={() => <TodoTag />} />
+          <List.Item
+            title={t("settings.accessibilitySection.contrast")}
+            description={t("settings.accessibilitySection.contrastDesc")}
+            right={() => (
+              <Switch
+                value={highContrast}
+                onValueChange={(v) => setHighContrast(v)}
+              />
+            )}
+          />
           <Divider />
           <List.Item title={t("settings.accessibilitySection.reduceMotion")} right={() => <TodoTag />} />
           <Divider />
           <List.Item title={t("settings.accessibilitySection.haptics")} right={() => <TodoTag />} />
         </List.Section>
+        </Surface>
+      </View>
+
+      {/* Info / Rechtliches */}
+      <View onLayout={handleSectionLayout("info")}>
+        <Surface style={styles.card} mode="elevated">
+          <List.Section>
+            <List.Subheader style={styles.subheader}>{t("settings.sections.info")}</List.Subheader>
+            <List.Item title={t("settings.infoSection.faq")} right={() => <TodoTag />} />
+            <Divider />
+            <List.Item title={t("settings.infoSection.privacy")} right={() => <TodoTag />} />
+            <Divider />
+            <List.Item title={t("settings.infoSection.terms")} right={() => <TodoTag />} />
+            <Divider />
+            <List.Item title={t("settings.infoSection.imprint")} right={() => <TodoTag />} />
+            <Divider />
+            <List.Item title={t("settings.infoSection.contact")} right={() => <TodoTag />} />
+          </List.Section>
         </Surface>
       </View>
     </ScrollView>
@@ -568,4 +694,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 12,
   },
-  });
+});

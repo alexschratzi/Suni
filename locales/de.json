@@ -30,16 +30,29 @@
     "sections": {
       "general": "Allgemein",
       "calendar": "Kalender",
+      "events": "Events",
       "chat": "Chat",
       "friends": "Freunde",
       "uni": "Universität",
       "data": "Daten & Cache",
       "security": "Sicherheit",
-      "accessibility": "Barrierefreiheit"
+      "accessibility": "Barrierefreiheit",
+      "info": "Info & Rechtliches"
     },
     "general": {
       "notifications": "Mitteilungen",
       "notificationsDesc": "Globale Push / In-App"
+    },
+    "events": {
+      "enabled": "Event-Kalender anzeigen",
+      "enabledDesc": "Stadt-Events in deinen Kalender laden",
+      "categoriesDesc": "Wähle, welche Events angezeigt werden",
+      "uniParties": "Uni-Partys",
+      "uniPartiesDesc": "Spritzerstände, ÖH-Feste, Campus-Partys",
+      "uniEvents": "Uni-Events",
+      "uniEventsDesc": "Workshops, Treffen, Vorträge",
+      "cityEvents": "Stadt-Events",
+      "cityEventsDesc": "Off-Campus Partys interessant für Studis"
     },
     "calendar": {
       "defaultView": "Standard-Ansicht",
@@ -83,8 +96,16 @@
     "accessibilitySection": {
       "fontSize": "Schriftgröße",
       "contrast": "Kontrastmodus",
+      "contrastDesc": "Höherer Kontrast für bessere Lesbarkeit",
       "reduceMotion": "Animationen reduzieren",
       "haptics": "Haptik"
+    },
+    "infoSection": {
+      "faq": "FAQ",
+      "privacy": "Datenschutzerklärung",
+      "terms": "Nutzungsbedingungen",
+      "imprint": "Impressum",
+      "contact": "Kontakt & Support"
     }
   },
 

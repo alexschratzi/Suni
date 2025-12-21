@@ -30,16 +30,29 @@
     "sections": {
       "general": "General",
       "calendar": "Calendar",
+      "events": "Events",
       "chat": "Chat",
       "friends": "Friends",
       "uni": "University",
       "data": "Data & cache",
       "security": "Security",
-      "accessibility": "Accessibility"
+      "accessibility": "Accessibility",
+      "info": "Info & legal"
     },
     "general": {
       "notifications": "Notifications",
       "notificationsDesc": "Global push / in-app"
+    },
+    "events": {
+      "enabled": "Show event calendar",
+      "enabledDesc": "Add city events to your calendar",
+      "categoriesDesc": "Choose which events to show",
+      "uniParties": "Uni parties",
+      "uniPartiesDesc": "Spritzer stands, ÖH fests, on-campus parties",
+      "uniEvents": "Uni events",
+      "uniEventsDesc": "Workshops, meetups, talks",
+      "cityEvents": "City events",
+      "cityEventsDesc": "Off-campus parties interesting for students"
     },
     "calendar": {
       "defaultView": "Default view",
@@ -83,8 +96,16 @@
     "accessibilitySection": {
       "fontSize": "Font size",
       "contrast": "Contrast mode",
+      "contrastDesc": "Higher contrast for better readability",
       "reduceMotion": "Reduce animations",
       "haptics": "Haptics"
+    },
+    "infoSection": {
+      "faq": "FAQ",
+      "privacy": "Privacy policy",
+      "terms": "Terms of service",
+      "imprint": "Imprint",
+      "contact": "Contact & support"
     }
   },
 
