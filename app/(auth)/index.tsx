@@ -1,5 +1,5 @@
 // app/(auth)/index.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { signInWithPhoneNumber, signInAnonymously } from "firebase/auth";
@@ -22,7 +22,7 @@ import {
 } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
-// Only used on Web
+// @ts-ignore
 declare global {
   interface Window {
     recaptchaVerifier?: any;
@@ -39,14 +39,23 @@ export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+
+  // Recaptcha für Mobile
+  const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal | null>(null);
 
   useEffect(() => {
-    if (__DEV__ && auth.settings) {
-      // @ts-ignore
-      auth.settings.appVerificationDisabledForTesting = true;
-      console.log("Auth test mode enabled");
-    }
-    setLoading(false);
+    const init = async () => {
+      try {
+        if (__DEV__ && auth.settings) {
+          auth.settings.appVerificationDisabledForTesting = true;
+          console.log("Testmode aktiv");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
   }, []);
 
   const checkExistingProfile = async (cleanPhone: string) => {
@@ -70,31 +79,50 @@ export default function LoginScreen() {
         return;
       }
 
+      let confirmationResult;
+
       if (Platform.OS === "web") {
+        // Dynamischer Import für Web
+        // @ts-ignore
         const { RecaptchaVerifier } = await import("firebase/auth");
 
-        if (!window.recaptchaVerifier) {
-          const elem = document.getElementById("recaptcha-container");
-          if (!elem) throw new Error("recaptcha-container missing");
-          window.recaptchaVerifier = new RecaptchaVerifier(auth, elem, {
-            size: "invisible",
-          });
+        const container = document.getElementById("recaptcha-container");
+        if (!container) {
+          throw new Error("recaptcha-container not found in DOM");
         }
 
-        const result = await signInWithPhoneNumber(
+        if (!window.recaptchaVerifier) {
+          // @ts-ignore
+          window.recaptchaVerifier = new RecaptchaVerifier(
+            auth, // v10: zuerst Auth
+            container, // dann Container
+            { size: "invisible" }
+          );
+        }
+
+        confirmationResult = await signInWithPhoneNumber(
           auth,
           cleanPhone,
           window.recaptchaVerifier
         );
-        setConfirmation(result);
-        Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
       } else {
-        // No supported recaptcha on native without RNFirebase
-        Alert.alert(
-          t("auth.error"),
-          "Phone login on mobile is disabled temporarily."
+        // Mobile (Expo / iOS / Android) mit FirebaseRecaptchaVerifierModal
+        if (!recaptchaVerifier.current) {
+          Alert.alert(t("auth.error"), "reCAPTCHA nicht bereit.");
+          return;
+        }
+
+        confirmationResult = await signInWithPhoneNumber(
+          auth,
+          cleanPhone,
+          // @ts-ignore – Modal liefert intern den richtigen Verifier
+          recaptchaVerifier.current
         );
       }
+
+      setConfirmation(confirmationResult);
+      await checkExistingProfile(cleanPhone);
+      Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
     } catch (err: any) {
       console.log("sendCode error:", err);
       Alert.alert(t("auth.error"), err.message || String(err));
@@ -111,7 +139,6 @@ export default function LoginScreen() {
       const cleanPhone = phone.replace(/\s+/g, "");
       const userCred = await confirmation.confirm(code);
       const uid = userCred.user.uid;
-
       const userRef = doc(db, "users", uid);
       const snap = await getDoc(userRef);
 
@@ -132,15 +159,16 @@ export default function LoginScreen() {
         return;
       }
 
-        const q = query(
-          collection(db, "usernames"),
-          where("username", "==", username.trim())
-        );
-        const existing = await getDocs(q);
-        if (!existing.empty) {
-          Alert.alert(t("auth.error"), t("auth.usernameTaken"));
-          return;
-        }
+      const q = query(
+        collection(db, "usernames"),
+        where("username", "==", username.trim())
+      );
+      const existing = await getDocs(q);
+
+      if (!existing.empty) {
+        Alert.alert(t("auth.error"), t("auth.usernameTaken"));
+        return;
+      }
 
       await addDoc(collection(db, "usernames"), {
         username: username.trim(),
@@ -160,6 +188,7 @@ export default function LoginScreen() {
       Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
       router.replace("../(tabs)");
     } catch (err: any) {
+      console.log("confirmCode error:", err);
       Alert.alert(t("auth.error"), err.message || String(err));
     }
   };
@@ -167,7 +196,7 @@ export default function LoginScreen() {
   const testLogin = async () => {
     try {
       const userCred = await signInAnonymously(auth);
-      console.log("Test user:", userCred.user.uid);
+      console.log("Test-User:", userCred.user.uid);
       Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
     } catch (err: any) {
       Alert.alert(t("auth.error"), err.message || String(err));
@@ -176,7 +205,12 @@ export default function LoginScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+      <View
+        style={[
+          styles.center,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
         <ActivityIndicator animating size="large" />
         <Text style={{ marginTop: 12 }}>{t("auth.loading")}</Text>
       </View>
@@ -194,9 +228,17 @@ export default function LoginScreen() {
   } as const;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Web-only invisible recaptcha container */}
-      {Platform.OS === "web" && <div id="recaptcha-container" />}
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.background },
+      ]}
+    >
+
+      {/* Recaptcha für Web */}
+      {Platform.OS === "web" &&
+        typeof document !== "undefined" &&
+        React.createElement("div", { id: "recaptcha-container" })}
 
       <Text variant="headlineSmall" style={styles.title}>
         {t("auth.title")}
