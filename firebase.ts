@@ -1,7 +1,6 @@
 ﻿// firebase.ts
-import { initializeApp, getApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
 import firebaseAuth from "@react-native-firebase/auth";
+import firestore from "@react-native-firebase/firestore";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyDYpOpiZ-2VBmMuPUbZ5ltrJvyrvxWHvMs",
@@ -12,7 +11,7 @@ export const firebaseConfig = {
   appId: "1:167831321634:ios:f214ca30d921a0cd4b5e7b",
 };
 
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+// Native modules
 const authInstance = firebaseAuth();
 export const auth = authInstance;
-export const db = getFirestore(app);
+export const db = firestore();

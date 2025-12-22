@@ -1,23 +1,8 @@
 // app/(drawer)/reply.tsx
 import { Ionicons } from "@expo/vector-icons";
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  getDoc,
-} from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 import { useEffect, useState } from "react";
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-  Alert,
-} from "react-native";
+import { FlatList, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from "react-native";
 import {
   Text,
   TextInput,
@@ -43,8 +28,8 @@ export default function ReplyScreen() {
   // Username laden
   useEffect(() => {
     if (!auth.currentUser) return;
-    const userRef = doc(db, "users", auth.currentUser.uid);
-    const unsubscribe = onSnapshot(userRef, (snap) => {
+    const userRef = db.collection("users").doc(auth.currentUser.uid);
+    const unsubscribe = userRef.onSnapshot((snap) => {
       if (snap.exists()) {
         setUsername(snap.data().username);
         setBlocked(snap.data().blocked || []);
@@ -57,9 +42,8 @@ export default function ReplyScreen() {
   useEffect(() => {
     // === DM THREAD ===
     if (dmId) {
-      const repliesRef = collection(db, "dm_threads", dmId as string, "messages");
-      const q = query(repliesRef, orderBy("timestamp", "asc"));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const repliesRef = db.collection("dm_threads").doc(dmId as string).collection("messages");
+      const unsubscribe = repliesRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
         const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -73,9 +57,11 @@ export default function ReplyScreen() {
 
     // === GRUPPEN CHAT THREAD ===
     if (room && messageId) {
-      const repliesRef = collection(db, room as string, messageId as string, "replies");
-      const q = query(repliesRef, orderBy("timestamp", "asc"));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const repliesRef = db
+        .collection(room as string)
+        .doc(messageId as string)
+        .collection("replies");
+      const unsubscribe = repliesRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
         const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -95,15 +81,15 @@ export default function ReplyScreen() {
     try {
       // === Direktnachricht (DM) ===
       if (dmId) {
-        const threadRef = doc(db, "dm_threads", dmId as string);
-        const threadSnap = await getDoc(threadRef);
+        const threadRef = db.collection("dm_threads").doc(dmId as string);
+        const threadSnap = await threadRef.get();
         const users: string[] = (threadSnap.data()?.users as string[]) || [];
         const otherUid = users.find((u) => u !== auth.currentUser?.uid);
 
         if (otherUid && auth.currentUser?.uid) {
           const [meDoc, otherDoc] = await Promise.all([
-            getDoc(doc(db, "users", auth.currentUser.uid)),
-            getDoc(doc(db, "users", otherUid)),
+            db.collection("users").doc(auth.currentUser.uid).get(),
+            db.collection("users").doc(otherUid).get(),
           ]);
           const myBlocked: string[] = meDoc.data()?.blocked || [];
           const otherBlocked: string[] = otherDoc.data()?.blocked || [];
@@ -118,12 +104,12 @@ export default function ReplyScreen() {
           }
         }
 
-        const ref = collection(db, "dm_threads", dmId as string, "messages");
-        await addDoc(ref, {
+        const ref = db.collection("dm_threads").doc(dmId as string).collection("messages");
+        await ref.add({
           sender: auth.currentUser?.uid,
           username,
           text: input,
-          timestamp: serverTimestamp(),
+          timestamp: firestore.FieldValue.serverTimestamp(),
         });
 
         setInput("");
@@ -132,12 +118,15 @@ export default function ReplyScreen() {
 
       // === Gruppenchat Thread ===
       if (room && messageId) {
-        const repliesRef = collection(db, room as string, messageId as string, "replies");
-        await addDoc(repliesRef, {
+        const repliesRef = db
+          .collection(room as string)
+          .doc(messageId as string)
+          .collection("replies");
+        await repliesRef.add({
           sender: auth.currentUser?.uid,
           username,
           text: input,
-          timestamp: serverTimestamp(),
+          timestamp: firestore.FieldValue.serverTimestamp(),
         });
         setInput("");
         setInputHeight(40);

@@ -17,7 +17,7 @@ import { useLocalSearchParams } from "expo-router";
 
 import { useAppTheme, ThemeMode, TextScale } from "../../components/theme/AppThemeProvider";
 import { auth, db } from "../../firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 
 type LanguageCode = "de" | "en";
 type SectionKey =
@@ -154,7 +154,7 @@ export default function SettingsScreen() {
       if (!auth.currentUser) return;
       setLoadingPrefs(true);
       try {
-        const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const snap = await db.collection("users").doc(auth.currentUser.uid).get();
         const data = snap.data() || {};
         const settings = (data.settings as any) || {};
         const notif = settings.notifications || {};
@@ -223,8 +223,10 @@ export default function SettingsScreen() {
     setEventCategories(newCats);
     setTextScale(newTextScale);
     try {
-      await setDoc(
-        doc(db, "users", auth.currentUser.uid),
+      await db
+        .collection("users")
+        .doc(auth.currentUser.uid)
+        .set(
         {
           settings: {
             notifications: {
@@ -243,7 +245,7 @@ export default function SettingsScreen() {
           },
         },
         { merge: true }
-      );
+        );
     } catch (err) {
       console.error("Failed to save notification settings", err);
     }

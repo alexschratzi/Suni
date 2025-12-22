@@ -15,17 +15,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import { auth, db } from "../../firebase";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 
 export default function ProfileScreen() {
   const theme = useTheme();
@@ -39,8 +29,8 @@ export default function ProfileScreen() {
     const fetchUser = async () => {
       try {
         if (auth.currentUser) {
-          const userRef = doc(db, "users", auth.currentUser.uid);
-          const snap = await getDoc(userRef);
+          const userRef = db.collection("users").doc(auth.currentUser.uid);
+          const snap = await userRef.get();
           if (snap.exists()) setUserData(snap.data());
         }
       } catch (err) {
@@ -59,34 +49,32 @@ export default function ProfileScreen() {
         return;
       }
 
-      const q = query(
-        collection(db, "usernames"),
-        where("username", "==", newUsername)
-      );
-      const existing = await getDocs(q);
+      const existing = await db
+        .collection("usernames")
+        .where("username", "==", newUsername)
+        .get();
       if (!existing.empty) {
         Alert.alert("Fehler", "Benutzername ist schon vergeben!");
         return;
       }
 
       if (userData?.username) {
-        const oldQ = query(
-          collection(db, "usernames"),
-          where("username", "==", userData.username)
-        );
-        const oldDocs = await getDocs(oldQ);
+        const oldDocs = await db
+          .collection("usernames")
+          .where("username", "==", userData.username)
+          .get();
         for (const d of oldDocs.docs) {
-          await deleteDoc(d.ref);
+          await d.ref.delete();
         }
       }
 
-      await addDoc(collection(db, "usernames"), {
+      await db.collection("usernames").add({
         username: newUsername,
         uid: auth.currentUser?.uid,
       });
 
-      const userRef = doc(db, "users", auth.currentUser!.uid);
-      await updateDoc(userRef, { username: newUsername });
+      const userRef = db.collection("users").doc(auth.currentUser!.uid);
+      await userRef.update({ username: newUsername });
 
       setUserData((prev: any) => ({ ...prev, username: newUsername }));
       setEditVisible(false);

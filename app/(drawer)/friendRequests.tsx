@@ -12,14 +12,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import { auth, db } from "@/firebase";
-import {
-  doc,
-  onSnapshot,
-  arrayUnion,
-  arrayRemove,
-  setDoc,
-  getDoc,
-} from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 import { initials } from "@/utils/utils";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
@@ -36,8 +29,8 @@ export default function FriendRequestsScreen() {
   useEffect(() => {
     if (!me) return;
 
-    const userRef = doc(db, "users", me.uid);
-    const unsub = onSnapshot(userRef, (snap) => {
+    const userRef = db.collection("users").doc(me.uid);
+    const unsub = userRef.onSnapshot((snap) => {
       if (snap.exists()) {
         setRequests(snap.data().pendingReceived || []);
       } else {
@@ -59,8 +52,8 @@ export default function FriendRequestsScreen() {
     (async () => {
       const entries = await Promise.all(
         missing.map(async (uid) => {
-          const snap = await getDoc(doc(db, "users", uid));
-          const username = snap.exists() ? snap.data().username : undefined;
+          const snap = await db.collection("users").doc(uid).get();
+          const username = snap.exists() ? snap.data()?.username : undefined;
           return [uid, { username }] as const;
         })
       );
@@ -77,14 +70,11 @@ export default function FriendRequestsScreen() {
   const accept = async (otherUid: string) => {
     if (!me) return;
 
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    const myRef = db.collection("users").doc(me.uid);
+    const otherRef = db.collection("users").doc(otherUid);
 
     try {
-      const [mySnap, otherSnap] = await Promise.all([
-        getDoc(myRef),
-        getDoc(otherRef),
-      ]);
+      const [mySnap, otherSnap] = await Promise.all([myRef.get(), otherRef.get()]);
 
       const myFriends: string[] = mySnap.data()?.friends || [];
       if (myFriends.includes(otherUid)) {
@@ -93,41 +83,38 @@ export default function FriendRequestsScreen() {
       }
 
       // 1. Freunde + Pending aktualisieren
-      await setDoc(
-        myRef,
+      await myRef.set(
         {
-          pendingReceived: arrayRemove(otherUid),
-          friends: arrayUnion(otherUid),
+          pendingReceived: firestore.FieldValue.arrayRemove(otherUid),
+          friends: firestore.FieldValue.arrayUnion(otherUid),
         },
         { merge: true }
       );
 
-      await setDoc(
-        otherRef,
+      await otherRef.set(
         {
-          pendingSent: arrayRemove(me.uid),
-          friends: arrayUnion(me.uid),
+          pendingSent: firestore.FieldValue.arrayRemove(me.uid),
+          friends: firestore.FieldValue.arrayUnion(me.uid),
         },
         { merge: true }
       );
 
       // 2. DM-Thread erstellen, falls er noch nicht existiert
-      const threadId =
-        me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
-      const threadRef = doc(db, "dm_threads", threadId);
-      const threadSnap = await getDoc(threadRef);
+    const threadId =
+      me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
+    const threadRef = db.collection("dm_threads").doc(threadId);
+    const threadSnap = await threadRef.get();
 
-      if (!threadSnap.exists()) {
-        await setDoc(
-          threadRef,
-          {
-            users: [me.uid, otherUid],
-            lastMessage: "",
-            lastTimestamp: null,
-          },
-          { merge: true }
-        );
-      }
+    if (!threadSnap.exists()) {
+      await threadRef.set(
+        {
+          users: [me.uid, otherUid],
+          lastMessage: "",
+          lastTimestamp: null,
+        },
+        { merge: true }
+      );
+    }
 
       setSnack("Freund hinzugefügt!");
     } catch (err) {
@@ -139,19 +126,17 @@ export default function FriendRequestsScreen() {
   const decline = async (otherUid: string) => {
     if (!me) return;
 
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    const myRef = db.collection("users").doc(me.uid);
+    const otherRef = db.collection("users").doc(otherUid);
 
     try {
-      await setDoc(
-        myRef,
-        { pendingReceived: arrayRemove(otherUid) },
+      await myRef.set(
+        { pendingReceived: firestore.FieldValue.arrayRemove(otherUid) },
         { merge: true }
       );
 
-      await setDoc(
-        otherRef,
-        { pendingSent: arrayRemove(me.uid) },
+      await otherRef.set(
+        { pendingSent: firestore.FieldValue.arrayRemove(me.uid) },
         { merge: true }
       );
 

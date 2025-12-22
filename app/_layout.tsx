@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 import { db } from "../firebase"; // ggf. Pfad anpassen
 import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ƒo. richtiger Pfad/Name
 import { StatusBar } from "expo-status-bar";
@@ -33,12 +33,11 @@ export default function RootLayout() {
 
     const ensureUserDoc = async () => {
       try {
-        const ref = doc(db, "users", user.uid);
-        const snap = await getDoc(ref);
+        const ref = db.collection("users").doc(user.uid);
+        const snap = await ref.get();
 
         if (!snap.exists()) {
-          await setDoc(
-            ref,
+          await ref.set(
             {
               uid: user.uid,
               username: user.displayName ?? "",
@@ -64,8 +63,7 @@ export default function RootLayout() {
         } else {
           // Fülle fehlende Arrays/Felder auf, überschreibe bestehende nicht
           const data = snap.data() || {};
-          await setDoc(
-            ref,
+          await ref.set(
             {
               pendingSent: data.pendingSent ?? [],
               pendingReceived: data.pendingReceived ?? [],

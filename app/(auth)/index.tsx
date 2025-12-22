@@ -4,16 +4,7 @@ import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 import { db, firebaseConfig } from "../../firebase";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-} from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
@@ -43,8 +34,7 @@ export default function LoginScreen() {
 
   const checkExistingProfile = async (cleanPhone: string) => {
     try {
-      const q = query(collection(db, "users"), where("phone", "==", cleanPhone));
-      const result = await getDocs(q);
+      const result = await db.collection("users").where("phone", "==", cleanPhone).get();
       setHasProfile(!result.empty);
     } catch (err) {
       console.log("checkExistingProfile error:", err);
@@ -106,8 +96,8 @@ export default function LoginScreen() {
       const cleanPhone = phone.replace(/\s+/g, "");
       const userCred = await confirmation.confirm(code);
       const uid = userCred.user.uid;
-      const userRef = doc(db, "users", uid);
-      const snap = await getDoc(userRef);
+      const userRef = db.collection("users").doc(uid);
+      const snap = await userRef.get();
 
       const existingUsername = snap.data()?.username;
 
@@ -126,21 +116,22 @@ export default function LoginScreen() {
         return;
       }
 
-      const q = query(collection(db, "usernames"), where("username", "==", username.trim()));
-      const existing = await getDocs(q);
+      const existing = await db
+        .collection("usernames")
+        .where("username", "==", username.trim())
+        .get();
 
       if (!existing.empty) {
         Alert.alert(t("auth.error"), t("auth.usernameTaken"));
         return;
       }
 
-      await addDoc(collection(db, "usernames"), {
+      await db.collection("usernames").add({
         username: username.trim(),
         uid,
       });
 
-      await setDoc(
-        userRef,
+      await userRef.set(
         {
           phone: cleanPhone,
           username: username.trim(),
