@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
-import { signInWithPhoneNumber, signInAnonymously } from "firebase/auth";
-import { auth, db, firebaseConfig } from "../../firebase";
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import { db, firebaseConfig } from "../../firebase";
 import {
   doc,
   getDoc,
@@ -38,14 +38,9 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
-  const [confirmation, setConfirmation] = useState<any>(null);
+  const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
 
   useEffect(() => {
-    if (__DEV__ && auth.settings) {
-      // @ts-ignore
-      auth.settings.appVerificationDisabledForTesting = true;
-      console.log("Auth test mode enabled");
-    }
     setLoading(false);
   }, []);
 
@@ -71,29 +66,26 @@ export default function LoginScreen() {
       }
 
       if (Platform.OS === "web") {
-        const { RecaptchaVerifier } = await import("firebase/auth");
+        const { initializeApp, getApps, getApp } = await import("firebase/app");
+        const { getAuth, RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+        const webApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+        const webAuth = getAuth(webApp);
 
         if (!window.recaptchaVerifier) {
           const elem = document.getElementById("recaptcha-container");
           if (!elem) throw new Error("recaptcha-container missing");
-          window.recaptchaVerifier = new RecaptchaVerifier(auth, elem, {
+          window.recaptchaVerifier = new RecaptchaVerifier(webAuth, elem, {
             size: "invisible",
           });
         }
 
-        const result = await signInWithPhoneNumber(
-          auth,
-          cleanPhone,
-          window.recaptchaVerifier
-        );
+        const result = await signInWithPhoneNumber(webAuth, cleanPhone, window.recaptchaVerifier);
         setConfirmation(result);
         Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
       } else {
-        // No supported recaptcha on native without RNFirebase
-        Alert.alert(
-          t("auth.error"),
-          "Phone login on mobile is disabled temporarily."
-        );
+        const result = await auth().signInWithPhoneNumber(cleanPhone);
+        setConfirmation(result);
+        Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
       }
     } catch (err: any) {
       console.log("sendCode error:", err);
@@ -166,7 +158,7 @@ export default function LoginScreen() {
 
   const testLogin = async () => {
     try {
-      const userCred = await signInAnonymously(auth);
+      const userCred = await auth().signInAnonymously();
       console.log("Test user:", userCred.user.uid);
       Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
     } catch (err: any) {

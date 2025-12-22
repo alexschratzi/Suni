@@ -2,9 +2,9 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { onAuthStateChanged, User } from "firebase/auth";
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "../firebase"; // ggf. Pfad anpassen
+import { db } from "../firebase"; // ggf. Pfad anpassen
 import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ƒo. richtiger Pfad/Name
 import { StatusBar } from "expo-status-bar";
 import "../i18n/i18n";
@@ -13,12 +13,12 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [provisioning, setProvisioning] = useState(false);
 
   // Auth-Listener: setzt user & ready bei jeder Änderung
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = auth().onAuthStateChanged((u) => {
       setUser(u);
       setReady(true);
     });

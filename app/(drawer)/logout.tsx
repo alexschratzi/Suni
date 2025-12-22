@@ -2,7 +2,6 @@
 import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 
 export default function LogoutScreen() {
@@ -12,7 +11,7 @@ export default function LogoutScreen() {
     let active = true;
     (async () => {
       try {
-        await signOut(auth);
+        await auth.signOut();
       } finally {
         if (active) router.replace("/(auth)");
       }

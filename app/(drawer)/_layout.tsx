@@ -5,10 +5,9 @@ import { Drawer } from "expo-router/drawer";
 import { useRouter, useSegments } from "expo-router";
 import { DrawerToggleButton } from "@react-navigation/drawer";
 import { Ionicons } from "@expo/vector-icons";
-import { onAuthStateChanged, User } from "firebase/auth";
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 import { useTheme, Text } from "react-native-paper";
 
-import { auth } from "../../firebase";
 import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
 import {
   TimetableHeaderTitle,
@@ -29,7 +28,7 @@ export default function DrawerLayout() {
   const router = useRouter();
   const theme = useTheme();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
 
   // which tab is currently active? (news, uni, timetable, chat)
   const segments = useSegments();
@@ -43,7 +42,7 @@ export default function DrawerLayout() {
     : "news") as TabKey;
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = auth().onAuthStateChanged((u) => {
       setUser(u);
       setReady(true);
     });
