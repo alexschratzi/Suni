@@ -30,7 +30,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.alexschratzi.suni"
+      "package": "com.alexschratzi.suni",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
