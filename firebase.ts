@@ -1,7 +1,7 @@
 ﻿// firebase.ts
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import auth from "@react-native-firebase/auth";
+import firebaseAuth from "@react-native-firebase/auth";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyDYpOpiZ-2VBmMuPUbZ5ltrJvyrvxWHvMs",
@@ -13,6 +13,6 @@ export const firebaseConfig = {
 };
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const authInstance = auth();
+const authInstance = firebaseAuth();
 export const auth = authInstance;
 export const db = getFirestore(app);
