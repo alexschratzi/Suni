@@ -56,7 +56,6 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "useModularHeaders": true,
             "deploymentTarget": "15.1"
           }
         }
