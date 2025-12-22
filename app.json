@@ -15,7 +15,8 @@
         "NSCalendarsUsageDescription": "This app shows your timetable using your calendars.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.alexschratzi.suni"
+      "bundleIdentifier": "com.alexschratzi.suni",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "extra": {
       "EXPO_PUBLIC_UNI_API_BASE": "https://uni-service.lancealot.at",
