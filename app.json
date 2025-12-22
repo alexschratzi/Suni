@@ -55,7 +55,21 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "15.1"
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static",
+            "useModularHeaders": true,
+            "modularHeaders": {
+              "FirebaseCore": true,
+              "FirebaseCoreInternal": true,
+              "FirebaseCoreExtension": true,
+              "FirebaseAuth": true,
+              "FirebaseAuthInterop": true,
+              "FirebaseAppCheckInterop": true,
+              "FirebaseFirestore": true,
+              "FirebaseFirestoreInternal": true,
+              "GoogleUtilities": true,
+              "RecaptchaInterop": true
+            }
           }
         }
       ],
