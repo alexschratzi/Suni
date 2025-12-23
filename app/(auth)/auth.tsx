@@ -7,12 +7,7 @@ import {
   Surface,
   useTheme,
 } from "react-native-paper";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  UserCredential,
-} from "firebase/auth";
-import { auth } from "../../firebase";
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 import { loadLocalUser, saveLocalUser } from "../../localUser";
 
 export default function AuthScreen() {
@@ -26,13 +21,13 @@ export default function AuthScreen() {
   const handleAuth = async () => {
     try {
       if (email.endsWith("@oeh.at")) {
-        let userCredential: UserCredential;
+        let userCredential: FirebaseAuthTypes.UserCredential;
 
         if (isRegister) {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          userCredential = await auth().createUserWithEmailAndPassword(email, password);
           Alert.alert("ÖH Registrierung erfolgreich!", `Willkommen ${username}`);
         } else {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
+          userCredential = await auth().signInWithEmailAndPassword(email, password);
           Alert.alert("ÖH Login erfolgreich!", `Willkommen zurück ${userCredential.user.email}`);
         }
       } else {

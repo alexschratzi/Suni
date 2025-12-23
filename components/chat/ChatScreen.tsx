@@ -37,20 +37,7 @@ import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "react-native-paper";
-import {
-  addDoc,
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  doc,
-  getDoc,
-  setDoc,
-  arrayUnion,
-  arrayRemove,
-} from "firebase/firestore";
-import { where } from "firebase/firestore/lite";
+import firestore from "@react-native-firebase/firestore";
 import { useTranslation } from "react-i18next";
 
 import { db, auth } from "@/firebase";
@@ -109,8 +96,8 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const userRef = doc(db, "users", auth.currentUser.uid);
-    const unsubscribe = onSnapshot(userRef, (snap) => {
+    const userRef = db.collection("users").doc(auth.currentUser.uid);
+    const unsubscribe = userRef.onSnapshot((snap) => {
       if (snap.exists()) {
         const data = snap.data();
         setUsername(data.username);
@@ -137,20 +124,18 @@ export default function ChatScreen() {
 
     setLoadingMsgs(true);
 
-    const q = query(
-      collection(db, ROOMS[room]),
-      orderBy("timestamp", "desc"),
-      orderBy("username")
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMessages(msgs);
-      setLoadingMsgs(false);
-    });
+    const unsubscribe = db
+      .collection(ROOMS[room])
+      .orderBy("timestamp", "desc")
+      .orderBy("username")
+      .onSnapshot((snapshot) => {
+        const msgs = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setMessages(msgs);
+        setLoadingMsgs(false);
+      });
 
     return () => unsubscribe();
   }, [room]);
@@ -160,24 +145,22 @@ export default function ChatScreen() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    const q = query(
-      collection(db, "dm_threads"),
-      where("users", "array-contains", uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const arr: RawDirect[] = snap.docs.map((d) => {
-        const data = d.data();
-        const otherUid = data.users.find((u: string) => u !== uid) || uid;
-        return {
-          id: d.id,
-          otherUid,
-          last: data.lastMessage ?? "",
-          hidden: (data.hiddenBy || []).includes(uid),
-        };
+    const unsubscribe = db
+      .collection("dm_threads")
+      .where("users", "array-contains", uid)
+      .onSnapshot((snap) => {
+        const arr: RawDirect[] = snap.docs.map((d) => {
+          const data = d.data();
+          const otherUid = data.users.find((u: string) => u !== uid) || uid;
+          return {
+            id: d.id,
+            otherUid,
+            last: data.lastMessage ?? "",
+            hidden: (data.hiddenBy || []).includes(uid),
+          };
+        });
+        setRawDirects(arr);
       });
-      setRawDirects(arr);
-    });
 
     return () => unsubscribe();
   }, []);
@@ -197,7 +180,7 @@ export default function ChatScreen() {
     (async () => {
       const entries = await Promise.all(
         missing.map(async (uid) => {
-          const snap = await getDoc(doc(db, "users", uid));
+          const snap = await db.collection("users").doc(uid).get();
           const profile: UserProfile = snap.exists()
             ? { username: snap.data().username }
             : {};
@@ -282,11 +265,11 @@ export default function ChatScreen() {
     if (!input.trim() || !room || !username) return;
 
     try {
-      await addDoc(collection(db, ROOMS[room]), {
+      await db.collection(ROOMS[room]).add({
         sender: auth.currentUser?.uid,
         username,
         text: input,
-        timestamp: serverTimestamp(),
+        timestamp: firestore.FieldValue.serverTimestamp(),
       });
       setInput("");
       setInputHeight(40);
@@ -319,12 +302,13 @@ export default function ChatScreen() {
           onToggleHidden={async (id, makeHidden) => {
             const uid = auth.currentUser?.uid;
             if (!uid) return;
-            const threadRef = doc(db, "dm_threads", id);
+            const threadRef = db.collection("dm_threads").doc(id);
             try {
-              await setDoc(
-                threadRef,
+              await threadRef.set(
                 {
-                  hiddenBy: makeHidden ? arrayUnion(uid) : arrayRemove(uid),
+                  hiddenBy: makeHidden
+                    ? firestore.FieldValue.arrayUnion(uid)
+                    : firestore.FieldValue.arrayRemove(uid),
                 },
                 { merge: true }
               );

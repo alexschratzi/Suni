@@ -10,16 +10,7 @@ import {
   List,
 } from "react-native-paper";
 import { auth, db } from "@/firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  setDoc,
-  doc,
-  arrayUnion,
-  getDoc,
-} from "firebase/firestore";
+import firestore from "@react-native-firebase/firestore";
 
 export default function AddFriendScreen() {
   const theme = useTheme();
@@ -40,11 +31,10 @@ export default function AddFriendScreen() {
     setLoading(true);
 
     try {
-      const q = query(
-        collection(db, "usernames"),
-        where("username", "==", username.trim())
-      );
-      const resultSnap = await getDocs(q);
+      const resultSnap = await db
+        .collection("usernames")
+        .where("username", "==", username.trim())
+        .get();
 
       if (resultSnap.empty) {
         setResult(null);
@@ -68,14 +58,11 @@ export default function AddFriendScreen() {
       return;
     }
 
-    const myRef = doc(db, "users", me.uid);
-    const targetRef = doc(db, "users", targetUid);
+    const myRef = db.collection("users").doc(me.uid);
+    const targetRef = db.collection("users").doc(targetUid);
 
     try {
-      const [mySnap, targetSnap] = await Promise.all([
-        getDoc(myRef),
-        getDoc(targetRef),
-      ]);
+      const [mySnap, targetSnap] = await Promise.all([myRef.get(), targetRef.get()]);
 
       const myData = mySnap.data() || {};
       const targetData = targetSnap.data() || {};
@@ -100,15 +87,13 @@ export default function AddFriendScreen() {
         return;
       }
 
-      await setDoc(
-        myRef,
-        { pendingSent: arrayUnion(targetUid) },
+      await myRef.set(
+        { pendingSent: firestore.FieldValue.arrayUnion(targetUid) },
         { merge: true }
       );
 
-      await setDoc(
-        targetRef,
-        { pendingReceived: arrayUnion(me.uid) },
+      await targetRef.set(
+        { pendingReceived: firestore.FieldValue.arrayUnion(me.uid) },
         { merge: true }
       );
 

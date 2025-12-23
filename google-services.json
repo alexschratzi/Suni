@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "167831321634",
+    "project_id": "suni-9468f",
+    "storage_bucket": "suni-9468f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:167831321634:android:c32e9a8c48c75ce64b5e7b",
+        "android_client_info": {
+          "package_name": "com.alexschratzi.suni"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB_nm58xtLknb9s2WscF6kH_WQUjaSuEE4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

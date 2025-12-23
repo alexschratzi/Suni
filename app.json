@@ -15,7 +15,8 @@
         "NSCalendarsUsageDescription": "This app shows your timetable using your calendars.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.alexschratzi.suni"
+      "bundleIdentifier": "com.alexschratzi.suni",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "extra": {
       "EXPO_PUBLIC_UNI_API_BASE": "https://uni-service.lancealot.at",
@@ -30,7 +31,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.alexschratzi.suni"
+      "package": "com.alexschratzi.suni",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -53,13 +55,29 @@
         "expo-build-properties",
         {
           "ios": {
+            "deploymentTarget": "15.1",
             "useFrameworks": "static",
             "useModularHeaders": true,
-            "deploymentTarget": "15.1"
+            "modularHeaders": {
+              "FirebaseCore": true,
+              "FirebaseCoreInternal": true,
+              "FirebaseCoreExtension": true,
+              "FirebaseAuth": true,
+              "FirebaseAuthInterop": true,
+              "FirebaseAppCheckInterop": true,
+              "FirebaseFirestore": true,
+              "FirebaseFirestoreInternal": true,
+              "GoogleUtilities": true,
+              "RecaptchaInterop": true
+            }
           }
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "@react-native-firebase/app",
+        {}
+      ]
     ],
     "experiments": {
       "typedRoutes": true

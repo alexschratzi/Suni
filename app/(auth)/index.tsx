@@ -1,28 +1,13 @@
 // app/(auth)/index.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
-import { signInWithPhoneNumber, signInAnonymously } from "firebase/auth";
-import { auth, db, firebaseConfig } from "../../firebase";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-} from "firebase/firestore";
-import {
-  Text,
-  Button,
-  useTheme,
-  ActivityIndicator,
-} from "react-native-paper";
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import { db, firebaseConfig } from "../../firebase";
+import firestore from "@react-native-firebase/firestore";
+import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
-// @ts-ignore
 declare global {
   interface Window {
     recaptchaVerifier?: any;
@@ -38,34 +23,22 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
-  const [confirmation, setConfirmation] = useState<any>(null);
+  const [confirmation, setConfirmation] = useState<{ confirm: (code: string) => Promise<any> } | null>(
+    null
+  );
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
-  // Recaptcha für Mobile
-  const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal | null>(null);
-
   useEffect(() => {
-    const init = async () => {
-      try {
-        if (__DEV__ && auth.settings) {
-          auth.settings.appVerificationDisabledForTesting = true;
-          console.log("Testmode aktiv");
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    init();
+    setLoading(false);
   }, []);
 
   const checkExistingProfile = async (cleanPhone: string) => {
     try {
-      const q = query(collection(db, "users"), where("phone", "==", cleanPhone));
-      const result = await getDocs(q);
+      const result = await db.collection("users").where("phone", "==", cleanPhone).get();
       setHasProfile(!result.empty);
     } catch (err) {
       console.log("checkExistingProfile error:", err);
-      setHasProfile(false); // lieber Username abfragen als zu frÇ"h skippen
+      setHasProfile(false); // lieber Username abfragen als vorschnell skippen
     }
   };
 
@@ -79,45 +52,29 @@ export default function LoginScreen() {
         return;
       }
 
-      let confirmationResult;
+      let confirmationResult: { confirm: (code: string) => Promise<any> } | null = null;
 
       if (Platform.OS === "web") {
-        // Dynamischer Import für Web
-        // @ts-ignore
-        const { RecaptchaVerifier } = await import("firebase/auth");
+        const { initializeApp, getApps, getApp } = await import("firebase/app");
+        const { getAuth, RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+        const webApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+        const webAuth = getAuth(webApp);
 
         const container = document.getElementById("recaptcha-container");
-        if (!container) {
-          throw new Error("recaptcha-container not found in DOM");
-        }
+        if (!container) throw new Error("recaptcha-container not found in DOM");
 
         if (!window.recaptchaVerifier) {
-          // @ts-ignore
-          window.recaptchaVerifier = new RecaptchaVerifier(
-            auth, // v10: zuerst Auth
-            container, // dann Container
-            { size: "invisible" }
-          );
+          window.recaptchaVerifier = new RecaptchaVerifier(webAuth, container, { size: "invisible" });
         }
 
-        confirmationResult = await signInWithPhoneNumber(
-          auth,
+        confirmationResult = (await signInWithPhoneNumber(
+          webAuth,
           cleanPhone,
           window.recaptchaVerifier
-        );
+        )) as unknown as { confirm: (code: string) => Promise<any> };
       } else {
-        // Mobile (Expo / iOS / Android) mit FirebaseRecaptchaVerifierModal
-        if (!recaptchaVerifier.current) {
-          Alert.alert(t("auth.error"), "reCAPTCHA nicht bereit.");
-          return;
-        }
-
-        confirmationResult = await signInWithPhoneNumber(
-          auth,
-          cleanPhone,
-          // @ts-ignore – Modal liefert intern den richtigen Verifier
-          recaptchaVerifier.current
-        );
+        // Native: nutzt Play Integrity / DeviceCheck, kein sichtbares Recaptcha
+        confirmationResult = await auth().signInWithPhoneNumber(cleanPhone);
       }
 
       setConfirmation(confirmationResult);
@@ -139,8 +96,8 @@ export default function LoginScreen() {
       const cleanPhone = phone.replace(/\s+/g, "");
       const userCred = await confirmation.confirm(code);
       const uid = userCred.user.uid;
-      const userRef = doc(db, "users", uid);
-      const snap = await getDoc(userRef);
+      const userRef = db.collection("users").doc(uid);
+      const snap = await userRef.get();
 
       const existingUsername = snap.data()?.username;
 
@@ -159,24 +116,22 @@ export default function LoginScreen() {
         return;
       }
 
-      const q = query(
-        collection(db, "usernames"),
-        where("username", "==", username.trim())
-      );
-      const existing = await getDocs(q);
+      const existing = await db
+        .collection("usernames")
+        .where("username", "==", username.trim())
+        .get();
 
       if (!existing.empty) {
         Alert.alert(t("auth.error"), t("auth.usernameTaken"));
         return;
       }
 
-      await addDoc(collection(db, "usernames"), {
+      await db.collection("usernames").add({
         username: username.trim(),
         uid,
       });
 
-      await setDoc(
-        userRef,
+      await userRef.set(
         {
           phone: cleanPhone,
           username: username.trim(),
@@ -195,7 +150,7 @@ export default function LoginScreen() {
 
   const testLogin = async () => {
     try {
-      const userCred = await signInAnonymously(auth);
+      const userCred = await auth().signInAnonymously();
       console.log("Test-User:", userCred.user.uid);
       Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
     } catch (err: any) {
@@ -205,12 +160,7 @@ export default function LoginScreen() {
 
   if (loading) {
     return (
-      <View
-        style={[
-          styles.center,
-          { backgroundColor: theme.colors.background },
-        ]}
-      >
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator animating size="large" />
         <Text style={{ marginTop: 12 }}>{t("auth.loading")}</Text>
       </View>
@@ -228,13 +178,7 @@ export default function LoginScreen() {
   } as const;
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: theme.colors.background },
-      ]}
-    >
-
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Recaptcha für Web */}
       {Platform.OS === "web" &&
         typeof document !== "undefined" &&
@@ -270,24 +214,24 @@ export default function LoginScreen() {
             placeholder={t("auth.codePlaceholder")}
             placeholderTextColor={theme.colors.onSurfaceVariant}
             keyboardType="number-pad"
-          value={code}
-          onChangeText={setCode}
-        />
-
-        {hasProfile === false && (
-          <TextInput
-            style={inputStyle}
-            placeholder={t("auth.usernamePlaceholder")}
-            placeholderTextColor={theme.colors.onSurfaceVariant}
-            value={username}
-            onChangeText={setUsername}
+            value={code}
+            onChangeText={setCode}
           />
-        )}
 
-        <Button mode="contained" onPress={confirmCode} style={styles.button}>
-          {t("auth.confirm")}
-        </Button>
-      </>
+          {hasProfile === false && (
+            <TextInput
+              style={inputStyle}
+              placeholder={t("auth.usernamePlaceholder")}
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              value={username}
+              onChangeText={setUsername}
+            />
+          )}
+
+          <Button mode="contained" onPress={confirmCode} style={styles.button}>
+            {t("auth.confirm")}
+          </Button>
+        </>
       )}
     </View>
   );
