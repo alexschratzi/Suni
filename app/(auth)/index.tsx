@@ -4,6 +4,7 @@ import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
 import { useTranslation } from "react-i18next";
+import rnAuth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 
 import { auth, db } from "../../firebase";
 
@@ -43,9 +44,8 @@ export default function LoginScreen() {
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    setLoading(false);
-  }, []);
+
+  useEffect(() => setLoading(false), []);
 
   const checkExistingProfile = async (cleanPhone: string) => {
     try {
@@ -61,29 +61,18 @@ export default function LoginScreen() {
   const sendCode = async () => {
     try {
       const cleanPhone = phone.replace(/\s+/g, "");
-      setHasProfile(null);
 
       if (!cleanPhone.startsWith("+")) {
         Alert.alert(t("auth.error"), t("auth.phoneFormat"));
         return;
       }
 
-      // Web reCAPTCHA verifier (only needed on web)
-      let verifier: RecaptchaVerifier | undefined;
-
       if (Platform.OS === "web") {
-        const container = document.getElementById("recaptcha-container");
-        if (!container) throw new Error("recaptcha-container not found in DOM");
-
-        if (!window.recaptchaVerifier) {
-          window.recaptchaVerifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
-          // Important: render once
-          await window.recaptchaVerifier.render();
-        }
-        verifier = window.recaptchaVerifier;
+        Alert.alert(t("auth.error"), "Phone login is disabled on web.");
+        return;
       }
 
-      const confirmationResult = await signInWithPhoneNumber(auth, cleanPhone, verifier);
+      const confirmationResult = await rnAuth().signInWithPhoneNumber(cleanPhone);
       setConfirmation(confirmationResult);
 
       await checkExistingProfile(cleanPhone);
@@ -134,18 +123,11 @@ export default function LoginScreen() {
         return;
       }
 
-      await addDoc(collection(db, "usernames"), {
-        username: username.trim(),
-        uid,
-      });
+      await addDoc(collection(db, "usernames"), { username: username.trim(), uid });
 
       await setDoc(
         userRef,
-        {
-          phone: cleanPhone,
-          username: username.trim(),
-          role: "student",
-        },
+        { phone: cleanPhone, username: username.trim(), role: "student" },
         { merge: true }
       );
 
@@ -188,6 +170,7 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Web container for RecaptchaVerifier */}
       {Platform.OS === "web" &&
         typeof document !== "undefined" &&
         React.createElement("div", { id: "recaptcha-container" })}
@@ -248,13 +231,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 20 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  button: {
-    marginTop: 8,
-  },
+  title: { fontSize: 22, fontWeight: "bold", marginBottom: 16, textAlign: "center" },
+  button: { marginTop: 8 },
 });
