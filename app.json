@@ -72,11 +72,6 @@
             }
           }
         }
-      ],
-      "expo-localization",
-      [
-        "@react-native-firebase/app",
-        {}
       ]
     ],
     "experiments": {

@@ -11,9 +11,18 @@ import {
   Avatar,
   useTheme,
 } from "react-native-paper";
+
 import { auth, db } from "@/firebase";
-import firestore from "@react-native-firebase/firestore";
 import { initials } from "@/utils/utils";
+
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  arrayUnion,
+  arrayRemove,
+} from "firebase/firestore";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
 
@@ -29,38 +38,44 @@ export default function FriendRequestsScreen() {
   useEffect(() => {
     if (!me) return;
 
-    const userRef = db.collection("users").doc(me.uid);
-    const unsub = userRef.onSnapshot((snap) => {
-      if (snap.exists()) {
-        setRequests(snap.data().pendingReceived || []);
-      } else {
+    const userRef = doc(db, "users", me.uid);
+
+    const unsub = onSnapshot(
+      userRef,
+      (snap) => {
+        if (snap.exists()) {
+          setRequests((snap.data() as any).pendingReceived || []);
+        } else {
+          setRequests([]);
+        }
+        setLoading(false);
+      },
+      (err) => {
+        console.error("FriendRequests onSnapshot error:", err);
         setRequests([]);
+        setLoading(false);
       }
-      setLoading(false);
-    });
-
-    return () => unsub();
-  }, [me]);
-
-  useEffect(() => {
-    const missing = Array.from(
-      new Set(requests.filter((uid) => !profiles[uid]))
     );
 
+    return () => unsub();
+  }, [me?.uid]);
+
+  useEffect(() => {
+    const missing = Array.from(new Set(requests.filter((uid) => !profiles[uid])));
     if (!missing.length) return;
 
     (async () => {
       const entries = await Promise.all(
         missing.map(async (uid) => {
-          const snap = await db.collection("users").doc(uid).get();
-          const username = snap.exists() ? snap.data()?.username : undefined;
+          const snap = await getDoc(doc(db, "users", uid));
+          const username = snap.exists() ? (snap.data() as any)?.username : undefined;
           return [uid, { username }] as const;
         })
       );
 
       setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
-  }, [profiles, requests]);
+  }, [requests, profiles]);
 
   const displayName = useMemo(
     () => (uid: string) => profiles[uid]?.username || uid,
@@ -70,51 +85,53 @@ export default function FriendRequestsScreen() {
   const accept = async (otherUid: string) => {
     if (!me) return;
 
-    const myRef = db.collection("users").doc(me.uid);
-    const otherRef = db.collection("users").doc(otherUid);
+    const myRef = doc(db, "users", me.uid);
+    const otherRef = doc(db, "users", otherUid);
 
     try {
-      const [mySnap, otherSnap] = await Promise.all([myRef.get(), otherRef.get()]);
+      const [mySnap, otherSnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
 
-      const myFriends: string[] = mySnap.data()?.friends || [];
+      const myFriends: string[] = (mySnap.data() as any)?.friends || [];
       if (myFriends.includes(otherUid)) {
         setSnack("Ihr seid bereits befreundet");
         return;
       }
 
-      // 1. Freunde + Pending aktualisieren
-      await myRef.set(
+      // 1) Friends + pending updates
+      await setDoc(
+        myRef,
         {
-          pendingReceived: firestore.FieldValue.arrayRemove(otherUid),
-          friends: firestore.FieldValue.arrayUnion(otherUid),
+          pendingReceived: arrayRemove(otherUid),
+          friends: arrayUnion(otherUid),
         },
         { merge: true }
       );
 
-      await otherRef.set(
+      await setDoc(
+        otherRef,
         {
-          pendingSent: firestore.FieldValue.arrayRemove(me.uid),
-          friends: firestore.FieldValue.arrayUnion(me.uid),
+          pendingSent: arrayRemove(me.uid),
+          friends: arrayUnion(me.uid),
         },
         { merge: true }
       );
 
-      // 2. DM-Thread erstellen, falls er noch nicht existiert
-    const threadId =
-      me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
-    const threadRef = db.collection("dm_threads").doc(threadId);
-    const threadSnap = await threadRef.get();
+      // 2) Create DM thread if not exists
+      const threadId = me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
+      const threadRef = doc(db, "dm_threads", threadId);
+      const threadSnap = await getDoc(threadRef);
 
-    if (!threadSnap.exists()) {
-      await threadRef.set(
-        {
-          users: [me.uid, otherUid],
-          lastMessage: "",
-          lastTimestamp: null,
-        },
-        { merge: true }
-      );
-    }
+      if (!threadSnap.exists()) {
+        await setDoc(
+          threadRef,
+          {
+            users: [me.uid, otherUid],
+            lastMessage: "",
+            lastTimestamp: null,
+          },
+          { merge: true }
+        );
+      }
 
       setSnack("Freund hinzugefügt!");
     } catch (err) {
@@ -126,19 +143,12 @@ export default function FriendRequestsScreen() {
   const decline = async (otherUid: string) => {
     if (!me) return;
 
-    const myRef = db.collection("users").doc(me.uid);
-    const otherRef = db.collection("users").doc(otherUid);
+    const myRef = doc(db, "users", me.uid);
+    const otherRef = doc(db, "users", otherUid);
 
     try {
-      await myRef.set(
-        { pendingReceived: firestore.FieldValue.arrayRemove(otherUid) },
-        { merge: true }
-      );
-
-      await otherRef.set(
-        { pendingSent: firestore.FieldValue.arrayRemove(me.uid) },
-        { merge: true }
-      );
+      await setDoc(myRef, { pendingReceived: arrayRemove(otherUid) }, { merge: true });
+      await setDoc(otherRef, { pendingSent: arrayRemove(me.uid) }, { merge: true });
 
       setSnack("Anfrage abgelehnt");
     } catch (err) {
@@ -147,12 +157,13 @@ export default function FriendRequestsScreen() {
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center" }}>
         <ActivityIndicator />
       </View>
     );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -160,9 +171,8 @@ export default function FriendRequestsScreen() {
         Anfragen
       </Text>
       <Divider />
-      {requests.length === 0 && (
-        <Text style={{ padding: 16 }}>Keine Anfragen</Text>
-      )}
+
+      {requests.length === 0 && <Text style={{ padding: 16 }}>Keine Anfragen</Text>}
 
       {requests.map((uid) => (
         <List.Item

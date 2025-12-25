@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { Text, TextInput, Button, Surface, useTheme } from "react-native-paper";
+
+import { auth } from "../../firebase";
 import {
-  Text,
-  TextInput,
-  Button,
-  Surface,
-  useTheme,
-} from "react-native-paper";
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  type UserCredential,
+} from "firebase/auth";
+
 import { loadLocalUser, saveLocalUser } from "../../localUser";
 
 export default function AuthScreen() {
@@ -21,13 +22,13 @@ export default function AuthScreen() {
   const handleAuth = async () => {
     try {
       if (email.endsWith("@oeh.at")) {
-        let userCredential: FirebaseAuthTypes.UserCredential;
+        let userCredential: UserCredential;
 
         if (isRegister) {
-          userCredential = await auth().createUserWithEmailAndPassword(email, password);
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
           Alert.alert("ÖH Registrierung erfolgreich!", `Willkommen ${username}`);
         } else {
-          userCredential = await auth().signInWithEmailAndPassword(email, password);
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
           Alert.alert("ÖH Login erfolgreich!", `Willkommen zurück ${userCredential.user.email}`);
         }
       } else {
@@ -44,7 +45,7 @@ export default function AuthScreen() {
         }
       }
     } catch (err: any) {
-      Alert.alert("Fehler", err.message);
+      Alert.alert("Fehler", err?.message ?? String(err));
     }
   };
 
@@ -105,9 +106,7 @@ export default function AuthScreen() {
           }}
           onPress={() => setIsRegister(!isRegister)}
         >
-          {isRegister
-            ? "Schon ein Konto? Hier einloggen"
-            : "Noch kein Konto? Registrieren"}
+          {isRegister ? "Schon ein Konto? Hier einloggen" : "Noch kein Konto? Registrieren"}
         </Text>
       </Surface>
     </KeyboardAvoidingView>

@@ -2,15 +2,32 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
 import { useRouter } from "expo-router";
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
-import { db, firebaseConfig } from "../../firebase";
-import firestore from "@react-native-firebase/firestore";
 import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
+import { auth, db } from "../../firebase";
+
+import {
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  signInAnonymously,
+  type ConfirmationResult,
+} from "firebase/auth";
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+  addDoc,
+} from "firebase/firestore";
+
 declare global {
   interface Window {
-    recaptchaVerifier?: any;
+    recaptchaVerifier?: RecaptchaVerifier;
   }
 }
 
@@ -23,9 +40,7 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
-  const [confirmation, setConfirmation] = useState<{ confirm: (code: string) => Promise<any> } | null>(
-    null
-  );
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -34,11 +49,12 @@ export default function LoginScreen() {
 
   const checkExistingProfile = async (cleanPhone: string) => {
     try {
-      const result = await db.collection("users").where("phone", "==", cleanPhone).get();
-      setHasProfile(!result.empty);
+      const q = query(collection(db, "users"), where("phone", "==", cleanPhone));
+      const snap = await getDocs(q);
+      setHasProfile(!snap.empty);
     } catch (err) {
       console.log("checkExistingProfile error:", err);
-      setHasProfile(false); // lieber Username abfragen als vorschnell skippen
+      setHasProfile(false);
     }
   };
 
@@ -52,37 +68,29 @@ export default function LoginScreen() {
         return;
       }
 
-      let confirmationResult: { confirm: (code: string) => Promise<any> } | null = null;
+      // Web reCAPTCHA verifier (only needed on web)
+      let verifier: RecaptchaVerifier | undefined;
 
       if (Platform.OS === "web") {
-        const { initializeApp, getApps, getApp } = await import("firebase/app");
-        const { getAuth, RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
-        const webApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
-        const webAuth = getAuth(webApp);
-
         const container = document.getElementById("recaptcha-container");
         if (!container) throw new Error("recaptcha-container not found in DOM");
 
         if (!window.recaptchaVerifier) {
-          window.recaptchaVerifier = new RecaptchaVerifier(webAuth, container, { size: "invisible" });
+          window.recaptchaVerifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
+          // Important: render once
+          await window.recaptchaVerifier.render();
         }
-
-        confirmationResult = (await signInWithPhoneNumber(
-          webAuth,
-          cleanPhone,
-          window.recaptchaVerifier
-        )) as unknown as { confirm: (code: string) => Promise<any> };
-      } else {
-        // Native: nutzt Play Integrity / DeviceCheck, kein sichtbares Recaptcha
-        confirmationResult = await auth().signInWithPhoneNumber(cleanPhone);
+        verifier = window.recaptchaVerifier;
       }
 
+      const confirmationResult = await signInWithPhoneNumber(auth, cleanPhone, verifier);
       setConfirmation(confirmationResult);
+
       await checkExistingProfile(cleanPhone);
       Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
     } catch (err: any) {
       console.log("sendCode error:", err);
-      Alert.alert(t("auth.error"), err.message || String(err));
+      Alert.alert(t("auth.error"), err?.message || String(err));
     }
   };
 
@@ -96,19 +104,18 @@ export default function LoginScreen() {
       const cleanPhone = phone.replace(/\s+/g, "");
       const userCred = await confirmation.confirm(code);
       const uid = userCred.user.uid;
-      const userRef = db.collection("users").doc(uid);
-      const snap = await userRef.get();
+
+      const userRef = doc(db, "users", uid);
+      const snap = await getDoc(userRef);
 
       const existingUsername = snap.data()?.username;
 
-      // Direkt rein, falls Profil + Username schon vorhanden
       if (snap.exists() && existingUsername) {
         Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
         router.replace("../(tabs)");
         return;
       }
 
-      // Kein Username vorhanden -> Eingabe verlangen
       setHasProfile(false);
 
       if (!username.trim()) {
@@ -116,22 +123,24 @@ export default function LoginScreen() {
         return;
       }
 
-      const existing = await db
-        .collection("usernames")
-        .where("username", "==", username.trim())
-        .get();
+      const usernameQ = query(
+        collection(db, "usernames"),
+        where("username", "==", username.trim())
+      );
+      const existing = await getDocs(usernameQ);
 
       if (!existing.empty) {
         Alert.alert(t("auth.error"), t("auth.usernameTaken"));
         return;
       }
 
-      await db.collection("usernames").add({
+      await addDoc(collection(db, "usernames"), {
         username: username.trim(),
         uid,
       });
 
-      await userRef.set(
+      await setDoc(
+        userRef,
         {
           phone: cleanPhone,
           username: username.trim(),
@@ -144,17 +153,17 @@ export default function LoginScreen() {
       router.replace("../(tabs)");
     } catch (err: any) {
       console.log("confirmCode error:", err);
-      Alert.alert(t("auth.error"), err.message || String(err));
+      Alert.alert(t("auth.error"), err?.message || String(err));
     }
   };
 
   const testLogin = async () => {
     try {
-      const userCred = await auth().signInAnonymously();
+      const userCred = await signInAnonymously(auth);
       console.log("Test-User:", userCred.user.uid);
       Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
     } catch (err: any) {
-      Alert.alert(t("auth.error"), err.message || String(err));
+      Alert.alert(t("auth.error"), err?.message || String(err));
     }
   };
 
@@ -179,7 +188,6 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Recaptcha für Web */}
       {Platform.OS === "web" &&
         typeof document !== "undefined" &&
         React.createElement("div", { id: "recaptcha-container" })}

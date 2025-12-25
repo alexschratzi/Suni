@@ -1,46 +1,26 @@
-/**
- * ChatScreen.tsx
- * -----------------------------------------------
- * Zentrale Steuerlogik für das Chat-Modul.
- *
- * Enthält:
- *  - Tab-Auswahl ("rooms" | "direct")
- *  - Suchfunktion
- *  - Firestore-Listener:
- *      → Räume (messages_salzburg / messages_oesterreich / messages_wirtschaft)
- *      → Direktnachrichten (dm_threads)
- *  - UI-Auswahl:
- *      → ChatHeader
- *      → RoomsList
- *      → DirectList
- *      → RoomMessages
- *
- * Wichtig:
- *  - KEINE UI-Elemente außer dem Container.
- *  - Alle UI ist in Unterkomponenten ausgelagert.
- *
- * Wird verwendet in:
- *  - app/(drawer)/(tabs)/chat.tsx
- *
- * Änderungen / Erweiterungen:
- *  - NEUE RÄUME hinzufügen → HIER:
- *        const ROOMS = { ... }
- *        filteredRooms (Liste anpassen)
- *  - Direct-Chat-Daten erweitern → HIER im Directs-Listener
- *  - Nachrichtensenden → sendMessage()
- *  - Navigation zu Threads/Räumen → HIER
- *  - Wenn zusätzliche Tab-Typen gewünscht → ChatHeader + State hier ändern
- */
-
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "react-native-paper";
-import firestore from "@react-native-firebase/firestore";
 import { useTranslation } from "react-i18next";
 
 import { db, auth } from "@/firebase";
+
+import {
+  addDoc,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
@@ -67,39 +47,32 @@ export default function ChatScreen() {
 
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
-  // Tabs & Suche
   const [tab, setTab] = useState<TabKey>("rooms");
   const [search, setSearch] = useState("");
 
-  // User / Raum
   const [username, setUsername] = useState("");
   const [room, setRoom] = useState<RoomKey | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [chatColor, setChatColor] = useState<string | null>(null);
 
-  // Nachrichten im Raum
   const [messages, setMessages] = useState<any[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
 
-  // Eingabezeile
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
 
-  // Direktnachrichten
   const [rawDirects, setRawDirects] = useState<RawDirect[]>([]);
-  const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>(
-    {}
-  );
+  const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Username aus Firestore laden
+  // Username/pending/blocked/settings live
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const userRef = db.collection("users").doc(auth.currentUser.uid);
-    const unsubscribe = userRef.onSnapshot((snap) => {
+    const userRef = doc(db, "users", auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
+        const data = snap.data() as any;
         setUsername(data.username);
         setPendingCount((data.pendingReceived || []).length);
         setBlocked(data.blocked || []);
@@ -118,40 +91,46 @@ export default function ChatScreen() {
     wirtschaft: "messages_wirtschaft",
   } as const;
 
-  // Nachrichten im aktiven Raum live laden
+  // Room messages live
   useEffect(() => {
     if (!room) return;
 
     setLoadingMsgs(true);
 
-    const unsubscribe = db
-      .collection(ROOMS[room])
-      .orderBy("timestamp", "desc")
-      .orderBy("username")
-      .onSnapshot((snapshot) => {
-        const msgs = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
+    const roomCol = collection(db, ROOMS[room]);
+    const q = query(roomCol, orderBy("timestamp", "desc"), orderBy("username"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         setMessages(msgs);
         setLoadingMsgs(false);
-      });
+      },
+      (err) => {
+        console.error("Room onSnapshot error:", err);
+        setMessages([]);
+        setLoadingMsgs(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [room]);
 
-  // Direktnachrichten-Threads laden
+  // Direct threads live
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    const unsubscribe = db
-      .collection("dm_threads")
-      .where("users", "array-contains", uid)
-      .onSnapshot((snap) => {
+    const threadsCol = collection(db, "dm_threads");
+    const q = query(threadsCol, where("users", "array-contains", uid));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
         const arr: RawDirect[] = snap.docs.map((d) => {
-          const data = d.data();
-          const otherUid = data.users.find((u: string) => u !== uid) || uid;
+          const data = d.data() as any;
+          const otherUid = (data.users || []).find((u: string) => u !== uid) || uid;
           return {
             id: d.id,
             otherUid,
@@ -160,19 +139,20 @@ export default function ChatScreen() {
           };
         });
         setRawDirects(arr);
-      });
+      },
+      (err) => {
+        console.error("Direct threads onSnapshot error:", err);
+        setRawDirects([]);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
-  // fehlende User-Profile für Directs nachladen
+  // Fetch missing profiles for directs
   useEffect(() => {
     const missing = Array.from(
-      new Set(
-        rawDirects
-          .map((d) => d.otherUid)
-          .filter((uid) => !userProfiles[uid])
-      )
+      new Set(rawDirects.map((d) => d.otherUid).filter((uid) => !userProfiles[uid]))
     );
 
     if (!missing.length) return;
@@ -180,18 +160,13 @@ export default function ChatScreen() {
     (async () => {
       const entries = await Promise.all(
         missing.map(async (uid) => {
-          const snap = await db.collection("users").doc(uid).get();
-          const profile: UserProfile = snap.exists()
-            ? { username: snap.data().username }
-            : {};
+          const snap = await getDoc(doc(db, "users", uid));
+          const profile: UserProfile = snap.exists() ? { username: (snap.data() as any).username } : {};
           return [uid, profile] as const;
         })
       );
 
-      setUserProfiles((prev) => ({
-        ...prev,
-        ...Object.fromEntries(entries),
-      }));
+      setUserProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
   }, [rawDirects, userProfiles]);
 
@@ -206,50 +181,34 @@ export default function ChatScreen() {
     [rawDirects, userProfiles]
   );
 
-  // Rooms filtern
+  // Rooms filter
   const filteredRooms: RoomItem[] = useMemo(() => {
     const list: RoomItem[] = [
-      {
-        key: "salzburg",
-        title: t("chat.rooms.salzburg.title"),
-        subtitle: t("chat.rooms.salzburg.subtitle"),
-      },
-      {
-        key: "oesterreich",
-        title: t("chat.rooms.oesterreich.title"),
-        subtitle: t("chat.rooms.oesterreich.subtitle"),
-      },
-      {
-        key: "wirtschaft",
-        title: t("chat.rooms.wirtschaft.title"),
-        subtitle: t("chat.rooms.wirtschaft.subtitle"),
-      },
+      { key: "salzburg", title: t("chat.rooms.salzburg.title"), subtitle: t("chat.rooms.salzburg.subtitle") },
+      { key: "oesterreich", title: t("chat.rooms.oesterreich.title"), subtitle: t("chat.rooms.oesterreich.subtitle") },
+      { key: "wirtschaft", title: t("chat.rooms.wirtschaft.title"), subtitle: t("chat.rooms.wirtschaft.subtitle") },
     ];
 
     const q = search.trim().toLowerCase();
     if (!q) return list;
 
     return list.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        r.subtitle.toLowerCase().includes(q)
+      (r) => r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q)
     );
   }, [search, t]);
 
-  // Directs filtern
+  // Directs filter
   const filteredDirects = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return directs.filter((d) => !d.hidden);
 
     const match = (d: Direct) =>
-      d.displayName.toLowerCase().includes(q) ||
-      (d.last ?? "").toLowerCase().includes(q);
+      d.displayName.toLowerCase().includes(q) || (d.last ?? "").toLowerCase().includes(q);
 
-    // Bei Suche auch ausgeblendete berücksichtigen
     return directs.filter(match);
   }, [directs, search]);
 
-  // Raum-Nachrichten filtern: ausgeblendete Sender (blockiert)
+  // Hide blocked senders
   const visibleMessages = useMemo(
     () =>
       messages.filter((m) => {
@@ -260,16 +219,16 @@ export default function ChatScreen() {
     [messages, blocked]
   );
 
-  // Nachricht schicken
+  // Send message
   const sendMessage = async () => {
     if (!input.trim() || !room || !username) return;
 
     try {
-      await db.collection(ROOMS[room]).add({
+      await addDoc(collection(db, ROOMS[room]), {
         sender: auth.currentUser?.uid,
         username,
         text: input,
-        timestamp: firestore.FieldValue.serverTimestamp(),
+        timestamp: serverTimestamp(),
       });
       setInput("");
       setInputHeight(40);
@@ -280,7 +239,6 @@ export default function ChatScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      {/* Header mit Tabs + Suche */}
       <ChatHeader
         tab={tab}
         setTab={setTab}
@@ -289,12 +247,8 @@ export default function ChatScreen() {
         pendingCount={pendingCount}
       />
 
-      {/* Rooms-Ansicht */}
-      {tab === "rooms" && !room && (
-        <RoomsList rooms={filteredRooms} onSelect={setRoom} />
-      )}
+      {tab === "rooms" && !room && <RoomsList rooms={filteredRooms} onSelect={setRoom} />}
 
-      {/* Direct-Ansicht */}
       {tab === "direct" && (
         <DirectList
           directs={filteredDirects}
@@ -302,13 +256,13 @@ export default function ChatScreen() {
           onToggleHidden={async (id, makeHidden) => {
             const uid = auth.currentUser?.uid;
             if (!uid) return;
-            const threadRef = db.collection("dm_threads").doc(id);
+
+            const threadRef = doc(db, "dm_threads", id);
             try {
-              await threadRef.set(
+              await setDoc(
+                threadRef,
                 {
-                  hiddenBy: makeHidden
-                    ? firestore.FieldValue.arrayUnion(uid)
-                    : firestore.FieldValue.arrayRemove(uid),
+                  hiddenBy: makeHidden ? arrayUnion(uid) : arrayRemove(uid),
                 },
                 { merge: true }
               );
@@ -320,7 +274,6 @@ export default function ChatScreen() {
         />
       )}
 
-      {/* Raum-Nachrichten */}
       {tab === "rooms" && room && (
         <RoomMessages
           room={room}

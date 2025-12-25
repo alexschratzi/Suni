@@ -2,68 +2,70 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
-import { db } from "../firebase"; // ggf. Pfad anpassen
-import { AppThemeProvider } from "../components/theme/AppThemeProvider"; // ƒo. richtiger Pfad/Name
-import { StatusBar } from "expo-status-bar";
+import { AppThemeProvider } from "../components/theme/AppThemeProvider";
 import "../i18n/i18n";
+
+import { auth, db } from "../firebase"; // adjust if your exports differ
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [provisioning, setProvisioning] = useState(false);
 
-  // Auth-Listener: setzt user & ready bei jeder Änderung
+  // Auth listener
   useEffect(() => {
-    const unsub = auth().onAuthStateChanged((u) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setReady(true);
     });
     return unsub;
   }, []);
 
-  // User-Dokument anlegen/auffüllen (leere Arrays), damit Friends/Requests immer "update" sind
+  // Ensure user document exists / has default arrays
   useEffect(() => {
     if (!user) return;
     if (provisioning) return;
+
     setProvisioning(true);
 
     const ensureUserDoc = async () => {
       try {
-        const ref = db.collection("users").doc(user.uid);
-        const snap = await ref.get();
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+
+        const defaults = {
+          uid: user.uid,
+          username: user.displayName ?? "",
+          phone: user.phoneNumber ?? "",
+          role: "student",
+          pendingSent: [],
+          pendingReceived: [],
+          friends: [],
+          blocked: [],
+          settings: {
+            chatThemeColor: "#9b59b6",
+            notifications: {
+              global: true,
+              chat: true,
+              direct: true,
+              mention: true,
+              rooms: true,
+            },
+          },
+        };
 
         if (!snap.exists()) {
-          await ref.set(
-            {
-              uid: user.uid,
-              username: user.displayName ?? "",
-              phone: user.phoneNumber ?? "",
-              role: "student",
-              pendingSent: [],
-              pendingReceived: [],
-              friends: [],
-              blocked: [],
-              settings: {
-                chatThemeColor: "#9b59b6",
-                notifications: {
-                  global: true,
-                  chat: true,
-                  direct: true,
-                  mention: true,
-                  rooms: true,
-                },
-              },
-            },
-            { merge: true }
-          );
+          await setDoc(ref, defaults, { merge: true });
         } else {
-          // Fülle fehlende Arrays/Felder auf, überschreibe bestehende nicht
-          const data = snap.data() || {};
-          await ref.set(
+          const data = snap.data() as any;
+
+          // Fill missing arrays/fields without overwriting existing values
+          await setDoc(
+            ref,
             {
               pendingSent: data.pendingSent ?? [],
               pendingReceived: data.pendingReceived ?? [],
@@ -93,9 +95,9 @@ export default function RootLayout() {
     };
 
     ensureUserDoc();
-  }, [user, provisioning]);
+  }, [user?.uid, provisioning]);
 
-  // Navigation reagiert auf JEDEN Wechsel von `user` oder route-segment
+  // Navigation reacts to changes of user/route segments
   useEffect(() => {
     if (!ready) return;
 

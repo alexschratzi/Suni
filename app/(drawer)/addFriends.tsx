@@ -1,16 +1,20 @@
 // app/(drawer)/addFriends.tsx
 import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
-import {
-  Text,
-  TextInput,
-  Button,
-  useTheme,
-  Snackbar,
-  List,
-} from "react-native-paper";
+import { Text, TextInput, Button, useTheme, Snackbar, List } from "react-native-paper";
+
 import { auth, db } from "@/firebase";
-import firestore from "@react-native-firebase/firestore";
+
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  arrayUnion,
+} from "firebase/firestore";
 
 export default function AddFriendScreen() {
   const theme = useTheme();
@@ -31,10 +35,12 @@ export default function AddFriendScreen() {
     setLoading(true);
 
     try {
-      const resultSnap = await db
-        .collection("usernames")
-        .where("username", "==", username.trim())
-        .get();
+      const q = query(
+        collection(db, "usernames"),
+        where("username", "==", username.trim())
+      );
+
+      const resultSnap = await getDocs(q);
 
       if (resultSnap.empty) {
         setResult(null);
@@ -58,11 +64,11 @@ export default function AddFriendScreen() {
       return;
     }
 
-    const myRef = db.collection("users").doc(me.uid);
-    const targetRef = db.collection("users").doc(targetUid);
+    const myRef = doc(db, "users", me.uid);
+    const targetRef = doc(db, "users", targetUid);
 
     try {
-      const [mySnap, targetSnap] = await Promise.all([myRef.get(), targetRef.get()]);
+      const [mySnap, targetSnap] = await Promise.all([getDoc(myRef), getDoc(targetRef)]);
 
       const myData = mySnap.data() || {};
       const targetData = targetSnap.data() || {};
@@ -87,13 +93,15 @@ export default function AddFriendScreen() {
         return;
       }
 
-      await myRef.set(
-        { pendingSent: firestore.FieldValue.arrayUnion(targetUid) },
+      await setDoc(
+        myRef,
+        { pendingSent: arrayUnion(targetUid) },
         { merge: true }
       );
 
-      await targetRef.set(
-        { pendingReceived: firestore.FieldValue.arrayUnion(me.uid) },
+      await setDoc(
+        targetRef,
+        { pendingReceived: arrayUnion(me.uid) },
         { merge: true }
       );
 
@@ -109,15 +117,10 @@ export default function AddFriendScreen() {
       style={{ backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.container}
     >
-      {/* Title */}
-      <Text
-        variant="titleLarge"
-        style={[styles.title, { color: theme.colors.onBackground }]}
-      >
+      <Text variant="titleLarge" style={[styles.title, { color: theme.colors.onBackground }]}>
         Freund hinzufügen
       </Text>
 
-      {/* Search input (not a card!) */}
       <TextInput
         mode="outlined"
         label="Benutzername"
@@ -131,7 +134,6 @@ export default function AddFriendScreen() {
         Suchen
       </Button>
 
-      {/* Search result as menu */}
       {result && (
         <List.Section style={styles.listSection}>
           <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
@@ -144,13 +146,8 @@ export default function AddFriendScreen() {
             titleStyle={{ color: theme.colors.onSurface }}
             descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
             left={(props) => <List.Icon {...props} icon="account-circle" />}
-            right={(props) => (
-              <Button
-                mode="contained"
-                compact
-                icon="account-plus"
-                onPress={() => sendRequest(result.uid)}
-              >
+            right={() => (
+              <Button mode="contained" compact icon="account-plus" onPress={() => sendRequest(result.uid)}>
                 Anfrage
               </Button>
             )}
@@ -159,11 +156,7 @@ export default function AddFriendScreen() {
         </List.Section>
       )}
 
-      <Snackbar
-        visible={!!snack}
-        onDismiss={() => setSnack("")}
-        duration={2000}
-      >
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={2000}>
         {snack}
       </Snackbar>
     </ScrollView>

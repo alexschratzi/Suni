@@ -1,18 +1,20 @@
 // app/(drawer)/reply.tsx
-import { Ionicons } from "@expo/vector-icons";
-import firestore from "@react-native-firebase/firestore";
 import { useEffect, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from "react-native";
-import {
-  Text,
-  TextInput,
-  Button,
-  Surface,
-  useTheme,
-  IconButton,
-} from "react-native-paper";
+import { FlatList, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { Text, TextInput, Button, Surface, useTheme, IconButton } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { auth, db } from "../../firebase";
+
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+} from "firebase/firestore";
 
 export default function ReplyScreen() {
   const theme = useTheme();
@@ -25,25 +27,30 @@ export default function ReplyScreen() {
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
 
-  // Username laden
+  // Username + blocked list
   useEffect(() => {
     if (!auth.currentUser) return;
-    const userRef = db.collection("users").doc(auth.currentUser.uid);
-    const unsubscribe = userRef.onSnapshot((snap) => {
+
+    const userRef = doc(db, "users", auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
-        setUsername(snap.data().username);
-        setBlocked(snap.data().blocked || []);
+        const data = snap.data() as any;
+        setUsername(data.username);
+        setBlocked(data.blocked || []);
       }
     });
+
     return () => unsubscribe();
   }, []);
 
-  // Replies laden (Gruppenchat oder DM)
+  // Load replies (DM or group thread)
   useEffect(() => {
     // === DM THREAD ===
     if (dmId) {
-      const repliesRef = db.collection("dm_threads").doc(dmId as string).collection("messages");
-      const unsubscribe = repliesRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
+      const repliesCol = collection(db, "dm_threads", String(dmId), "messages");
+      const q = query(repliesCol, orderBy("timestamp", "asc"));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
         const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -52,16 +59,16 @@ export default function ReplyScreen() {
         });
         setReplies(filtered);
       });
+
       return () => unsubscribe();
     }
 
-    // === GRUPPEN CHAT THREAD ===
+    // === GROUP CHAT THREAD ===
     if (room && messageId) {
-      const repliesRef = db
-        .collection(room as string)
-        .doc(messageId as string)
-        .collection("replies");
-      const unsubscribe = repliesRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
+      const repliesCol = collection(db, String(room), String(messageId), "replies");
+      const q = query(repliesCol, orderBy("timestamp", "asc"));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
         const all = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -70,29 +77,33 @@ export default function ReplyScreen() {
         });
         setReplies(filtered);
       });
+
       return () => unsubscribe();
     }
   }, [room, messageId, dmId, blocked]);
 
-  // Nachricht senden
+  // Send message
   const sendReply = async () => {
     if (!input.trim() || !username) return;
+    if (!auth.currentUser?.uid) return;
 
     try {
-      // === Direktnachricht (DM) ===
+      // === DM ===
       if (dmId) {
-        const threadRef = db.collection("dm_threads").doc(dmId as string);
-        const threadSnap = await threadRef.get();
-        const users: string[] = (threadSnap.data()?.users as string[]) || [];
+        const threadRef = doc(db, "dm_threads", String(dmId));
+        const threadSnap = await getDoc(threadRef);
+
+        const users: string[] = ((threadSnap.data() as any)?.users as string[]) || [];
         const otherUid = users.find((u) => u !== auth.currentUser?.uid);
 
-        if (otherUid && auth.currentUser?.uid) {
+        if (otherUid) {
           const [meDoc, otherDoc] = await Promise.all([
-            db.collection("users").doc(auth.currentUser.uid).get(),
-            db.collection("users").doc(otherUid).get(),
+            getDoc(doc(db, "users", auth.currentUser.uid)),
+            getDoc(doc(db, "users", otherUid)),
           ]);
-          const myBlocked: string[] = meDoc.data()?.blocked || [];
-          const otherBlocked: string[] = otherDoc.data()?.blocked || [];
+
+          const myBlocked: string[] = ((meDoc.data() as any)?.blocked) || [];
+          const otherBlocked: string[] = ((otherDoc.data() as any)?.blocked) || [];
 
           if (myBlocked.includes(otherUid)) {
             Alert.alert("Blockiert", "Du hast diesen Nutzer blockiert.");
@@ -104,30 +115,28 @@ export default function ReplyScreen() {
           }
         }
 
-        const ref = db.collection("dm_threads").doc(dmId as string).collection("messages");
-        await ref.add({
-          sender: auth.currentUser?.uid,
+        const ref = collection(db, "dm_threads", String(dmId), "messages");
+        await addDoc(ref, {
+          sender: auth.currentUser.uid,
           username,
           text: input,
-          timestamp: firestore.FieldValue.serverTimestamp(),
+          timestamp: serverTimestamp(),
         });
 
         setInput("");
         return;
       }
 
-      // === Gruppenchat Thread ===
+      // === Group thread ===
       if (room && messageId) {
-        const repliesRef = db
-          .collection(room as string)
-          .doc(messageId as string)
-          .collection("replies");
-        await repliesRef.add({
-          sender: auth.currentUser?.uid,
+        const repliesRef = collection(db, String(room), String(messageId), "replies");
+        await addDoc(repliesRef, {
+          sender: auth.currentUser.uid,
           username,
           text: input,
-          timestamp: firestore.FieldValue.serverTimestamp(),
+          timestamp: serverTimestamp(),
         });
+
         setInput("");
         setInputHeight(40);
       }
@@ -149,7 +158,7 @@ export default function ReplyScreen() {
           <Text variant="titleMedium">Antworten</Text>
         </Surface>
 
-        {/* Original Nachricht - nur in Gruppenchats */}
+        {/* Original message (only group chats) */}
         {!dmId && (
           <Surface
             style={{
@@ -159,8 +168,8 @@ export default function ReplyScreen() {
               backgroundColor: theme.colors.elevation.level1,
             }}
           >
-            <Text variant="labelSmall">{messageUser}</Text>
-            <Text variant="bodyMedium">{messageText}</Text>
+            <Text variant="labelSmall">{String(messageUser ?? "")}</Text>
+            <Text variant="bodyMedium">{String(messageText ?? "")}</Text>
           </Surface>
         )}
 
@@ -169,15 +178,17 @@ export default function ReplyScreen() {
           data={replies}
           keyExtractor={(i) => i.id}
           renderItem={({ item }) => {
-            const date = item.timestamp?.toDate
-              ? item.timestamp.toDate().toLocaleString("de-DE", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "Gerade eben";
+            const date =
+              item.timestamp?.toDate
+                ? item.timestamp.toDate().toLocaleString("de-DE", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "Gerade eben";
+
             return (
               <Surface style={{ paddingVertical: 8, borderBottomWidth: 0.5 }}>
                 <Text variant="labelSmall">
@@ -189,7 +200,7 @@ export default function ReplyScreen() {
           }}
         />
 
-        {/* Eingabe */}
+        {/* Input */}
         <Surface style={{ flexDirection: "row", marginTop: 10 }}>
           <TextInput
             mode="outlined"
