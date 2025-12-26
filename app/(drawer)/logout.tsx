@@ -2,22 +2,26 @@
 import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { auth } from "../../firebase";
+import { supabase } from "@/src/lib/supabase";
 
 export default function LogoutScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
+
     (async () => {
       try {
-        await auth.signOut();
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn("Logout failed:", err);
       } finally {
-        if (active) router.replace("/(auth)");
+        if (alive) router.replace("/(auth)");
       }
     })();
+
     return () => {
-      active = false;
+      alive = false;
     };
   }, [router]);
 

@@ -1,4 +1,3 @@
-// app/(drawer)/_layout.tsx
 import React, { useEffect, useState } from "react";
 import { Pressable } from "react-native";
 import { Drawer } from "expo-router/drawer";
@@ -7,56 +6,53 @@ import { DrawerToggleButton } from "@react-navigation/drawer";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme, Text } from "react-native-paper";
 
-import { auth } from "@/firebase";
-import { onAuthStateChanged, type User } from "firebase/auth";
-
+import { supabase } from "@/src/lib/supabase";
 import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
-import {
-  TimetableHeaderTitle,
-  TimetableHeaderRight,
-} from "@/components/headers/TimetableHeader";
-
-// explicit tab route mapping so TypeScript knows the exact route literals
-const TAB_ROUTES = {
-  news: "/(drawer)/(tabs)/news",
-  uni: "/(drawer)/(tabs)/uni",
-  timetable: "/(drawer)/(tabs)/timetable",
-  chat: "/(drawer)/(tabs)/chat",
-} as const;
-
-type TabKey = keyof typeof TAB_ROUTES;
+import { TimetableHeaderTitle, TimetableHeaderRight } from "@/components/headers/TimetableHeader";
 
 export default function DrawerLayout() {
   const router = useRouter();
-  const theme = useTheme();
-  const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-
   const segments = useSegments();
-  const lastSegment = (segments[segments.length - 1] ?? "") as string;
+  const theme = useTheme();
 
-  const currentTab: TabKey = (["news", "uni", "timetable", "chat"].includes(lastSegment)
-    ? lastSegment
-    : "news") as TabKey;
+  const [ready, setReady] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setIsAuthed(!!data.session);
       setReady(true);
     });
-    return unsub;
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthed(!!session);
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    if (!user) router.replace("/(auth)");
-  }, [ready, user, router]);
+    if (!isAuthed) router.replace("/(auth)");
+  }, [ready, isAuthed, router]);
 
-  if (!ready || !user) return null;
+  if (!ready || !isAuthed) return null;
 
-  const goBackToTabs = () => {
-    router.back();
-  };
+  const lastSegment = (segments[segments.length - 1] ?? "") as string;
+  const currentTab =
+    (["news", "uni", "timetable", "chat"].includes(lastSegment) ? lastSegment : "news") as
+      | "news"
+      | "uni"
+      | "timetable"
+      | "chat";
+
+  const goBackToTabs = () => router.back();
 
   return (
     <Drawer

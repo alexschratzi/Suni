@@ -1,226 +1,289 @@
 // app/(auth)/index.tsx
-import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Alert, Platform, TextInput } from "react-native";
+import React, { useMemo, useState } from "react";
+import { View, StyleSheet, Alert, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { Text, Button, useTheme, ActivityIndicator } from "react-native-paper";
 import { useTranslation } from "react-i18next";
-import rnAuth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
 
-import { auth, db } from "../../firebase";
+import { supabase } from "../../src/lib/supabase";
 
-import {
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  signInAnonymously,
-  type ConfirmationResult,
-} from "firebase/auth";
-
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  setDoc,
-  where,
-  addDoc,
-} from "firebase/firestore";
-
-declare global {
-  interface Window {
-    recaptchaVerifier?: RecaptchaVerifier;
-  }
-}
+type Step = "email" | "code" | "username";
 
 export default function LoginScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { t } = useTranslation();
 
-  const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState<Step>("email");
+  const [busy, setBusy] = useState(false);
+
+  const [email, setEmail] = useState("");
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
-  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
-  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
+  const inputStyle = useMemo(
+    () =>
+      ({
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+        backgroundColor: theme.colors.surface,
+        color: theme.colors.onSurface,
+      }) as const,
+    [theme.colors.onSurface, theme.colors.surface]
+  );
 
-  useEffect(() => setLoading(false), []);
+  const verifyEmailOtpWithFallback = async (email: string, token: string) => {
+    // Try types in a safe order
+    const types = ["email", "magiclink", "signup"] as const;
 
-  const checkExistingProfile = async (cleanPhone: string) => {
-    try {
-      const q = query(collection(db, "users"), where("phone", "==", cleanPhone));
-      const snap = await getDocs(q);
-      setHasProfile(!snap.empty);
-    } catch (err) {
-      console.log("checkExistingProfile error:", err);
-      setHasProfile(false);
+    let lastError: any = null;
+
+    for (const type of types) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type,
+      });
+
+      if (!error) return { data, type };
+      lastError = error;
     }
+
+    throw lastError;
   };
 
-  const sendCode = async () => {
+  const cleanEmail = (v: string) => v.trim().toLowerCase();
+  const isOehEmail = (v: string) => cleanEmail(v).endsWith("@oeh.at");
+  const computeRole = (v: string) => (isOehEmail(v) ? "oeh" : "student");
+
+  const goHome = () => {
+    router.replace("/(drawer)/(tabs)/timetable");
+  };
+
+  const sendOtp = async () => {
     try {
-      const cleanPhone = phone.replace(/\s+/g, "");
+      setBusy(true);
 
-      if (!cleanPhone.startsWith("+")) {
-        Alert.alert(t("auth.error"), t("auth.phoneFormat"));
+      const e = cleanEmail(email);
+      if (!/^\S+@\S+\.\S+$/.test(e)) {
+        Alert.alert(t("auth.error"), t("auth.emailFormat") || "Invalid email format.");
         return;
       }
 
-      if (Platform.OS === "web") {
-        Alert.alert(t("auth.error"), "Phone login is disabled on web.");
-        return;
-      }
+      const { error } = await supabase.auth.signInWithOtp({
+        email: e,
+        options: { shouldCreateUser: true },
+      });
+      if (error) throw error;
 
-      const confirmationResult = await rnAuth().signInWithPhoneNumber(cleanPhone);
-      setConfirmation(confirmationResult);
+      setPendingEmail(e);
+      setCode("");
+      setStep("code");
 
-      await checkExistingProfile(cleanPhone);
-      Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg"));
+      Alert.alert(t("auth.codeSentTitle"), t("auth.codeSentMsg") || "Code sent.");
     } catch (err: any) {
-      console.log("sendCode error:", err);
+      console.log("sendOtp error:", err);
       Alert.alert(t("auth.error"), err?.message || String(err));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const confirmCode = async () => {
+  const verifyOtp = async () => {
     try {
-      if (!confirmation) {
-        Alert.alert(t("auth.error"), t("auth.noConfirmation"));
+      setBusy(true);
+
+      if (!pendingEmail) {
+        Alert.alert(t("auth.error"), t("auth.noConfirmation") || "Request a code first.");
         return;
       }
 
-      const cleanPhone = phone.replace(/\s+/g, "");
-      const userCred = await confirmation.confirm(code);
-      const uid = userCred.user.uid;
+      const token = code.trim();
+      if (token.length < 4 || token.length > 8) {
+        Alert.alert(t("auth.error"), t("auth.codeInvalid") || "Invalid code.");
+        return;
+      }
+      
+      const { data } = await verifyEmailOtpWithFallback(pendingEmail, token);
 
-      const userRef = doc(db, "users", uid);
-      const snap = await getDoc(userRef);
-
-      const existingUsername = snap.data()?.username;
-
-      if (snap.exists() && existingUsername) {
-        Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
-        router.replace("../(tabs)");
+      const userId = data.session?.user?.id;
+      if (!userId) {
+        Alert.alert(t("auth.error"), "No session returned. Please try again.");
         return;
       }
 
-      setHasProfile(false);
+      // Check if profile exists and is complete
+      const { data: prof, error: profErr } = await supabase
+        .from("profiles")
+        .select("id, username, role")
+        .eq("id", userId)
+        .maybeSingle();
 
-      if (!username.trim()) {
-        Alert.alert(t("auth.error"), t("auth.enterUsername"));
+      if (profErr) throw profErr;
+
+      // If no profile or username missing -> go to username step
+      if (!prof || !prof.username || prof.username.trim().length === 0) {
+        setStep("username");
         return;
       }
 
-      const usernameQ = query(
-        collection(db, "usernames"),
-        where("username", "==", username.trim())
+      // Otherwise finished
+      goHome();
+    } catch (err: any) {
+      console.log("verifyOtp error:", err);
+      Alert.alert(t("auth.error"), err?.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveUsernameAndFinish = async () => {
+    try {
+      setBusy(true);
+
+      const u = username.trim();
+      if (!u) {
+        Alert.alert(t("auth.error"), t("auth.enterUsername") || "Please enter a username.");
+        return;
+      }
+
+      const e = pendingEmail ? cleanEmail(pendingEmail) : null;
+      if (!e) {
+        Alert.alert(t("auth.error"), "Missing email context. Please restart login.");
+        return;
+      }
+
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+
+      const userId = userRes.user?.id;
+      if (!userId) {
+        Alert.alert(t("auth.error"), "Not authenticated. Please verify the code again.");
+        return;
+      }
+
+      const role = computeRole(e);
+
+      // Upsert profile: create if missing, update if exists
+      const { error: upsertErr } = await supabase.from("profiles").upsert(
+        {
+          id: userId,
+          username: u,
+          role,
+        },
+        { onConflict: "id" }
       );
-      const existing = await getDocs(usernameQ);
 
-      if (!existing.empty) {
-        Alert.alert(t("auth.error"), t("auth.usernameTaken"));
-        return;
+      if (upsertErr) {
+        const msg = (upsertErr.message || "").toLowerCase();
+        if (msg.includes("duplicate") || msg.includes("unique")) {
+          Alert.alert(t("auth.error"), t("auth.usernameTaken") || "Username already taken.");
+          return;
+        }
+        throw upsertErr;
       }
-
-      await addDoc(collection(db, "usernames"), { username: username.trim(), uid });
-
-      await setDoc(
-        userRef,
-        { phone: cleanPhone, username: username.trim(), role: "student" },
-        { merge: true }
-      );
 
       Alert.alert(t("auth.successTitle"), t("auth.successMsg"));
-      router.replace("../(tabs)");
+      goHome();
     } catch (err: any) {
-      console.log("confirmCode error:", err);
+      console.log("saveUsername error:", err);
       Alert.alert(t("auth.error"), err?.message || String(err));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const testLogin = async () => {
-    try {
-      const userCred = await signInAnonymously(auth);
-      console.log("Test-User:", userCred.user.uid);
-      Alert.alert(t("auth.testSuccessTitle"), t("auth.testSuccessMsg"));
-    } catch (err: any) {
-      Alert.alert(t("auth.error"), err?.message || String(err));
-    }
+  const resetAll = () => {
+    setStep("email");
+    setEmail("");
+    setPendingEmail(null);
+    setCode("");
+    setUsername("");
   };
-
-  if (loading) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator animating size="large" />
-        <Text style={{ marginTop: 12 }}>{t("auth.loading")}</Text>
-      </View>
-    );
-  }
-
-  const inputStyle = {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    backgroundColor: theme.colors.surface,
-    color: theme.colors.onSurface,
-  } as const;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Web container for RecaptchaVerifier */}
-      {Platform.OS === "web" &&
-        typeof document !== "undefined" &&
-        React.createElement("div", { id: "recaptcha-container" })}
-
       <Text variant="headlineSmall" style={styles.title}>
         {t("auth.title")}
       </Text>
 
-      {!confirmation ? (
+      {busy && (
+        <View style={{ marginBottom: 12, alignItems: "center" }}>
+          <ActivityIndicator />
+        </View>
+      )}
+
+      {step === "email" && (
         <>
           <TextInput
             style={inputStyle}
-            placeholder={t("auth.phonePlaceholder")}
+            placeholder={t("auth.emailPlaceholder") || "Email"}
             placeholderTextColor={theme.colors.onSurfaceVariant}
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
           />
 
-          <Button mode="contained" onPress={sendCode} style={styles.button}>
+          <Button mode="contained" onPress={sendOtp} disabled={busy}>
             {t("auth.sendCode")}
           </Button>
-
-          <Button mode="outlined" onPress={testLogin} style={styles.button}>
-            {t("auth.testLogin")}
-          </Button>
         </>
-      ) : (
+      )}
+
+      {step === "code" && (
         <>
+          <Text style={{ marginBottom: 8 }}>
+            {t("auth.codeSentTo") || "Enter the code sent to:"} {pendingEmail}
+          </Text>
+
           <TextInput
             style={inputStyle}
-            placeholder={t("auth.codePlaceholder")}
+            placeholder={t("auth.codePlaceholder") || "Code"}
             placeholderTextColor={theme.colors.onSurfaceVariant}
             keyboardType="number-pad"
             value={code}
             onChangeText={setCode}
           />
 
-          {hasProfile === false && (
-            <TextInput
-              style={inputStyle}
-              placeholder={t("auth.usernamePlaceholder")}
-              placeholderTextColor={theme.colors.onSurfaceVariant}
-              value={username}
-              onChangeText={setUsername}
-            />
-          )}
-
-          <Button mode="contained" onPress={confirmCode} style={styles.button}>
+          <Button mode="contained" onPress={verifyOtp} disabled={busy}>
             {t("auth.confirm")}
+          </Button>
+
+          <Button mode="outlined" onPress={resetAll} disabled={busy} style={{ marginTop: 8 }}>
+            {t("auth.changeEmail") || "Use a different email"}
+          </Button>
+        </>
+      )}
+
+      {step === "username" && (
+        <>
+          <Text style={{ marginBottom: 8 }}>
+            {t("auth.usernameOnboarding") || "Choose a username to finish setup."}
+          </Text>
+
+          <TextInput
+            style={inputStyle}
+            placeholder={t("auth.usernamePlaceholder") || "Username"}
+            placeholderTextColor={theme.colors.onSurfaceVariant}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={username}
+            onChangeText={setUsername}
+          />
+
+          <Button mode="contained" onPress={saveUsernameAndFinish} disabled={busy}>
+            {t("auth.confirm") || "Finish"}
+          </Button>
+
+          <Button mode="outlined" onPress={resetAll} disabled={busy} style={{ marginTop: 8 }}>
+            {t("auth.cancel") || "Cancel"}
           </Button>
         </>
       )}
@@ -230,7 +293,5 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 20 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 16, textAlign: "center" },
-  button: { marginTop: 8 },
 });

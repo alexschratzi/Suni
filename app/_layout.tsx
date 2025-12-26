@@ -5,114 +5,110 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { AppThemeProvider } from "../components/theme/AppThemeProvider";
 import "../i18n/i18n";
 
-import { auth, db } from "../firebase"; // adjust if your exports differ
-import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { supabase } from "../src/lib/supabase";
+
+type ProfileCheck = { id: string; username: string | null };
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
+
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [provisioning, setProvisioning] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [profileReady, setProfileReady] = useState(false);
 
-  // Auth listener
+  const inAuthGroup = segments[0] === "(auth)";
+  const inDrawerGroup = segments[0] === "(drawer)";
+
+  const loadProfileReady = async (userId: string) => {
+    const { data: prof, error } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("id", userId)
+      .maybeSingle<ProfileCheck>();
+
+    if (error) {
+      console.warn("profiles check error:", error.message);
+      return false;
+    }
+
+    return !!prof?.username && prof.username.trim().length > 0;
+  };
+
+  // Initial session + subscribe to auth changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setReady(true);
-    });
-    return unsub;
-  }, []);
+    let cancelled = false;
 
-  // Ensure user document exists / has default arrays
-  useEffect(() => {
-    if (!user) return;
-    if (provisioning) return;
+    const init = async () => {
+      setReady(false);
 
-    setProvisioning(true);
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id ?? null;
 
-    const ensureUserDoc = async () => {
-      try {
-        const ref = doc(db, "users", user.uid);
-        const snap = await getDoc(ref);
+      if (cancelled) return;
 
-        const defaults = {
-          uid: user.uid,
-          username: user.displayName ?? "",
-          phone: user.phoneNumber ?? "",
-          role: "student",
-          pendingSent: [],
-          pendingReceived: [],
-          friends: [],
-          blocked: [],
-          settings: {
-            chatThemeColor: "#9b59b6",
-            notifications: {
-              global: true,
-              chat: true,
-              direct: true,
-              mention: true,
-              rooms: true,
-            },
-          },
-        };
+      setSessionUserId(userId);
 
-        if (!snap.exists()) {
-          await setDoc(ref, defaults, { merge: true });
-        } else {
-          const data = snap.data() as any;
-
-          // Fill missing arrays/fields without overwriting existing values
-          await setDoc(
-            ref,
-            {
-              pendingSent: data.pendingSent ?? [],
-              pendingReceived: data.pendingReceived ?? [],
-              friends: data.friends ?? [],
-              blocked: data.blocked ?? [],
-              settings:
-                data.settings ??
-                {
-                  chatThemeColor: "#9b59b6",
-                  notifications: {
-                    global: true,
-                    chat: true,
-                    direct: true,
-                    mention: true,
-                    rooms: true,
-                  },
-                },
-            },
-            { merge: true }
-          );
-        }
-      } catch (err) {
-        console.warn("ensureUserDoc failed", err);
-      } finally {
-        setProvisioning(false);
+      if (!userId) {
+        setProfileReady(false);
+        setReady(true);
+        return;
       }
+
+      const ok = await loadProfileReady(userId);
+      if (cancelled) return;
+      setProfileReady(ok);
+      setReady(true);
     };
 
-    ensureUserDoc();
-  }, [user?.uid, provisioning]);
+    init();
 
-  // Navigation reacts to changes of user/route segments
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // During transitions (login/logout), force loader to avoid “white”
+      setReady(false);
+
+      const userId = session?.user?.id ?? null;
+      setSessionUserId(userId);
+
+      if (!userId) {
+        setProfileReady(false);
+        setReady(true);
+        return;
+      }
+
+      const ok = await loadProfileReady(userId);
+      setProfileReady(ok);
+      setReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Routing decisions
   useEffect(() => {
     if (!ready) return;
 
-    const inAuth = segments[0] === "(auth)";
-    const inDrawer = segments[0] === "(drawer)";
+    // Not logged in -> go to auth
+    if (!sessionUserId) {
+      if (!inAuthGroup) router.replace("/(auth)");
+      return;
+    }
 
-    if (!user && !inAuth) {
-      router.replace("/(auth)");
+    // Logged in but profile incomplete -> keep in auth (username step)
+    if (sessionUserId && !profileReady) {
+      if (!inAuthGroup) router.replace("/(auth)");
       return;
     }
-    if (user && !inDrawer) {
-      router.replace("/(drawer)/(tabs)/timetable");
+
+    // Logged in and ready -> go to home
+    if (sessionUserId && profileReady) {
+      if (!inDrawerGroup) router.replace("/(drawer)/(tabs)/timetable");
       return;
     }
-  }, [ready, user, segments, router]);
+  }, [ready, sessionUserId, profileReady, inAuthGroup, inDrawerGroup, router]);
 
   if (!ready) {
     return (
