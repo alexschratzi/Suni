@@ -3,7 +3,7 @@ import React from "react";
 import { View } from "react-native";
 import { Drawer } from "expo-router/drawer";
 import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,19 +13,14 @@ function AppDrawerContent(props: any) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const go = (path: string) => {
+  const go = (href: Href) => {
     props.navigation.closeDrawer();
-    router.push(path);
+    router.push(href);
   };
 
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors.surface }}>
-      <DrawerContentScrollView
-        {...props}
-        contentContainerStyle={{
-          paddingTop: 0, // IMPORTANT: we handle top padding via insets.top
-        }}
-      >
+      <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
         <DrawerItem
           label="Profil"
           labelStyle={{ color: theme.colors.onSurface }}
@@ -58,7 +53,6 @@ function AppDrawerContent(props: any) {
           )}
           onPress={() => go("/(app)/(stack)/global_settings")}
         />
-
         <DrawerItem
           label="Logout"
           labelStyle={{ color: theme.colors.onSurface }}

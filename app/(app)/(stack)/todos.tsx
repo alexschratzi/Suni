@@ -1,3 +1,4 @@
+import React from "react";
 import { useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform } from "react-native";
 import { Text, TextInput, Button, Surface, useTheme } from "react-native-paper";

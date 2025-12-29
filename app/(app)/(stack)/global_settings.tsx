@@ -15,8 +15,15 @@ import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 
-import { useAppTheme, ThemeMode, TextScale } from "@/components/theme/AppThemeProvider";
+import {
+  useAppTheme,
+  ThemeMode,
+  TextScale,
+} from "@/components/theme/AppThemeProvider";
 import { auth, db } from "@/firebase";
+
+// ✅ Firestore v9+ modular API
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 type LanguageCode = "de" | "en";
 type SectionKey =
@@ -30,14 +37,29 @@ type SectionKey =
   | "accessibility"
   | "info";
 
-const TodoTag = ({ label = "TODO", scale = 1 }: { label?: string; scale?: number }) => (
-  <Text style={[styles.todo, { fontSize: Math.round(12 * scale) }]}>{label}</Text>
+const TodoTag = ({
+  label = "TODO",
+  scale = 1,
+}: {
+  label?: string;
+  scale?: number;
+}) => (
+  <Text style={[styles.todo, { fontSize: Math.round(12 * scale) }]}>
+    {label}
+  </Text>
 );
 
 export default function SettingsScreen() {
   const paperTheme = useTheme();
-  const { mode, effectiveMode, setMode, highContrast, setHighContrast, textScale, setTextScale } =
-    useAppTheme();
+  const {
+    mode,
+    effectiveMode,
+    setMode,
+    highContrast,
+    setHighContrast,
+    textScale,
+    setTextScale,
+  } = useAppTheme();
   const { t, i18n } = useTranslation();
   const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
   const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
@@ -48,6 +70,7 @@ export default function SettingsScreen() {
     }),
     [scale]
   );
+
   const SECTION_META: { key: SectionKey; label: string }[] = [
     { key: "general", label: t("settings.sections.general") },
     { key: "calendar", label: t("settings.sections.calendar") },
@@ -59,6 +82,7 @@ export default function SettingsScreen() {
     { key: "accessibility", label: t("settings.sections.accessibility") },
     { key: "info", label: t("settings.sections.info") },
   ];
+
   const params = useLocalSearchParams();
 
   const [language, setLanguage] = useState<LanguageCode>(() =>
@@ -67,13 +91,16 @@ export default function SettingsScreen() {
   const [themeMenu, setThemeMenu] = useState(false);
   const [langMenu, setLangMenu] = useState(false);
   const [textMenu, setTextMenu] = useState(false);
+
   const [notifGlobal, setNotifGlobal] = useState(true);
   const [notifChat, setNotifChat] = useState(true);
   const [notifMention, setNotifMention] = useState(true);
   const [notifDirect, setNotifDirect] = useState(true);
   const [notifRooms, setNotifRooms] = useState(true);
+
   const [loadingPrefs, setLoadingPrefs] = useState(false);
   const [chatColor, setChatColor] = useState<string | null>(null);
+
   const [eventsEnabled, setEventsEnabled] = useState(true);
   const [eventSettingsOpen, setEventSettingsOpen] = useState(false);
   const [eventCategories, setEventCategories] = useState<{
@@ -153,24 +180,32 @@ export default function SettingsScreen() {
       if (!auth.currentUser) return;
       setLoadingPrefs(true);
       try {
-        const snap = await db.collection("users").doc(auth.currentUser.uid).get();
+        const ref = doc(db, "users", auth.currentUser.uid);
+        const snap = await getDoc(ref);
+
         const data = snap.data() || {};
         const settings = (data.settings as any) || {};
         const notif = settings.notifications || {};
+
         if (typeof notif.global === "boolean") setNotifGlobal(notif.global);
         if (typeof notif.chat === "boolean") setNotifChat(notif.chat);
         if (typeof notif.mention === "boolean") setNotifMention(notif.mention);
         if (typeof notif.direct === "boolean") setNotifDirect(notif.direct);
         if (typeof notif.rooms === "boolean") setNotifRooms(notif.rooms);
-        if (typeof settings.chatThemeColor === "string") setChatColor(settings.chatThemeColor);
+
+        if (typeof settings.chatThemeColor === "string")
+          setChatColor(settings.chatThemeColor);
+
         const events = settings.eventPrefs || {};
         if (typeof events.enabled === "boolean") setEventsEnabled(events.enabled);
+
         const cats = events.categories || {};
         setEventCategories({
           uniParties: typeof cats.uniParties === "boolean" ? cats.uniParties : true,
           uniEvents: typeof cats.uniEvents === "boolean" ? cats.uniEvents : true,
           cityEvents: typeof cats.cityEvents === "boolean" ? cats.cityEvents : true,
         });
+
         if (settings.textScale === "small" || settings.textScale === "large") {
           setTextScale(settings.textScale);
         } else {
@@ -180,8 +215,9 @@ export default function SettingsScreen() {
         setLoadingPrefs(false);
       }
     };
+
     loadPrefs();
-  }, []);
+  }, [setTextScale]);
 
   const saveNotifications = async (next: {
     global?: boolean;
@@ -199,6 +235,7 @@ export default function SettingsScreen() {
     textScale?: TextScale;
   }) => {
     if (!auth.currentUser) return;
+
     const newGlobal = next.global ?? notifGlobal;
     const newChat = next.chat ?? notifChat;
     const newMention = next.mention ?? notifMention;
@@ -206,12 +243,15 @@ export default function SettingsScreen() {
     const newRooms = next.rooms ?? notifRooms;
     const newColor = next.color ?? chatColor;
     const newEventsEnabled = next.eventsEnabled ?? eventsEnabled;
+
     const newCats = {
       uniParties: next.categories?.uniParties ?? eventCategories.uniParties,
       uniEvents: next.categories?.uniEvents ?? eventCategories.uniEvents,
       cityEvents: next.categories?.cityEvents ?? eventCategories.cityEvents,
     };
+
     const newTextScale = next.textScale ?? textScale;
+
     setNotifGlobal(newGlobal);
     setNotifChat(newChat);
     setNotifMention(newMention);
@@ -221,11 +261,11 @@ export default function SettingsScreen() {
     setEventsEnabled(newEventsEnabled);
     setEventCategories(newCats);
     setTextScale(newTextScale);
+
     try {
-      await db
-        .collection("users")
-        .doc(auth.currentUser.uid)
-        .set(
+      const ref = doc(db, "users", auth.currentUser.uid);
+      await setDoc(
+        ref,
         {
           settings: {
             notifications: {
@@ -244,7 +284,7 @@ export default function SettingsScreen() {
           },
         },
         { merge: true }
-        );
+      );
     } catch (err) {
       console.error("Failed to save notification settings", err);
     }
@@ -271,7 +311,10 @@ export default function SettingsScreen() {
           variant="bodyMedium"
           style={{ color: paperTheme.colors.onSurfaceVariant, marginTop: 4 }}
         >
-          {t("settings.subtitle", "Alles auf einer Seite. Tippe auf einen Abschnitt oder scrolle.")}
+          {t(
+            "settings.subtitle",
+            "Alles auf einer Seite. Tippe auf einen Abschnitt oder scrolle."
+          )}
         </Text>
         <View style={styles.chipRow}>
           {SECTION_META.map((s) => (
@@ -290,101 +333,107 @@ export default function SettingsScreen() {
       {/* Allgemein */}
       <View onLayout={handleSectionLayout("general")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Subheader style={styles.subheader}>{t("settings.sections.general")}</List.Subheader>
+          <List.Subheader style={styles.subheader}>
+            {t("settings.sections.general")}
+          </List.Subheader>
 
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface }}>
-              {t("settings.appearanceTitle")}
-            </Text>
-            <Text variant="bodySmall" style={{ color: paperTheme.colors.onSurfaceVariant }}>
-              {t("settings.theme.activeLabel", { mode: activeThemeLabel })}
-            </Text>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface }}>
+                {t("settings.appearanceTitle")}
+              </Text>
+              <Text variant="bodySmall" style={{ color: paperTheme.colors.onSurfaceVariant }}>
+                {t("settings.theme.activeLabel", { mode: activeThemeLabel })}
+              </Text>
+            </View>
+            <Button
+              mode="outlined"
+              onPress={() => setThemeMenu((v) => !v)}
+              compact
+              icon="chevron-down"
+            >
+              Auswählen
+            </Button>
           </View>
-          <Button
-            mode="outlined"
-            onPress={() => setThemeMenu((v) => !v)}
-            compact
-            icon="chevron-down"
-          >
-            Auswählen
-          </Button>
-        </View>
-        {themeMenu && (
-          <Surface style={styles.inlineMenu} mode="flat">
-            <Button
-              mode="text"
-              onPress={() => onThemeChange("system")}
-              contentStyle={styles.inlineBtn}
-            >
-              System
-            </Button>
-            <Divider />
-            <Button
-              mode="text"
-              onPress={() => onThemeChange("light")}
-              contentStyle={styles.inlineBtn}
-            >
-              Hell
-            </Button>
-            <Divider />
-            <Button
-              mode="text"
-              onPress={() => onThemeChange("dark")}
-              contentStyle={styles.inlineBtn}
-            >
-              Dunkel
-            </Button>
-          </Surface>
-        )}
 
-        <Divider style={{ marginVertical: 8 }} />
+          {themeMenu && (
+            <Surface style={styles.inlineMenu} mode="flat">
+              <Button
+                mode="text"
+                onPress={() => onThemeChange("system")}
+                contentStyle={styles.inlineBtn}
+              >
+                System
+              </Button>
+              <Divider />
+              <Button
+                mode="text"
+                onPress={() => onThemeChange("light")}
+                contentStyle={styles.inlineBtn}
+              >
+                Hell
+              </Button>
+              <Divider />
+              <Button
+                mode="text"
+                onPress={() => onThemeChange("dark")}
+                contentStyle={styles.inlineBtn}
+              >
+                Dunkel
+              </Button>
+            </Surface>
+          )}
 
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface }}>
-              {t("settings.languageTitle")}
-            </Text>
-            <Text variant="bodySmall" style={{ color: paperTheme.colors.onSurfaceVariant }}>
-              {language === "de" ? t("settings.language.german") : t("settings.language.english")}
-            </Text>
+          <Divider style={{ marginVertical: 8 }} />
+
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text variant="titleMedium" style={{ color: paperTheme.colors.onSurface }}>
+                {t("settings.languageTitle")}
+              </Text>
+              <Text variant="bodySmall" style={{ color: paperTheme.colors.onSurfaceVariant }}>
+                {language === "de"
+                  ? t("settings.language.german")
+                  : t("settings.language.english")}
+              </Text>
+            </View>
+            <Button
+              mode="outlined"
+              onPress={() => setLangMenu((v) => !v)}
+              compact
+              icon="chevron-down"
+            >
+              Auswählen
+            </Button>
           </View>
-          <Button
-            mode="outlined"
-            onPress={() => setLangMenu((v) => !v)}
-            compact
-            icon="chevron-down"
-          >
-            Auswählen
-          </Button>
-        </View>
-        {langMenu && (
-          <Surface style={styles.inlineMenu} mode="flat">
-            <Button
-              mode="text"
-              onPress={() => {
-                setLangMenu(false);
-                handleLanguageChange("de");
-              }}
-              contentStyle={styles.inlineBtn}
-            >
-              Deutsch
-            </Button>
-            <Divider />
-            <Button
-              mode="text"
-              onPress={() => {
-                setLangMenu(false);
-                handleLanguageChange("en");
-              }}
-              contentStyle={styles.inlineBtn}
-            >
-              English
-            </Button>
-          </Surface>
-        )}
 
-        <Divider style={{ marginVertical: 8 }} />
+          {langMenu && (
+            <Surface style={styles.inlineMenu} mode="flat">
+              <Button
+                mode="text"
+                onPress={() => {
+                  setLangMenu(false);
+                  handleLanguageChange("de");
+                }}
+                contentStyle={styles.inlineBtn}
+              >
+                Deutsch
+              </Button>
+              <Divider />
+              <Button
+                mode="text"
+                onPress={() => {
+                  setLangMenu(false);
+                  handleLanguageChange("en");
+                }}
+                contentStyle={styles.inlineBtn}
+              >
+                English
+              </Button>
+            </Surface>
+          )}
+
+          <Divider style={{ marginVertical: 8 }} />
 
           <List.Item
             title={t("settings.general.notifications")}
@@ -404,387 +453,428 @@ export default function SettingsScreen() {
       {/* Kalender + Events */}
       <View onLayout={handleSectionLayout("calendar")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.calendar")}</List.Subheader>
-          <List.Item
-            title={t("settings.calendar.defaultView")}
-            description="Woche / Monat"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.calendar.weekStart")}
-            description="Montag / Sonntag"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.calendar.reminders")}
-            description="Vor Termin, Push"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.calendar.holidays")}
-            description="Land auswählen"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.events.enabled")}
-            description={t("settings.events.enabledDesc")}
-            {...listItemTextStyles}
-            onPress={() => setEventSettingsOpen((v) => !v)}
-            right={() => (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.calendar")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.calendar.defaultView")}
+              description="Woche / Monat"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.calendar.weekStart")}
+              description="Montag / Sonntag"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.calendar.reminders")}
+              description="Vor Termin, Push"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.calendar.holidays")}
+              description="Land auswählen"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.events.enabled")}
+              description={t("settings.events.enabledDesc")}
+              {...listItemTextStyles}
+              onPress={() => setEventSettingsOpen((v) => !v)}
+              right={() => (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text
+                    style={{
+                      color: paperTheme.colors.onSurfaceVariant,
+                      fontSize: Math.round(16 * scale),
+                    }}
+                  >
+                    {eventSettingsOpen ? "▼" : "▶"}
+                  </Text>
+                  <Switch
+                    value={eventsEnabled}
+                    onValueChange={(v) => saveNotifications({ eventsEnabled: v })}
+                    disabled={loadingPrefs}
+                  />
+                </View>
+              )}
+            />
+
+            {eventSettingsOpen && (
+              <View style={{ paddingLeft: 12 }}>
+                <Divider />
                 <Text
-                  style={{ color: paperTheme.colors.onSurfaceVariant, fontSize: Math.round(16 * scale) }}
+                  variant="bodySmall"
+                  style={{
+                    color: paperTheme.colors.onSurfaceVariant,
+                    marginLeft: 8,
+                    marginBottom: 4,
+                  }}
                 >
-                  {eventSettingsOpen ? "▼" : "▶"}
+                  {t("settings.events.categoriesDesc")}
                 </Text>
-                <Switch
-                  value={eventsEnabled}
-                  onValueChange={(v) => saveNotifications({ eventsEnabled: v })}
-                  disabled={loadingPrefs}
+
+                <List.Item
+                  title={t("settings.events.uniParties")}
+                  description={t("settings.events.uniPartiesDesc")}
+                  {...listItemTextStyles}
+                  right={() => (
+                    <Switch
+                      value={eventCategories.uniParties}
+                      onValueChange={(v) =>
+                        saveNotifications({ categories: { uniParties: v } })
+                      }
+                      disabled={!eventsEnabled || loadingPrefs}
+                    />
+                  )}
+                />
+                <Divider />
+                <List.Item
+                  title={t("settings.events.uniEvents")}
+                  description={t("settings.events.uniEventsDesc")}
+                  {...listItemTextStyles}
+                  right={() => (
+                    <Switch
+                      value={eventCategories.uniEvents}
+                      onValueChange={(v) =>
+                        saveNotifications({ categories: { uniEvents: v } })
+                      }
+                      disabled={!eventsEnabled || loadingPrefs}
+                    />
+                  )}
+                />
+                <Divider />
+                <List.Item
+                  title={t("settings.events.cityEvents")}
+                  description={t("settings.events.cityEventsDesc")}
+                  {...listItemTextStyles}
+                  right={() => (
+                    <Switch
+                      value={eventCategories.cityEvents}
+                      onValueChange={(v) =>
+                        saveNotifications({ categories: { cityEvents: v } })
+                      }
+                      disabled={!eventsEnabled || loadingPrefs}
+                    />
+                  )}
                 />
               </View>
             )}
-          />
-          {eventSettingsOpen && (
-            <View style={{ paddingLeft: 12 }}>
-              <Divider />
-              <Text
-                variant="bodySmall"
-                style={{ color: paperTheme.colors.onSurfaceVariant, marginLeft: 8, marginBottom: 4 }}
-              >
-                {t("settings.events.categoriesDesc")}
-              </Text>
-              <List.Item
-                title={t("settings.events.uniParties")}
-                description={t("settings.events.uniPartiesDesc")}
-                {...listItemTextStyles}
-                right={() => (
-                  <Switch
-                    value={eventCategories.uniParties}
-                    onValueChange={(v) => saveNotifications({ categories: { uniParties: v } })}
-                    disabled={!eventsEnabled || loadingPrefs}
-                  />
-                )}
-              />
-              <Divider />
-              <List.Item
-                title={t("settings.events.uniEvents")}
-                description={t("settings.events.uniEventsDesc")}
-                {...listItemTextStyles}
-                right={() => (
-                  <Switch
-                    value={eventCategories.uniEvents}
-                    onValueChange={(v) => saveNotifications({ categories: { uniEvents: v } })}
-                    disabled={!eventsEnabled || loadingPrefs}
-                  />
-                )}
-              />
-              <Divider />
-              <List.Item
-                title={t("settings.events.cityEvents")}
-                description={t("settings.events.cityEventsDesc")}
-                {...listItemTextStyles}
-                right={() => (
-                  <Switch
-                    value={eventCategories.cityEvents}
-                    onValueChange={(v) => saveNotifications({ categories: { cityEvents: v } })}
-                    disabled={!eventsEnabled || loadingPrefs}
-                  />
-                )}
-              />
-            </View>
-          )}
-        </List.Section>
+          </List.Section>
         </Surface>
       </View>
 
       {/* Chat */}
       <View onLayout={handleSectionLayout("chat")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.chat")}</List.Subheader>
-          <List.Item
-            title={t("settings.chatSection.readReceipts")}
-            description="An/Aus"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.notifications")}
-            description={t("settings.chatSection.notificationsDesc", "Push / Sound / Vibration")}
-            {...listItemTextStyles}
-            right={() => (
-              <Switch
-                value={notifChat}
-                onValueChange={(v) => saveNotifications({ chat: v })}
-                disabled={loadingPrefs}
-              />
-            )}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.notifyMention")}
-            description={t("settings.chatSection.notifyMentionDesc")}
-            {...listItemTextStyles}
-            right={() => (
-              <Switch
-                value={notifMention}
-                onValueChange={(v) => saveNotifications({ mention: v })}
-                disabled={loadingPrefs}
-              />
-            )}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.notifyDirect")}
-            description={t("settings.chatSection.notifyDirectDesc")}
-            {...listItemTextStyles}
-            right={() => (
-              <Switch
-                value={notifDirect}
-                onValueChange={(v) => saveNotifications({ direct: v })}
-                disabled={loadingPrefs}
-              />
-            )}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.notifyRooms")}
-            description={t("settings.chatSection.notifyRoomsDesc")}
-            {...listItemTextStyles}
-            right={() => (
-              <Switch
-                value={notifRooms}
-                onValueChange={(v) => saveNotifications({ rooms: v })}
-                disabled={loadingPrefs}
-              />
-            )}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.mediaDownload")}
-            description="WLAN/Mobil/Aus"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.chatSection.theme")}
-            description="Farben/Blasen"
-            {...listItemTextStyles}
-            right={() => (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                {["#6750A4", "#0EA5E9", "#22C55E", "#EAB308", "#EF4444"].map((c) => (
-                  <Button
-                    key={c}
-                    mode={chatColor === c ? "contained" : "outlined"}
-                    compact
-                    buttonColor={c}
-                    textColor={chatColor === c ? "white" : c}
-                    onPress={() => saveNotifications({ color: c })}
-                    style={{ marginHorizontal: 2 }}
-                  >
-                    {chatColor === c ? "•" : ""}
-                  </Button>
-                ))}
-              </View>
-            )}
-          />
-        </List.Section>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.chat")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.chatSection.readReceipts")}
+              description="An/Aus"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.notifications")}
+              description={t(
+                "settings.chatSection.notificationsDesc",
+                "Push / Sound / Vibration"
+              )}
+              {...listItemTextStyles}
+              right={() => (
+                <Switch
+                  value={notifChat}
+                  onValueChange={(v) => saveNotifications({ chat: v })}
+                  disabled={loadingPrefs}
+                />
+              )}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.notifyMention")}
+              description={t("settings.chatSection.notifyMentionDesc")}
+              {...listItemTextStyles}
+              right={() => (
+                <Switch
+                  value={notifMention}
+                  onValueChange={(v) => saveNotifications({ mention: v })}
+                  disabled={loadingPrefs}
+                />
+              )}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.notifyDirect")}
+              description={t("settings.chatSection.notifyDirectDesc")}
+              {...listItemTextStyles}
+              right={() => (
+                <Switch
+                  value={notifDirect}
+                  onValueChange={(v) => saveNotifications({ direct: v })}
+                  disabled={loadingPrefs}
+                />
+              )}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.notifyRooms")}
+              description={t("settings.chatSection.notifyRoomsDesc")}
+              {...listItemTextStyles}
+              right={() => (
+                <Switch
+                  value={notifRooms}
+                  onValueChange={(v) => saveNotifications({ rooms: v })}
+                  disabled={loadingPrefs}
+                />
+              )}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.mediaDownload")}
+              description="WLAN/Mobil/Aus"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.chatSection.theme")}
+              description="Farben/Blasen"
+              {...listItemTextStyles}
+              right={() => (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  {["#6750A4", "#0EA5E9", "#22C55E", "#EAB308", "#EF4444"].map((c) => (
+                    <Button
+                      key={c}
+                      mode={chatColor === c ? "contained" : "outlined"}
+                      compact
+                      buttonColor={c}
+                      textColor={chatColor === c ? "white" : c}
+                      onPress={() => saveNotifications({ color: c })}
+                      style={{ marginHorizontal: 2 }}
+                    >
+                      {chatColor === c ? "•" : ""}
+                    </Button>
+                  ))}
+                </View>
+              )}
+            />
+          </List.Section>
         </Surface>
       </View>
 
       {/* Freunde / DM */}
       <View onLayout={handleSectionLayout("friends")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.friends")}</List.Subheader>
-          <List.Item
-            title={t("settings.friendsSection.whoCanRequest")}
-            description="Alle / Nur bekannte / Niemand"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.friendsSection.autoAccept")}
-            description="Nur bekannte Kontakte"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.friendsSection.blocked")}
-            description="Verwalten"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-        </List.Section>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.friends")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.friendsSection.whoCanRequest")}
+              description="Alle / Nur bekannte / Niemand"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.friendsSection.autoAccept")}
+              description="Nur bekannte Kontakte"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.friendsSection.blocked")}
+              description="Verwalten"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
         </Surface>
       </View>
 
       {/* Universität */}
       <View onLayout={handleSectionLayout("uni")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.uni")}</List.Subheader>
-          <List.Item
-            title={t("settings.uniSection.degree")}
-            description="Auswahl"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.uniSection.faculty")}
-            description="Auswahl"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.uniSection.newsPush")}
-            description="An/Aus"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-        </List.Section>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.uni")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.uniSection.degree")}
+              description="Auswahl"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.uniSection.faculty")}
+              description="Auswahl"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.uniSection.newsPush")}
+              description="An/Aus"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
         </Surface>
       </View>
 
       {/* Daten & Cache */}
       <View onLayout={handleSectionLayout("data")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.data")}</List.Subheader>
-          <List.Item
-            title={t("settings.dataSection.clearMedia")}
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.dataSection.resetOffline")}
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.dataSection.export")}
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-        </List.Section>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.data")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.dataSection.clearMedia")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.dataSection.resetOffline")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.dataSection.export")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
         </Surface>
       </View>
 
       {/* Sicherheit */}
       <View onLayout={handleSectionLayout("security")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.security")}</List.Subheader>
-          <List.Item
-            title={t("settings.securitySection.pin")}
-            description="Zum Öffnen"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.securitySection.devices")}
-            description="Aktive Sitzungen"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.securitySection.twofa")}
-            description="Optional"
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-        </List.Section>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.security")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.securitySection.pin")}
+              description="Zum Öffnen"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.securitySection.devices")}
+              description="Aktive Sitzungen"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.securitySection.twofa")}
+              description="Optional"
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
         </Surface>
       </View>
 
       {/* Barrierefreiheit */}
       <View onLayout={handleSectionLayout("accessibility")}>
         <Surface style={styles.card} mode="elevated">
-        <List.Section>
-          <List.Subheader style={styles.subheader}>{t("settings.sections.accessibility")}</List.Subheader>
-          <List.Item
-            title={t("settings.accessibilitySection.fontSize")}
-            description={textSizeLabel}
-            {...listItemTextStyles}
-            right={() => (
-              <Button
-                mode="outlined"
-                onPress={() => {
-                  setTextMenu((v) => !v);
-                  setThemeMenu(false);
-                  setLangMenu(false);
-                }}
-                compact
-                icon={textMenu ? "chevron-up" : "chevron-down"}
-              >
-                {t("settings.theme.select", "Auswählen")}
-              </Button>
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.accessibility")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.accessibilitySection.fontSize")}
+              description={textSizeLabel}
+              {...listItemTextStyles}
+              right={() => (
+                <Button
+                  mode="outlined"
+                  onPress={() => {
+                    setTextMenu((v) => !v);
+                    setThemeMenu(false);
+                    setLangMenu(false);
+                  }}
+                  compact
+                  icon={textMenu ? "chevron-up" : "chevron-down"}
+                >
+                  {t("settings.theme.select", "Auswählen")}
+                </Button>
+              )}
+            />
+
+            {textMenu && (
+              <Surface style={styles.inlineMenu} mode="flat">
+                {(["small", "medium", "large"] as TextScale[]).map(
+                  (size, idx, arr) => (
+                    <View key={size}>
+                      <Button
+                        mode="text"
+                        onPress={() => {
+                          saveNotifications({ textScale: size });
+                          setTextMenu(false);
+                        }}
+                        contentStyle={styles.inlineBtn}
+                      >
+                        {t(`settings.accessibilitySection.${size}`)}
+                      </Button>
+                      {idx < arr.length - 1 && <Divider />}
+                    </View>
+                  )
+                )}
+              </Surface>
             )}
-          />
-          {textMenu && (
-            <Surface style={styles.inlineMenu} mode="flat">
-              {(["small", "medium", "large"] as TextScale[]).map((size, idx, arr) => (
-                <View key={size}>
-                  <Button
-                    mode="text"
-                    onPress={() => {
-                      saveNotifications({ textScale: size });
-                      setTextMenu(false);
-                    }}
-                    contentStyle={styles.inlineBtn}
-                  >
-                    {t(`settings.accessibilitySection.${size}`)}
-                  </Button>
-                  {idx < arr.length - 1 && <Divider />}
-                </View>
-              ))}
-            </Surface>
-          )}
-          <Divider />
-          <List.Item
-            title={t("settings.accessibilitySection.contrast")}
-            description={t("settings.accessibilitySection.contrastDesc")}
-            {...listItemTextStyles}
-            right={() => (
-              <Switch
-                value={highContrast}
-                onValueChange={(v) => setHighContrast(v)}
-              />
-            )}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.accessibilitySection.reduceMotion")}
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-          <Divider />
-          <List.Item
-            title={t("settings.accessibilitySection.haptics")}
-            {...listItemTextStyles}
-            right={() => <TodoTag scale={scale} />}
-          />
-        </List.Section>
+
+            <Divider />
+
+            <List.Item
+              title={t("settings.accessibilitySection.contrast")}
+              description={t("settings.accessibilitySection.contrastDesc")}
+              {...listItemTextStyles}
+              right={() => (
+                <Switch value={highContrast} onValueChange={(v) => setHighContrast(v)} />
+              )}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.accessibilitySection.reduceMotion")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.accessibilitySection.haptics")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
         </Surface>
       </View>
 
@@ -792,7 +882,10 @@ export default function SettingsScreen() {
       <View onLayout={handleSectionLayout("info")}>
         <Surface style={styles.card} mode="elevated">
           <List.Section>
-            <List.Subheader style={styles.subheader}>{t("settings.sections.info")}</List.Subheader>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.info")}
+            </List.Subheader>
+
             <List.Item
               title={t("settings.infoSection.faq")}
               {...listItemTextStyles}
