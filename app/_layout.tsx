@@ -1,16 +1,13 @@
 // app/_layout.tsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { AppThemeProvider } from "../components/theme/AppThemeProvider";
 import "../i18n/i18n";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../src/lib/supabase";
 
 type ProfileCheck = { id: string; username: string | null };
-
-const DEV_AUTH_BYPASS_KEY = "DEV_AUTH_BYPASS_ENABLED";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -19,9 +16,6 @@ export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [profileReady, setProfileReady] = useState(false);
-
-  const [devBypassEnabled, setDevBypassEnabled] = useState(false);
-  const [devBypassLoaded, setDevBypassLoaded] = useState(false);
 
   const inAuthGroup = segments[0] === "(auth)";
   const inAppGroup = segments[0] === "(app)";
@@ -40,29 +34,6 @@ export default function RootLayout() {
 
     return !!prof?.username && prof.username.trim().length > 0;
   };
-
-  const loadDevBypass = useCallback(async () => {
-    if (!__DEV__) {
-      setDevBypassEnabled(false);
-      setDevBypassLoaded(true);
-      return;
-    }
-
-    try {
-      const v = await AsyncStorage.getItem(DEV_AUTH_BYPASS_KEY);
-      setDevBypassEnabled(v === "1");
-    } catch (e) {
-      console.warn("Failed to read dev bypass:", e);
-      setDevBypassEnabled(false);
-    } finally {
-      setDevBypassLoaded(true);
-    }
-  }, []);
-
-  // Load dev bypass once
-  useEffect(() => {
-    loadDevBypass();
-  }, [loadDevBypass]);
 
   // Initial session + subscribe to auth changes
   useEffect(() => {
@@ -117,14 +88,7 @@ export default function RootLayout() {
 
   // Routing decisions
   useEffect(() => {
-    // Wait until BOTH are loaded so we don't flicker / bounce
-    if (!ready || !devBypassLoaded) return;
-
-    // DEV bypass: treat as "fully authed"
-    if (__DEV__ && devBypassEnabled) {
-      if (!inAppGroup) router.replace("/(app)/(stack)/(tabs)/timetable");
-      return;
-    }
+    if (!ready) return;
 
     // Not logged in -> go to auth
     if (!sessionUserId) {
@@ -143,18 +107,9 @@ export default function RootLayout() {
       if (!inAppGroup) router.replace("/(app)/(stack)/(tabs)/timetable");
       return;
     }
-  }, [
-    ready,
-    devBypassLoaded,
-    devBypassEnabled,
-    sessionUserId,
-    profileReady,
-    inAuthGroup,
-    inAppGroup,
-    router,
-  ]);
+  }, [ready, sessionUserId, profileReady, inAuthGroup, inAppGroup, router]);
 
-  if (!ready || !devBypassLoaded) {
+  if (!ready) {
     return (
       <AppThemeProvider>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
