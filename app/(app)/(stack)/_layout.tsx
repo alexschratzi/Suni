@@ -33,6 +33,7 @@ export default function AppStackLayout() {
         headerTintColor: theme.colors.onSurface,
         headerTitleStyle: { color: theme.colors.onSurface },
         contentStyle: { backgroundColor: theme.colors.surface },
+        headerBackTitle: "Zurück",
       }}
     >
       {/* Tabs = base of the app */}
