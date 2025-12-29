@@ -24,29 +24,64 @@ export default function TabLayout() {
   const theme = useTheme();
 
   /* ------------------------------------------------------------------ */
-  /* Double-tap tracking                                                 */
+  /* Double-tap detection (FAST)                                         */
   /* ------------------------------------------------------------------ */
   const lastTapRef = React.useRef<{ key: string; ts: number } | null>(null);
-  const DOUBLE_TAP_MS = 320;
+  const DOUBLE_TAP_MS = 220;
 
   /* ------------------------------------------------------------------ */
-  /* Calendar icon animation                                             */
+  /* Jump spam guard                                                     */
+  /* ------------------------------------------------------------------ */
+  const jumpLockRef = React.useRef(false);
+  const jumpLockTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const lockJump = React.useCallback(() => {
+    jumpLockRef.current = true;
+    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+
+    // covers the CalendarKit goToDate animation window
+    jumpLockTimerRef.current = setTimeout(() => {
+      jumpLockRef.current = false;
+    }, 200);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------ */
+  /* Calendar icon animation (non-stacking)                              */
   /* ------------------------------------------------------------------ */
   const calendarScale = React.useRef(new Animated.Value(1)).current;
+  const bounceRunningRef = React.useRef(false);
 
   const playCalendarBounce = React.useCallback(() => {
-    Animated.sequence([
-      Animated.timing(calendarScale, {
-        toValue: 0.80,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(calendarScale, {
-        toValue: 1,
-        friction: 2,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    if (bounceRunningRef.current) return;
+    bounceRunningRef.current = true;
+
+    calendarScale.stopAnimation(() => {
+      calendarScale.setValue(1);
+
+      Animated.sequence([
+        Animated.timing(calendarScale, {
+          toValue: 0.8,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+        Animated.spring(calendarScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        bounceRunningRef.current = false;
+      });
+    });
   }, [calendarScale]);
 
   return (
@@ -79,15 +114,10 @@ export default function TabLayout() {
               />
             );
 
-            // Animate ONLY the calendar icon
-            if (route.name !== "timetable") {
-              return icon;
-            }
+            if (route.name !== "timetable") return icon;
 
             return (
-              <Animated.View
-                style={{ transform: [{ scale: calendarScale }] }}
-              >
+              <Animated.View style={{ transform: [{ scale: calendarScale }] }}>
                 {icon}
               </Animated.View>
             );
@@ -102,32 +132,35 @@ export default function TabLayout() {
             const last = lastTapRef.current;
 
             const isDoubleTap =
-              last?.key === "timetable" &&
-              now - last.ts <= DOUBLE_TAP_MS;
+              last?.key === "timetable" && now - last.ts <= DOUBLE_TAP_MS;
 
             lastTapRef.current = { key: "timetable", ts: now };
 
-            if (isDoubleTap) {
-              // haptic "tic"
-              Haptics.selectionAsync().catch(() => {});
+            if (!isDoubleTap) return;
 
-              playCalendarBounce();
+            // hard guard: ignore spam while jump animation is active
+            if (jumpLockRef.current) return;
+            lockJump();
 
-              navigation.dispatch(
-                CommonActions.navigate({
-                  name: "timetable",
-                  params: { jumpToToday: String(now) },
-                  merge: true,
-                })
-              );
-            }
+            Haptics.selectionAsync().catch(() => {});
+            playCalendarBounce();
 
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: "timetable",
+                params: { jumpToToday: String(now) },
+                merge: true,
+              }),
+            );
           },
         })}
       >
         <MaterialTopTabs.Screen name="news" options={{ title: "News" }} />
         <MaterialTopTabs.Screen name="uni" options={{ title: "Uni" }} />
-        <MaterialTopTabs.Screen name="timetable" options={{ title: "Kalender" }} />
+        <MaterialTopTabs.Screen
+          name="timetable"
+          options={{ title: "Kalender" }}
+        />
         <MaterialTopTabs.Screen name="chat" options={{ title: "Chat" }} />
       </MaterialTopTabs>
     </UniversityProvider>

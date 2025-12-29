@@ -134,12 +134,16 @@ export default function TimetableScreen() {
   // Prevent onDateChanged during animated jumps (e.g. double tap)
   const suppressDateChangedRef = useRef(false);
 
-  // Debounce weekOffset updates (this is not for header anymore)
+  // Debounce weekOffset updates (header does NOT use this)
   const weekOffsetDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 🔒 Jump lock (prevents header being overwritten during goToDate animations)
   const pendingJumpMondayIsoRef = useRef<string | null>(null);
   const jumpUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ✅ Prevent stacked jumps (triple-tap / repeated triggers)
+  const isJumpingRef = useRef(false);
+  const jumpLockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
@@ -169,6 +173,7 @@ export default function TimetableScreen() {
   useEffect(() => {
     return () => {
       if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
+      if (jumpLockTimeoutRef.current) clearTimeout(jumpLockTimeoutRef.current);
       clearJumpLock();
     };
   }, [clearJumpLock]);
@@ -674,9 +679,6 @@ export default function TimetableScreen() {
   /* ------------------------------------------------------------------------ */
 
   const baseMonday = useMemo(() => getMonday(new Date()), []);
-  const weekStart = useMemo(() => addWeeks(baseMonday, weekOffset), [baseMonday, weekOffset]);
-
-  // CalendarKit: initialDate should be stable (mount only)
   const initialDateRef = useRef<string>(fmtYMD(baseMonday));
   const initialDate = initialDateRef.current;
 
@@ -709,46 +711,62 @@ export default function TimetableScreen() {
   useEffect(() => {
     if (!jumpToToday) return;
 
+    // ✅ ignore if a jump is already running (prevents triple-tap weird offset)
+    if (isJumpingRef.current) {
+      router.setParams({ jumpToToday: undefined });
+      return;
+    }
+
+    isJumpingRef.current = true;
+
     const today = new Date();
     const mondayIso = fmtYMD(getMonday(today));
 
-    // 🔒 lock header during jump animation
     pendingJumpMondayIsoRef.current = mondayIso;
     suppressDateChangedRef.current = true;
 
-    // update header immediately
     emitCurrentMonday(mondayIso);
 
-    // stop pending debounce
     if (weekOffsetDebounceRef.current) {
       clearTimeout(weekOffsetDebounceRef.current);
       weekOffsetDebounceRef.current = null;
     }
 
-    // keep weekOffset consistent
     const diffWeeks = Math.round((getMonday(today).getTime() - baseMonday.getTime()) / WEEK_MS);
     setWeekOffset(diffWeeks);
 
-    // do jump
-    calendarRef.current?.goToDate({
-      date: today,
-      animatedDate: true,
-      hourScroll: false,
-      animatedHour: true,
+    requestAnimationFrame(() => {
+      calendarRef.current?.goToDate({
+        date: today,
+        animatedDate: true,
+        hourScroll: false,
+        animatedHour: true,
+      });
     });
 
-    // ✅ FAILSAFE: always unlock even if callbacks don't fire
     if (jumpUnlockTimeoutRef.current) clearTimeout(jumpUnlockTimeoutRef.current);
+    if (jumpLockTimeoutRef.current) clearTimeout(jumpLockTimeoutRef.current);
+
     jumpUnlockTimeoutRef.current = setTimeout(() => {
       emitCurrentMonday(mondayIso);
       clearJumpLock();
     }, 550);
+
+    jumpLockTimeoutRef.current = setTimeout(() => {
+      isJumpingRef.current = false;
+    }, 650);
 
     router.setParams({ jumpToToday: undefined });
 
     return () => {
       emitCurrentMonday(mondayIso);
       clearJumpLock();
+      isJumpingRef.current = false;
+
+      if (jumpLockTimeoutRef.current) {
+        clearTimeout(jumpLockTimeoutRef.current);
+        jumpLockTimeoutRef.current = null;
+      }
     };
   }, [jumpToToday, baseMonday, emitCurrentMonday, router, clearJumpLock]);
 
@@ -818,7 +836,7 @@ export default function TimetableScreen() {
           useHaptic={true}
           enableResourceScroll={false}
           onDragCreateEventEnd={onCreate}
-          events={events} // ✅ do NOT filter by week; needed to show events while swiping
+          events={events}
           theme={theme}
           pagesPerSide={5}
           onPressEvent={onPressEvent}
@@ -841,10 +859,10 @@ export default function TimetableScreen() {
               return;
             }
 
-            // normal: update header
+            // normal: update header instantly
             emitCurrentMonday(mondayIso);
 
-            // optional: keep weekOffset for internal logic
+            // optional: weekOffset tracking (debounced)
             const diffWeeks = Math.round((getMonday(d).getTime() - baseMonday.getTime()) / WEEK_MS);
             if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
             weekOffsetDebounceRef.current = setTimeout(() => setWeekOffset(diffWeeks), 50);
