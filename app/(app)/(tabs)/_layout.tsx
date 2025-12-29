@@ -1,11 +1,12 @@
-// app/(tabs)/_layout.tsx
+// app/(app)/(tabs)/_layout.tsx
 import * as React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { withLayoutContext } from "expo-router";
-import { UniversityProvider } from "../../../components/university/UniversityContext";
 import { useTheme } from "react-native-paper";
 import { StyleSheet } from "react-native";
+
+import { UniversityProvider } from "@/components/university/UniversityContext";
 
 const { Navigator } = createMaterialTopTabNavigator();
 export const MaterialTopTabs = withLayoutContext(Navigator);
@@ -42,11 +43,7 @@ export default function TabLayout() {
             backgroundColor: theme.colors.surface,
           },
           tabBarIcon: ({ color }) => (
-            <Ionicons
-              name={ICONS[route.name] ?? "ellipse-outline"}
-              size={28}
-              color={color}
-            />
+            <Ionicons name={ICONS[route.name] ?? "ellipse-outline"} size={28} color={color} />
           ),
         })}
       >
