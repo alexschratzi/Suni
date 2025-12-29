@@ -1,12 +1,6 @@
 // app/(app)/(stack)/(tabs)/timetable.tsx
 import { subscribeICalChanged } from "@/src/utils/calendarSyncEvents";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PixelRatio,
   StyleSheet,
@@ -31,9 +25,7 @@ import type {
   OnEventResponse,
   ThemeConfigs,
 } from "@howljs/calendar-kit";
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
@@ -88,14 +80,7 @@ type EvWithMeta = Ev & {
 
 type ActivePicker = "from" | "until" | null;
 
-const COLOR_OPTIONS = [
-  "#4dabf7",
-  "#f783ac",
-  "#ffd43b",
-  "#69db7c",
-  "#845ef7",
-  "#ffa94d",
-];
+const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
 
 type ICalSubscription = {
   id: string;
@@ -140,6 +125,9 @@ export default function TimetableScreen() {
 
   const calendarRef = useRef<CalendarKitHandle>(null);
 
+  // ✅ Prevent onDateChanged from spamming state updates during animated jumps
+  const suppressDateChangedRef = useRef(false);
+
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
@@ -154,16 +142,13 @@ export default function TimetableScreen() {
   /* Storage helpers                                                          */
   /* ------------------------------------------------------------------------ */
 
-  const saveLocalICalSubscriptions = useCallback(
-    async (subs: ICalSubscription[]) => {
-      try {
-        await AsyncStorage.setItem(ICAL_ASYNC_KEY, JSON.stringify(subs));
-      } catch (e) {
-        console.warn("Failed to save local iCal subs:", e);
-      }
-    },
-    [],
-  );
+  const saveLocalICalSubscriptions = useCallback(async (subs: ICalSubscription[]) => {
+    try {
+      await AsyncStorage.setItem(ICAL_ASYNC_KEY, JSON.stringify(subs));
+    } catch (e) {
+      console.warn("Failed to save local iCal subs:", e);
+    }
+  }, []);
 
   const loadLocalEvents = useCallback(async (): Promise<EvWithMeta[]> => {
     try {
@@ -185,42 +170,33 @@ export default function TimetableScreen() {
     }
   }, []);
 
-  const loadIcalMeta = useCallback(
-    async (): Promise<Record<string, ICalEventMeta>> => {
-      try {
-        const raw = await AsyncStorage.getItem(ICAL_EVENT_META_KEY);
-        if (!raw) return {};
-        return JSON.parse(raw);
-      } catch (e) {
-        console.warn("Failed to load iCal event meta:", e);
-        return {};
-      }
-    },
-    [],
-  );
+  const loadIcalMeta = useCallback(async (): Promise<Record<string, ICalEventMeta>> => {
+    try {
+      const raw = await AsyncStorage.getItem(ICAL_EVENT_META_KEY);
+      if (!raw) return {};
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn("Failed to load iCal event meta:", e);
+      return {};
+    }
+  }, []);
 
-  const saveIcalMeta = useCallback(
-    async (meta: Record<string, ICalEventMeta>) => {
-      try {
-        await AsyncStorage.setItem(ICAL_EVENT_META_KEY, JSON.stringify(meta));
-      } catch (e) {
-        console.warn("Failed to save iCal event meta:", e);
-      }
-    },
-    [],
-  );
+  const saveIcalMeta = useCallback(async (meta: Record<string, ICalEventMeta>) => {
+    try {
+      await AsyncStorage.setItem(ICAL_EVENT_META_KEY, JSON.stringify(meta));
+    } catch (e) {
+      console.warn("Failed to save iCal event meta:", e);
+    }
+  }, []);
 
   /* ------------------------------------------------------------------------ */
   /* iCal helpers                                                             */
   /* ------------------------------------------------------------------------ */
 
-  const makeIcalMetaKey = (subscriptionId: string, uid: string) =>
-    `${subscriptionId}::${uid}`;
+  const makeIcalMetaKey = (subscriptionId: string, uid: string) => `${subscriptionId}::${uid}`;
 
   function parseIcsDate(raw: string): string | null {
-    let m = raw.match(
-      /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/,
-    );
+    let m = raw.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
     if (m) {
       const [, y, mo, d, hh, mm, ss, z] = m;
       const year = Number(y);
@@ -256,11 +232,10 @@ export default function TimetableScreen() {
 
   function parseICS(ics: string): RawIcalEvent[] {
     const unfolded = ics.replace(/\r\n[ \t]/g, "");
-
     const parts = unfolded.split("BEGIN:VEVENT");
     parts.shift();
 
-    const events: RawIcalEvent[] = [];
+    const out: RawIcalEvent[] = [];
 
     for (const part of parts) {
       const endIdx = part.indexOf("END:VEVENT");
@@ -302,20 +277,13 @@ export default function TimetableScreen() {
       const endIso = parseIcsDate(dtendRaw);
       if (!startIso || !endIso) continue;
 
-      events.push({
-        uid,
-        summary: summary ?? "",
-        start: startIso,
-        end: endIso,
-      });
+      out.push({ uid, summary: summary ?? "", start: startIso, end: endIso });
     }
 
-    return events;
+    return out;
   }
 
-  async function fetchIcalEventsForSubscription(
-    sub: ICalSubscription,
-  ): Promise<RawIcalEvent[]> {
+  async function fetchIcalEventsForSubscription(sub: ICalSubscription): Promise<RawIcalEvent[]> {
     try {
       const res = await fetch(sub.url);
       if (!res.ok) {
@@ -334,7 +302,7 @@ export default function TimetableScreen() {
   /* Calendar DTO <-> Event mapping + server sync                             */
   /* ------------------------------------------------------------------------ */
 
-    function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
+  function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
     const fullTitle = entry.title;
     const titleAbbr = entry.title_short || makeTitleAbbr(fullTitle);
 
@@ -357,8 +325,7 @@ export default function TimetableScreen() {
     };
   }
 
-
-    function mapEventToDto(ev: EvWithMeta, userId: string): CalendarEntryDTO {
+  function mapEventToDto(ev: EvWithMeta, userId: string): CalendarEntryDTO {
     const fullTitle = ev.fullTitle || ev.title || "";
     const titleAbbr = ev.titleAbbr || makeTitleAbbr(fullTitle || "Untitled");
 
@@ -380,11 +347,7 @@ export default function TimetableScreen() {
     };
   }
 
-
-  async function syncLocalEventsToServer(
-    allEvents: EvWithMeta[],
-    userId: string,
-  ) {
+  async function syncLocalEventsToServer(allEvents: EvWithMeta[], userId: string) {
     const localEvents = allEvents.filter((e) => e.source === "local");
     const entries = localEvents.map((ev) => mapEventToDto(ev, userId));
     await saveCalendar({ entries });
@@ -401,7 +364,6 @@ export default function TimetableScreen() {
       const storedMeta = await loadIcalMeta();
       setIcalMeta(storedMeta);
 
-      // 1) Read canonical subscriptions from server (no local→server sync)
       const serverSubs = await getICalSubscriptions(userId);
       const normalizedSubs: ICalSubscription[] = serverSubs.map((s) => ({
         id: s.id,
@@ -412,17 +374,12 @@ export default function TimetableScreen() {
 
       await saveLocalICalSubscriptions(normalizedSubs);
 
-      // 2) Load all local events for user from server
       const serverCalendar = await getCalendarById(1);
-      const serverEntriesForUser = serverCalendar.entries.filter(
-        (e) => e.user_id === userId,
-      );
-      const serverLocalEvents: EvWithMeta[] =
-        serverEntriesForUser.map(mapDtoToEvent);
+      const serverEntriesForUser = serverCalendar.entries.filter((e) => e.user_id === userId);
+      const serverLocalEvents: EvWithMeta[] = serverEntriesForUser.map(mapDtoToEvent);
 
       await saveLocalEvents(serverLocalEvents);
 
-      // 3) Fetch ICS events
       let allIcalEvents: EvWithMeta[] = [];
 
       for (const sub of normalizedSubs) {
@@ -458,8 +415,7 @@ export default function TimetableScreen() {
         allIcalEvents = allIcalEvents.concat(mapped);
       }
 
-      const combined: EvWithMeta[] = [...allIcalEvents, ...serverLocalEvents];
-      setEvents(combined);
+      setEvents([...allIcalEvents, ...serverLocalEvents]);
     } catch (e) {
       console.warn("Failed to sync on timetable focus:", e);
       const storedLocalEvents = await loadLocalEvents();
@@ -467,22 +423,14 @@ export default function TimetableScreen() {
     } finally {
       setICalSyncing(false);
     }
-  }, [
-    loadIcalMeta,
-    saveLocalICalSubscriptions,
-    saveLocalEvents,
-    loadLocalEvents,
-    userId,
-  ]);
+  }, [loadIcalMeta, saveLocalICalSubscriptions, saveLocalEvents, loadLocalEvents, userId]);
 
-  // Run syncOnFocus whenever this screen comes into focus (e.g. after settings)
   useFocusEffect(
     useCallback(() => {
       syncOnFocus();
     }, [syncOnFocus]),
   );
 
-   // Re-sync calendar immediately when iCal links are changed in settings
   useEffect(() => {
     const unsubscribe = subscribeICalChanged(() => {
       syncOnFocus();
@@ -540,6 +488,7 @@ export default function TimetableScreen() {
       void syncLocalEventsToServer(updated, userId);
       return updated;
     });
+
     openEditorForEvent(newEvent);
   };
 
@@ -591,8 +540,7 @@ export default function TimetableScreen() {
           editingEvent.icalEventUid || editingEvent.id,
         );
 
-      const fullTitle =
-        editingEvent.fullTitle ?? editingEvent.title ?? "Untitled";
+      const fullTitle = editingEvent.fullTitle ?? editingEvent.title ?? "Untitled";
       const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
 
       const nextMeta: Record<string, ICalEventMeta> = {
@@ -628,8 +576,7 @@ export default function TimetableScreen() {
     }
 
     const fullTitle = editorForm.fullTitle || "Untitled";
-    const titleAbbr =
-      editorForm.titleAbbr || makeTitleAbbr(editorForm.fullTitle);
+    const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(editorForm.fullTitle);
 
     const updated: EvWithMeta = {
       ...editingEvent,
@@ -644,9 +591,7 @@ export default function TimetableScreen() {
     };
 
     setEvents((prev) => {
-      const updatedList = prev.map((e) =>
-        e.id === updated.id ? updated : e,
-      );
+      const updatedList = prev.map((e) => (e.id === updated.id ? updated : e));
       void saveLocalEvents(updatedList);
       void syncLocalEventsToServer(updatedList, userId);
       return updatedList;
@@ -655,10 +600,9 @@ export default function TimetableScreen() {
     closeEditor();
   };
 
-    const handleDeleteEvent = () => {
+  const handleDeleteEvent = () => {
     if (!editingEvent) return;
 
-    // iCal events cannot be deleted here – they come from the subscription.
     if (editingEvent.source === "ical") {
       closeEditor();
       return;
@@ -674,11 +618,7 @@ export default function TimetableScreen() {
     closeEditor();
   };
 
-
-  const handlePickerChange = (
-    event: DateTimePickerEvent,
-    date?: Date | undefined,
-  ) => {
+  const handlePickerChange = (event: DateTimePickerEvent, date?: Date | undefined) => {
     if (!editorForm || editingEvent?.source === "ical") return;
     if (!date) return;
 
@@ -690,18 +630,22 @@ export default function TimetableScreen() {
     }
   };
 
+  /* ------------------------------------------------------------------------ */
+  /* Week tracking                                                            */
+  /* ------------------------------------------------------------------------ */
+
   const baseMonday = useMemo(() => getMonday(new Date()), []);
-  const weekStart = useMemo(
-    () => addWeeks(baseMonday, weekOffset),
-    [baseMonday, weekOffset],
-  );
+  const weekStart = useMemo(() => addWeeks(baseMonday, weekOffset), [baseMonday, weekOffset]);
 
   useEffect(() => {
     const mondayIso = fmtYMD(weekStart);
     router.setParams({ currentMonday: mondayIso });
   }, [weekStart, router]);
 
-  const initialDate = fmtYMD(weekStart);
+  // ✅ CalendarKit: initialDate should be stable (set-once)
+  const initialDateRef = useRef<string>(fmtYMD(baseMonday));
+  const initialDate = initialDateRef.current;
+
   const minDate = fmtYMD(addWeeks(baseMonday, -52));
   const maxDate = fmtYMD(addWeeks(baseMonday, 52));
 
@@ -713,22 +657,11 @@ export default function TimetableScreen() {
 
   const desiredIntervalHeight = useMemo(() => {
     if (!calendarAreaH) return undefined;
-    const usableH = Math.max(
-      0,
-      calendarAreaH - headerBlockH - spaceFromTop - spaceFromBottom,
-    );
+    const usableH = Math.max(0, calendarAreaH - headerBlockH - spaceFromTop - spaceFromBottom);
     const totalMinutes = Math.max(1, endMinutes - startMinutes);
     const raw = (usableH / totalMinutes) * timeInterval;
     return PixelRatio.roundToNearestPixel(raw);
-  }, [
-    calendarAreaH,
-    headerBlockH,
-    startMinutes,
-    endMinutes,
-    timeInterval,
-    spaceFromTop,
-    spaceFromBottom,
-  ]);
+  }, [calendarAreaH, headerBlockH, startMinutes, endMinutes, timeInterval, spaceFromTop, spaceFromBottom]);
 
   useEffect(() => {
     if (desiredIntervalHeight && calendarRef.current?.zoom) {
@@ -736,19 +669,42 @@ export default function TimetableScreen() {
     }
   }, [desiredIntervalHeight]);
 
+  /* ------------------------------------------------------------------------ */
+  /* Jump to today (from double tap)                                          */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
-    if (jumpToToday === "1" || jumpToToday === "true") {
-      const today = new Date();
-      setWeekOffset(0);
-      calendarRef.current?.goToDate({
-        date: today,
-        animatedDate: true,
-        hourScroll: false,
-        animatedHour: true,
-      });
-      router.setParams({ jumpToToday: undefined });
-    }
-  }, [jumpToToday, router]);
+    if (!jumpToToday) return;
+
+    const today = new Date();
+
+    // block onDateChanged while the animation runs
+    suppressDateChangedRef.current = true;
+
+    // Jump the calendar view first
+    calendarRef.current?.goToDate({
+      date: today,
+      animatedDate: true,
+      hourScroll: false,
+      animatedHour: true,
+    });
+
+    // Update weekOffset AFTER animation settles
+    const targetMonday = getMonday(today);
+    const diffWeeks = Math.round(
+      (targetMonday.getTime() - baseMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
+
+    const t = setTimeout(() => {
+      setWeekOffset(diffWeeks);
+      suppressDateChangedRef.current = false;
+    }, 350);
+
+    // clear the param so it can be triggered again
+    router.setParams({ jumpToToday: undefined });
+
+    return () => clearTimeout(t);
+  }, [jumpToToday, router, baseMonday]);
 
   const renderDayItem = useCallback(
     ({ dateUnix }: { dateUnix: number }) => {
@@ -757,11 +713,7 @@ export default function TimetableScreen() {
       const dayNum = dayjs(date).format("D");
 
       return (
-        <Surface
-          mode="flat"
-          elevation={0}
-          style={{ alignItems: "center", backgroundColor: "transparent" }}
-        >
+        <Surface mode="flat" elevation={0} style={{ alignItems: "center", backgroundColor: "transparent" }}>
           <Text
             variant="labelSmall"
             style={{
@@ -820,13 +772,13 @@ export default function TimetableScreen() {
           theme={theme}
           onPressEvent={onPressEvent}
           onDateChanged={(iso) => {
+            if (suppressDateChangedRef.current) return;
+
             const d = new Date(iso);
             const monday = getMonday(d);
-            const diffWeeks =
-              Math.round(
-                (monday.getTime() - baseMonday.getTime()) /
-                  (7 * 24 * 60 * 60 * 1000),
-              );
+            const diffWeeks = Math.round(
+              (monday.getTime() - baseMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+            );
             setWeekOffset(diffWeeks);
           }}
         >
@@ -839,20 +791,14 @@ export default function TimetableScreen() {
             <CalendarHeader renderDayItem={renderDayItem} dayBarHeight={22} />
           </Surface>
 
-          <CalendarBody
-            renderCustomHorizontalLine={renderHourOnlyLine}
-            hourFormat="H"
-          />
+          <CalendarBody renderCustomHorizontalLine={renderHourOnlyLine} hourFormat="H" />
         </CalendarContainer>
       </View>
 
       {editingEvent && editorForm && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
           <Pressable
-            style={[
-              styles.scrim,
-              { backgroundColor: paper.colors.backdrop },
-            ]}
+            style={[styles.scrim, { backgroundColor: paper.colors.backdrop }]}
             onPress={closeEditor}
           />
 
@@ -879,9 +825,7 @@ export default function TimetableScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text variant="titleMedium" style={{ flex: 1 }}>
-                    {isIcalEditing
-                      ? "iCal-Event anzeigen"
-                      : "Event bearbeiten"}
+                    {isIcalEditing ? "iCal-Event anzeigen" : "Event bearbeiten"}
                   </Text>
                   <IconButton icon="close" onPress={closeEditor} />
                 </View>
@@ -889,8 +833,7 @@ export default function TimetableScreen() {
                 <Divider style={{ marginVertical: 8 }} />
 
                 <Text variant="labelSmall" style={styles.label}>
-                  Title
-                  {isIcalEditing && " (aus iCal, nicht änderbar)"}
+                  Title{isIcalEditing && " (aus iCal, nicht änderbar)"}
                 </Text>
                 <TextInput
                   mode="outlined"
@@ -916,9 +859,7 @@ export default function TimetableScreen() {
                 <Pressable
                   onPress={() => {
                     if (isIcalEditing) return;
-                    setActivePicker((prev) =>
-                      prev === "from" ? null : "from",
-                    );
+                    setActivePicker((prev) => (prev === "from" ? null : "from"));
                   }}
                 >
                   <TextInput
@@ -945,9 +886,7 @@ export default function TimetableScreen() {
                 <Pressable
                   onPress={() => {
                     if (isIcalEditing) return;
-                    setActivePicker((prev) =>
-                      prev === "until" ? null : "until",
-                    );
+                    setActivePicker((prev) => (prev === "until" ? null : "until"));
                   }}
                 >
                   <TextInput
@@ -991,21 +930,15 @@ export default function TimetableScreen() {
                         onPress={() => updateForm({ color: c })}
                         style={[
                           styles.colorDot,
-                          {
-                            backgroundColor: c,
-                            borderColor: paper.colors.outlineVariant,
-                          },
-                          selected && {
-                            borderWidth: 2,
-                            borderColor: paper.colors.primary,
-                          },
+                          { backgroundColor: c, borderColor: paper.colors.outlineVariant },
+                          selected && { borderWidth: 2, borderColor: paper.colors.primary },
                         ]}
                       />
                     );
                   })}
                 </View>
 
-                                <View
+                <View
                   style={{
                     flexDirection: "row",
                     justifyContent: "flex-end",
@@ -1013,12 +946,8 @@ export default function TimetableScreen() {
                     columnGap: 8,
                   }}
                 >
-                  {/* Delete button only for local (non-iCal) events */}
                   {editingEvent?.source === "local" && (
-                    <Button
-                      onPress={handleDeleteEvent}
-                      textColor={paper.colors.error}
-                    >
+                    <Button onPress={handleDeleteEvent} textColor={paper.colors.error}>
                       Löschen
                     </Button>
                   )}
@@ -1027,7 +956,6 @@ export default function TimetableScreen() {
                     Speichern
                   </Button>
                 </View>
-
               </ScrollView>
             </Surface>
           </KeyboardAvoidingView>
@@ -1069,13 +997,7 @@ function toDate(v: unknown): Date {
 
 const toISO = (v: DateOrDateTime | undefined) => toDate(v).toISOString();
 
-const renderHourOnlyLine = ({
-  index,
-  borderColor,
-}: {
-  index: number;
-  borderColor: string;
-}) => {
+const renderHourOnlyLine = ({ index, borderColor }: { index: number; borderColor: string }) => {
   if (!Number.isInteger(index)) return null;
   if (index === 0) return null;
   if (index === MAX_H - MIN_H) return null;
