@@ -1,14 +1,17 @@
 // app/(app)/_layout.tsx
 import React from "react";
+import { View } from "react-native";
 import { Drawer } from "expo-router/drawer";
 import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function AppDrawerContent(props: any) {
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const go = (path: string) => {
     props.navigation.closeDrawer();
@@ -16,43 +19,56 @@ function AppDrawerContent(props: any) {
   };
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
-      {/* You can style this the same way you did before (header, logo, etc.) */}
+    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors.surface }}>
+      <DrawerContentScrollView
+        {...props}
+        contentContainerStyle={{
+          paddingTop: 0, // IMPORTANT: we handle top padding via insets.top
+        }}
+      >
+        <DrawerItem
+          label="Profil"
+          labelStyle={{ color: theme.colors.onSurface }}
+          icon={({ size }) => (
+            <Ionicons name="person-outline" size={size} color={theme.colors.onSurface} />
+          )}
+          onPress={() => go("/(app)/(stack)/profile")}
+        />
+        <DrawerItem
+          label="To-Dos"
+          labelStyle={{ color: theme.colors.onSurface }}
+          icon={({ size }) => (
+            <Ionicons name="checkbox-outline" size={size} color={theme.colors.onSurface} />
+          )}
+          onPress={() => go("/(app)/(stack)/todos")}
+        />
+        <DrawerItem
+          label="Freunde"
+          labelStyle={{ color: theme.colors.onSurface }}
+          icon={({ size }) => (
+            <Ionicons name="people-outline" size={size} color={theme.colors.onSurface} />
+          )}
+          onPress={() => go("/(app)/(stack)/friends")}
+        />
+        <DrawerItem
+          label="Einstellungen"
+          labelStyle={{ color: theme.colors.onSurface }}
+          icon={({ size }) => (
+            <Ionicons name="settings-outline" size={size} color={theme.colors.onSurface} />
+          )}
+          onPress={() => go("/(app)/(stack)/global_settings")}
+        />
 
-      {/* Main stack is tabs, so drawer items push stack screens */}
-      <DrawerItem
-        label="Profil"
-        labelStyle={{ color: theme.colors.onSurface }}
-        icon={({ size }) => <Ionicons name="person-outline" size={size} color={theme.colors.onSurface} />}
-        onPress={() => go("/(app)/(stack)/profile")}
-      />
-      <DrawerItem
-        label="To-Dos"
-        labelStyle={{ color: theme.colors.onSurface }}
-        icon={({ size }) => <Ionicons name="checkbox-outline" size={size} color={theme.colors.onSurface} />}
-        onPress={() => go("/(app)/(stack)/todos")}
-      />
-      <DrawerItem
-        label="Freunde"
-        labelStyle={{ color: theme.colors.onSurface }}
-        icon={({ size }) => <Ionicons name="people-outline" size={size} color={theme.colors.onSurface} />}
-        onPress={() => go("/(app)/(stack)/friends")}
-      />
-      <DrawerItem
-        label="Einstellungen"
-        labelStyle={{ color: theme.colors.onSurface }}
-        icon={({ size }) => <Ionicons name="settings-outline" size={size} color={theme.colors.onSurface} />}
-        onPress={() => go("/(app)/(stack)/global_settings")}
-      />
-
-      {/* Optional */}
-      <DrawerItem
-        label="Logout"
-        labelStyle={{ color: theme.colors.onSurface }}
-        icon={({ size }) => <Ionicons name="log-out-outline" size={size} color={theme.colors.onSurface} />}
-        onPress={() => go("/(app)/(stack)/logout")}
-      />
-    </DrawerContentScrollView>
+        <DrawerItem
+          label="Logout"
+          labelStyle={{ color: theme.colors.onSurface }}
+          icon={({ size }) => (
+            <Ionicons name="log-out-outline" size={size} color={theme.colors.onSurface} />
+          )}
+          onPress={() => go("/(app)/(stack)/logout")}
+        />
+      </DrawerContentScrollView>
+    </View>
   );
 }
 
@@ -63,19 +79,13 @@ export default function AppDrawerLayout() {
     <Drawer
       drawerContent={(props) => <AppDrawerContent {...props} />}
       screenOptions={{
-        headerShown: false, // important: Stack controls header now
+        headerShown: false,
         drawerStyle: { backgroundColor: theme.colors.surface },
         drawerActiveTintColor: theme.colors.primary,
         drawerInactiveTintColor: theme.colors.onSurfaceVariant,
       }}
     >
-      {/* Single screen: the real app lives in the stack */}
-      <Drawer.Screen
-        name="(stack)"
-        options={{
-          title: "App",
-        }}
-      />
+      <Drawer.Screen name="(stack)" options={{ title: "App" }} />
     </Drawer>
   );
 }
