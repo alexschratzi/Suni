@@ -18,7 +18,7 @@ export default function RootLayout() {
   const [profileReady, setProfileReady] = useState(false);
 
   const inAuthGroup = segments[0] === "(auth)";
-  const inDrawerGroup = segments[0] === "(drawer)";
+  const inAppGroup = segments[0] === "(app)";
 
   const loadProfileReady = async (userId: string) => {
     const { data: prof, error } = await supabase
@@ -105,10 +105,10 @@ export default function RootLayout() {
 
     // Logged in and ready -> go to home
     if (sessionUserId && profileReady) {
-      if (!inDrawerGroup) router.replace("/(drawer)/(tabs)/timetable");
+      if (!inAppGroup) router.replace("/(app)/(tabs)/timetable");
       return;
     }
-  }, [ready, sessionUserId, profileReady, inAuthGroup, inDrawerGroup, router]);
+  }, [ready, sessionUserId, profileReady, inAuthGroup, inAppGroup, router]);
 
   if (!ready) {
     return (

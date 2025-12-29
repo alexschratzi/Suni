@@ -6,9 +6,8 @@ import {
     Pressable,
     ScrollView,
     StyleSheet,
-    View,
 } from "react-native";
-import { Button, Card, Text } from "react-native-paper";
+import { Button, Card, Text, useTheme, Surface } from "react-native-paper";
 import EmbeddedBrowser from "../../screens/EmbeddedBrowser";
 import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
@@ -21,11 +20,7 @@ import {
 import { useResetOnboarding } from "./useResetOnboarding";
 import CookieManager from "@react-native-cookies/cookies";
 
-import {
-    CookieJsonRecord,
-    scrapeStudentProfile,
-} from "../../src/server/uniScraper"; // adjust relative path as needed#
-import { router } from "expo-router";
+import { CookieJsonRecord, scrapeStudentProfile } from "../../src/server/uniScraper";
 
 type Props = {
   onOpenGrades?: () => void;
@@ -33,6 +28,7 @@ type Props = {
 
 export default function LinkHub({ onOpenGrades }: Props) {
     const { university } = useUniversity();
+    const theme = useTheme();
     const [browserUrl, setBrowserUrl] = React.useState<string | null>(null);
     const [links, setLinks] = React.useState<LinkItem[]>([]);
     const [loading, setLoading] = React.useState(false);
@@ -171,16 +167,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
         [relevantName]
     );
 
-    const prettyJson = (txt: string | null) => {
-        if (!txt) return "";
-        try {
-            return JSON.stringify(JSON.parse(txt), null, 2);
-        } catch {
-            return txt; // fallback
-        }
-    };
-
-
     const handleStartScraping = React.useCallback(async () => {
         if (!university && !uniCfg?.uniId) return;
 
@@ -239,15 +225,15 @@ export default function LinkHub({ onOpenGrades }: Props) {
     }, [collectCookies, buildCookiesJson, cookieDomains]);
 
     return (
-        <View style={styles.root}>
+        <Surface style={styles.root}>
             <Header title={`${university?.name ?? "Uni"}:`} />
 
             {/* main content */}
             {loading ? (
-                <View style={{ padding: 16 }}>
+                <Surface style={{ padding: 16 }}>
                     <ActivityIndicator />
                     <Text style={{ marginTop: 8 }}>Lade Links…</Text>
-                </View>
+                </Surface>
             ) : error ? (
                 <Card style={{ margin: 12, padding: 16 }}>
                     <Text>Fehler beim Laden der Links.</Text>
@@ -265,9 +251,9 @@ export default function LinkHub({ onOpenGrades }: Props) {
                             onPress={() => setBrowserUrl(item.url)}
                             style={styles.tilePressable}
                         >
-                            <View style={styles.tile}>
+                            <Surface style={styles.tile}>
                                 <Text style={styles.tileText}>{item.title}</Text>
-                            </View>
+                            </Surface>
                         </Pressable>
                     )}
                     ListEmptyComponent={
@@ -276,7 +262,7 @@ export default function LinkHub({ onOpenGrades }: Props) {
                         </Card>
                     }
                     ListFooterComponent={
-                        <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                        <Surface style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
                             <Button
                                 mode="outlined"
                                 style={{ marginBottom: 10 }}
@@ -302,7 +288,7 @@ export default function LinkHub({ onOpenGrades }: Props) {
                             </Button>
 
                             {/* NEW: scrollable response view */}
-                            <View style={styles.scrapeBox}>
+                            <Surface style={styles.scrapeBox}>
                                 <ScrollView>
                                     <ScrollView horizontal>
                                         <Text
@@ -313,10 +299,9 @@ export default function LinkHub({ onOpenGrades }: Props) {
                                         </Text>
                                     </ScrollView>
                                 </ScrollView>
-                            </View>
-                        </View>
+                            </Surface>
+                        </Surface>
                     }
-
                 />
             )}
 
@@ -338,7 +323,7 @@ export default function LinkHub({ onOpenGrades }: Props) {
                 mode="text"
                 compact
                 style={{ margin: 12 }}
-                textColor="#d32f2f"
+                textColor={theme.colors.error}
                 onPress={async () => {
                     setBrowserUrl(null);
                     setLinks([]);
@@ -350,7 +335,7 @@ export default function LinkHub({ onOpenGrades }: Props) {
             >
                 Logout
             </Button>
-        </View>
+        </Surface>
     );
 }
 

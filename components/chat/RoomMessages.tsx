@@ -104,7 +104,7 @@ export default function RoomMessages(props: Props) {
 
   const openThread = (message: Message) => {
     router.push({
-      pathname: "/(drawer)/reply",
+      pathname: "/(app)/reply",
       params: {
         room,
         messageId: message.id,

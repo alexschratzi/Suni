@@ -88,7 +88,7 @@ export default function DirectList({ directs, router, onToggleHidden, accentColo
             )}
             onPress={() => {
               router.push({
-                pathname: "/(drawer)/reply",
+                pathname: "/(app)/reply",
                 params: { dmId: item.id },
               });
             }}

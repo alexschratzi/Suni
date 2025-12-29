@@ -1,4 +1,4 @@
-// app/(drawer)/friendRequests.tsx
+// app/(app)/friendRequests.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import {

@@ -1,4 +1,4 @@
-// app/(drawer)/addFriends.tsx
+// app/(app)/addFriends.tsx
 import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import { Text, TextInput, Button, useTheme, Snackbar, List } from "react-native-paper";

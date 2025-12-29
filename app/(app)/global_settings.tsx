@@ -1,4 +1,4 @@
-// app/(drawer)/global_settings.tsx
+// app/(app)/global_settings.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {

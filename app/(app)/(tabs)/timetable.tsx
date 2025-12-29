@@ -1,4 +1,4 @@
-// app/(drawer)/(tabs)/timetable.tsx
+// app/(app)/(tabs)/timetable.tsx
 import { subscribeICalChanged } from "@/src/utils/calendarSyncEvents";
 import React, {
   useCallback,

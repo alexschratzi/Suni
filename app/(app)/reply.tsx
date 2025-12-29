@@ -1,4 +1,4 @@
-// app/(drawer)/reply.tsx
+// app/(app)/reply.tsx
 import { useEffect, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { Text, TextInput, Button, Surface, useTheme, IconButton } from "react-native-paper";

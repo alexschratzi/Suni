@@ -1,4 +1,4 @@
-// app/(drawer)/friends.tsx
+// app/(app)/friends.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {

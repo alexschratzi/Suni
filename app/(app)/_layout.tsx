@@ -1,3 +1,4 @@
+// app/(app)/_layout.tsx
 import React, { useEffect, useState } from "react";
 import { Pressable } from "react-native";
 import { Drawer } from "expo-router/drawer";
