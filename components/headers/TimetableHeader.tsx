@@ -1,35 +1,55 @@
 // app/(app)/(stack)/headers/timetable.tsx
-import React, { useMemo, useState } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
-import {
-  Button,
-  Portal,
-  Surface,
-  Text,
-  useTheme,
-} from "react-native-paper";
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Pressable, StyleSheet, DeviceEventEmitter } from "react-native";
+import { Button, Portal, Surface, Text, useTheme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useGlobalSearchParams } from "expo-router";
+import { useRouter } from "expo-router";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 
 dayjs.locale("de");
 
-// 🔹 TITLE COMPONENT: shows the month name for the current Monday
+const TIMETABLE_HEADER_EVENT = "timetable:currentMonday";
+
+function getMonday(d: Date) {
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const m = new Date(d);
+  m.setDate(m.getDate() + diff);
+  m.setHours(0, 0, 0, 0);
+  return m;
+}
+const fmtYMD = (d: Date) => dayjs(d).format("YYYY-MM-DD");
+
+// 🔹 TITLE COMPONENT: shows the month + year for the current Monday
 export function TimetableHeaderTitle() {
   const theme = useTheme();
-  const { currentMonday } = useGlobalSearchParams<{ currentMonday?: string }>();
+
+  // ✅ Initialize immediately so cold start shows month/year
+  const [currentMonday, setCurrentMonday] = useState<string>(() =>
+    fmtYMD(getMonday(new Date())),
+  );
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      TIMETABLE_HEADER_EVENT,
+      (mondayIso?: string) => {
+        if (typeof mondayIso === "string" && mondayIso.length > 0) {
+          setCurrentMonday(mondayIso);
+        }
+      },
+    );
+
+    return () => sub.remove();
+  }, []);
 
   const title = useMemo(() => {
-    if (!currentMonday) return "Amadeus";
-    return dayjs(currentMonday).format("MMMM"); // e.g. "Jänner"
+    // e.g. "Jänner 2026"
+    return dayjs(currentMonday).format("MMMM YYYY");
   }, [currentMonday]);
 
   return (
-    <Text
-      variant="titleMedium"
-      style={{ color: theme.colors.onSurface }}
-    >
+    <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
       {title}
     </Text>
   );
@@ -76,23 +96,12 @@ export function TimetableHeaderRight() {
 
       <Portal>
         {menuVisible && (
-          <View
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="box-none"
-          >
-            {/* Scrim */}
-            <Pressable
-              style={styles.scrim}
-              onPress={closeMenu}
-            />
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+            <Pressable style={styles.scrim} onPress={closeMenu} />
 
-            {/* Bottom sheet */}
             <Surface
               elevation={3}
-              style={[
-                styles.sheet,
-                { backgroundColor: theme.colors.surface },
-              ]}
+              style={[styles.sheet, { backgroundColor: theme.colors.surface }]}
             >
               <Text
                 variant="titleMedium"

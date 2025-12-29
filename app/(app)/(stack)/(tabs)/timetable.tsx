@@ -2,6 +2,7 @@
 import { subscribeICalChanged } from "@/src/utils/calendarSyncEvents";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DeviceEventEmitter,
   PixelRatio,
   StyleSheet,
   View,
@@ -55,6 +56,11 @@ const SNAP_TO_MINUTE = 60;
 const DEFAULT_EVENT_DURATION_MIN = 60;
 const MIN_H = 7;
 const MAX_H = 24;
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// ✅ Header event bus (fast, no nav params)
+const TIMETABLE_HEADER_EVENT = "timetable:currentMonday";
 
 type EventEditorForm = {
   fullTitle: string;
@@ -125,8 +131,15 @@ export default function TimetableScreen() {
 
   const calendarRef = useRef<CalendarKitHandle>(null);
 
-  // ✅ Prevent onDateChanged from spamming state updates during animated jumps
+  // Prevent onDateChanged during animated jumps (e.g. double tap)
   const suppressDateChangedRef = useRef(false);
+
+  // Debounce weekOffset updates (this is not for header anymore)
+  const weekOffsetDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 🔒 Jump lock (prevents header being overwritten during goToDate animations)
+  const pendingJumpMondayIsoRef = useRef<string | null>(null);
+  const jumpUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
@@ -137,6 +150,28 @@ export default function TimetableScreen() {
   const [icalMeta, setIcalMeta] = useState<Record<string, ICalEventMeta>>({});
 
   const userId = "1234"; // TODO: real auth
+
+  // ✅ Fast header update function (defined early)
+  const emitCurrentMonday = useCallback((mondayIso: string) => {
+    DeviceEventEmitter.emit(TIMETABLE_HEADER_EVENT, mondayIso);
+  }, []);
+
+  const clearJumpLock = useCallback(() => {
+    suppressDateChangedRef.current = false;
+    pendingJumpMondayIsoRef.current = null;
+
+    if (jumpUnlockTimeoutRef.current) {
+      clearTimeout(jumpUnlockTimeoutRef.current);
+      jumpUnlockTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
+      clearJumpLock();
+    };
+  }, [clearJumpLock]);
 
   /* ------------------------------------------------------------------------ */
   /* Storage helpers                                                          */
@@ -306,9 +341,9 @@ export default function TimetableScreen() {
     const fullTitle = entry.title;
     const titleAbbr = entry.title_short || makeTitleAbbr(fullTitle);
 
-    const start = new Date(entry.date);
+    const start = new Date(entry.date as any);
     const end = entry.end_date
-      ? new Date(entry.end_date)
+      ? new Date(entry.end_date as any)
       : new Date(start.getTime() + DEFAULT_EVENT_DURATION_MIN * 60000);
 
     return {
@@ -337,11 +372,11 @@ export default function TimetableScreen() {
 
     return {
       id: ev.id,
-      user_id: userId,
+      user_id: userId as any,
       title: fullTitle || titleAbbr,
       title_short: titleAbbr,
-      date: startDate,
-      end_date: endDate,
+      date: startDate as any,
+      end_date: endDate as any,
       note: ev.note,
       color: ev.color,
     };
@@ -350,7 +385,7 @@ export default function TimetableScreen() {
   async function syncLocalEventsToServer(allEvents: EvWithMeta[], userId: string) {
     const localEvents = allEvents.filter((e) => e.source === "local");
     const entries = localEvents.map((ev) => mapEventToDto(ev, userId));
-    await saveCalendar({ entries });
+    await saveCalendar({ entries } as any);
   }
 
   /* ------------------------------------------------------------------------ */
@@ -364,8 +399,8 @@ export default function TimetableScreen() {
       const storedMeta = await loadIcalMeta();
       setIcalMeta(storedMeta);
 
-      const serverSubs = await getICalSubscriptions(userId);
-      const normalizedSubs: ICalSubscription[] = serverSubs.map((s) => ({
+      const serverSubs = await getICalSubscriptions(userId as any);
+      const normalizedSubs: ICalSubscription[] = serverSubs.map((s: any) => ({
         id: s.id,
         name: s.name,
         url: s.url,
@@ -374,8 +409,8 @@ export default function TimetableScreen() {
 
       await saveLocalICalSubscriptions(normalizedSubs);
 
-      const serverCalendar = await getCalendarById(1);
-      const serverEntriesForUser = serverCalendar.entries.filter((e) => e.user_id === userId);
+      const serverCalendar = await getCalendarById(1 as any);
+      const serverEntriesForUser = (serverCalendar.entries as any[]).filter((e) => e.user_id === userId);
       const serverLocalEvents: EvWithMeta[] = serverEntriesForUser.map(mapDtoToEvent);
 
       await saveLocalEvents(serverLocalEvents);
@@ -437,6 +472,13 @@ export default function TimetableScreen() {
     });
     return unsubscribe;
   }, [syncOnFocus]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Header: initialize immediately on mount                                  */
+  /* ------------------------------------------------------------------------ */
+  useEffect(() => {
+    emitCurrentMonday(fmtYMD(getMonday(new Date())));
+  }, [emitCurrentMonday]);
 
   /* ------------------------------------------------------------------------ */
   /* Existing timetable logic                                                 */
@@ -623,11 +665,8 @@ export default function TimetableScreen() {
     if (!date) return;
 
     const iso = date.toISOString();
-    if (activePicker === "from") {
-      updateForm({ from: iso });
-    } else if (activePicker === "until") {
-      updateForm({ until: iso });
-    }
+    if (activePicker === "from") updateForm({ from: iso });
+    else if (activePicker === "until") updateForm({ until: iso });
   };
 
   /* ------------------------------------------------------------------------ */
@@ -637,12 +676,7 @@ export default function TimetableScreen() {
   const baseMonday = useMemo(() => getMonday(new Date()), []);
   const weekStart = useMemo(() => addWeeks(baseMonday, weekOffset), [baseMonday, weekOffset]);
 
-  useEffect(() => {
-    const mondayIso = fmtYMD(weekStart);
-    router.setParams({ currentMonday: mondayIso });
-  }, [weekStart, router]);
-
-  // ✅ CalendarKit: initialDate should be stable (set-once)
+  // CalendarKit: initialDate should be stable (mount only)
   const initialDateRef = useRef<string>(fmtYMD(baseMonday));
   const initialDate = initialDateRef.current;
 
@@ -670,18 +704,32 @@ export default function TimetableScreen() {
   }, [desiredIntervalHeight]);
 
   /* ------------------------------------------------------------------------ */
-  /* Jump to today (from double tap)                                          */
+  /* Jump to today (from tab double tap)                                      */
   /* ------------------------------------------------------------------------ */
-
   useEffect(() => {
     if (!jumpToToday) return;
 
     const today = new Date();
+    const mondayIso = fmtYMD(getMonday(today));
 
-    // block onDateChanged while the animation runs
+    // 🔒 lock header during jump animation
+    pendingJumpMondayIsoRef.current = mondayIso;
     suppressDateChangedRef.current = true;
 
-    // Jump the calendar view first
+    // update header immediately
+    emitCurrentMonday(mondayIso);
+
+    // stop pending debounce
+    if (weekOffsetDebounceRef.current) {
+      clearTimeout(weekOffsetDebounceRef.current);
+      weekOffsetDebounceRef.current = null;
+    }
+
+    // keep weekOffset consistent
+    const diffWeeks = Math.round((getMonday(today).getTime() - baseMonday.getTime()) / WEEK_MS);
+    setWeekOffset(diffWeeks);
+
+    // do jump
     calendarRef.current?.goToDate({
       date: today,
       animatedDate: true,
@@ -689,22 +737,20 @@ export default function TimetableScreen() {
       animatedHour: true,
     });
 
-    // Update weekOffset AFTER animation settles
-    const targetMonday = getMonday(today);
-    const diffWeeks = Math.round(
-      (targetMonday.getTime() - baseMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
-    );
+    // ✅ FAILSAFE: always unlock even if callbacks don't fire
+    if (jumpUnlockTimeoutRef.current) clearTimeout(jumpUnlockTimeoutRef.current);
+    jumpUnlockTimeoutRef.current = setTimeout(() => {
+      emitCurrentMonday(mondayIso);
+      clearJumpLock();
+    }, 550);
 
-    const t = setTimeout(() => {
-      setWeekOffset(diffWeeks);
-      suppressDateChangedRef.current = false;
-    }, 350);
-
-    // clear the param so it can be triggered again
     router.setParams({ jumpToToday: undefined });
 
-    return () => clearTimeout(t);
-  }, [jumpToToday, router, baseMonday]);
+    return () => {
+      emitCurrentMonday(mondayIso);
+      clearJumpLock();
+    };
+  }, [jumpToToday, baseMonday, emitCurrentMonday, router, clearJumpLock]);
 
   const renderDayItem = useCallback(
     ({ dateUnix }: { dateUnix: number }) => {
@@ -713,7 +759,11 @@ export default function TimetableScreen() {
       const dayNum = dayjs(date).format("D");
 
       return (
-        <Surface mode="flat" elevation={0} style={{ alignItems: "center", backgroundColor: "transparent" }}>
+        <Surface
+          mode="flat"
+          elevation={0}
+          style={{ alignItems: "center", backgroundColor: "transparent" }}
+        >
           <Text
             variant="labelSmall"
             style={{
@@ -768,18 +818,36 @@ export default function TimetableScreen() {
           useHaptic={true}
           enableResourceScroll={false}
           onDragCreateEventEnd={onCreate}
-          events={events}
+          events={events} // ✅ do NOT filter by week; needed to show events while swiping
           theme={theme}
+          pagesPerSide={5}
           onPressEvent={onPressEvent}
           onDateChanged={(iso) => {
-            if (suppressDateChangedRef.current) return;
-
             const d = new Date(iso);
-            const monday = getMonday(d);
-            const diffWeeks = Math.round(
-              (monday.getTime() - baseMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
-            );
-            setWeekOffset(diffWeeks);
+            const mondayIso = fmtYMD(getMonday(d));
+
+            const pending = pendingJumpMondayIsoRef.current;
+
+            // self-heal: if suppressed but no pending, unlock
+            if (suppressDateChangedRef.current && !pending) {
+              suppressDateChangedRef.current = false;
+            }
+
+            // during jump: only accept target monday
+            if (suppressDateChangedRef.current) {
+              if (pending && mondayIso === pending) {
+                emitCurrentMonday(mondayIso);
+              }
+              return;
+            }
+
+            // normal: update header
+            emitCurrentMonday(mondayIso);
+
+            // optional: keep weekOffset for internal logic
+            const diffWeeks = Math.round((getMonday(d).getTime() - baseMonday.getTime()) / WEEK_MS);
+            if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
+            weekOffsetDebounceRef.current = setTimeout(() => setWeekOffset(diffWeeks), 50);
           }}
         >
           <Surface
@@ -1017,9 +1085,7 @@ function makeTitleAbbr(title: string): string {
   const trimmed = title.trim();
   if (!trimmed) return "";
   const words = trimmed.split(/\s+/);
-  return words
-    .map((w) => w.charAt(0))
-    .join("");
+  return words.map((w) => w.charAt(0)).join("");
 }
 
 function formatDateTimeIso(iso: string): string {
