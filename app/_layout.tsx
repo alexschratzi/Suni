@@ -9,16 +9,21 @@ import { supabase } from "../src/lib/supabase";
 
 type ProfileCheck = { id: string; username: string | null };
 
+const APP_HOME = "/(app)/(stack)/(tabs)/timetable";
+const AUTH_HOME = "/(auth)";
+
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
   const [ready, setReady] = useState(false);
-  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
-  const [profileReady, setProfileReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  // Only needed to decide whether authed users are allowed to stay in /(auth)
+  const [profileReady, setProfileReady] = useState<boolean>(false);
+  const [profileChecked, setProfileChecked] = useState<boolean>(false);
 
   const inAuthGroup = segments[0] === "(auth)";
-  const inAppGroup = segments[0] === "(app)";
 
   const loadProfileReady = async (userId: string) => {
     const { data: prof, error } = await supabase
@@ -42,42 +47,51 @@ export default function RootLayout() {
     const init = async () => {
       setReady(false);
 
-      const { data } = await supabase.auth.getSession();
-      const userId = data.session?.user?.id ?? null;
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.warn("getSession error:", error.message);
 
       if (cancelled) return;
 
-      setSessionUserId(userId);
+      const userId = data.session?.user?.id ?? null;
+      const isAuthed = !!userId;
+
+      setAuthed(isAuthed);
 
       if (!userId) {
         setProfileReady(false);
+        setProfileChecked(true);
         setReady(true);
         return;
       }
 
+      // Preload profile readiness once on boot (helps avoid flicker)
       const ok = await loadProfileReady(userId);
       if (cancelled) return;
+
       setProfileReady(ok);
+      setProfileChecked(true);
       setReady(true);
     };
 
     init();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setReady(false);
-
       const userId = session?.user?.id ?? null;
-      setSessionUserId(userId);
+      const isAuthed = !!userId;
+
+      setAuthed(isAuthed);
 
       if (!userId) {
         setProfileReady(false);
-        setReady(true);
+        setProfileChecked(true);
         return;
       }
 
+      // Re-check when session changes (login/logout)
+      setProfileChecked(false);
       const ok = await loadProfileReady(userId);
       setProfileReady(ok);
-      setReady(true);
+      setProfileChecked(true);
     });
 
     return () => {
@@ -86,28 +100,32 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Routing decisions
+  // Routing decisions:
+  // 1) unauthenticated -> must be in /(auth)
+  // 2) authenticated -> allowed in /(auth) ONLY if onboarding (no username yet)
+  // 3) authenticated + profileReady -> should not be in /(auth)
   useEffect(() => {
     if (!ready) return;
 
-    // Not logged in -> go to auth
-    if (!sessionUserId) {
-      if (!inAuthGroup) router.replace("/(auth)");
+    if (!authed) {
+      if (!inAuthGroup) router.replace(AUTH_HOME);
       return;
     }
 
-    // Logged in but profile incomplete -> keep in auth (username step)
-    if (sessionUserId && !profileReady) {
-      if (!inAuthGroup) router.replace("/(auth)");
+    // authed
+    // If user is in auth, only kick them out if their profile is ready.
+    if (inAuthGroup) {
+      if (!profileChecked) return; // wait until we know if username exists
+
+      if (profileReady) {
+        router.replace(APP_HOME);
+      }
+      // else: stay in auth to choose username
       return;
     }
 
-    // Logged in and ready -> go to home
-    if (sessionUserId && profileReady) {
-      if (!inAppGroup) router.replace("/(app)/(stack)/(tabs)/timetable");
-      return;
-    }
-  }, [ready, sessionUserId, profileReady, inAuthGroup, inAppGroup, router]);
+    // Outside auth group, do nothing. (No auto-routing to app.)
+  }, [ready, authed, inAuthGroup, profileChecked, profileReady, router]);
 
   if (!ready) {
     return (

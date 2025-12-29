@@ -37,9 +37,17 @@ export default function LoginScreen() {
     [theme.colors.onSurface, theme.colors.surface]
   );
 
+  const cleanEmail = (v: string) => v.trim().toLowerCase();
+  const isOehEmail = (v: string) => cleanEmail(v).endsWith("@oeh.at");
+  const computeRole = (v: string) => (isOehEmail(v) ? "oeh" : "student");
+
+  const goHome = () => {
+    // IMPORTANT: absolute path (stable)
+    router.replace("/(app)/(stack)/(tabs)/timetable");
+  };
+
   const verifyEmailOtpWithFallback = async (email: string, token: string) => {
     const types = ["email", "magiclink", "signup"] as const;
-
     let lastError: any = null;
 
     for (const type of types) {
@@ -54,14 +62,6 @@ export default function LoginScreen() {
     }
 
     throw lastError;
-  };
-
-  const cleanEmail = (v: string) => v.trim().toLowerCase();
-  const isOehEmail = (v: string) => cleanEmail(v).endsWith("@oeh.at");
-  const computeRole = (v: string) => (isOehEmail(v) ? "oeh" : "student");
-
-  const goHome = () => {
-    router.replace("../(app)/(stack)/(tabs)/timetable");
   };
 
   const sendOtp = async () => {
@@ -116,6 +116,7 @@ export default function LoginScreen() {
         return;
       }
 
+      // Decide if we need username onboarding
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("id, username, role")
@@ -124,7 +125,7 @@ export default function LoginScreen() {
 
       if (profErr) throw profErr;
 
-      if (!prof || !prof.username || prof.username.trim().length === 0) {
+      if (!prof?.username || prof.username.trim().length === 0) {
         setStep("username");
         return;
       }
@@ -154,6 +155,7 @@ export default function LoginScreen() {
         return;
       }
 
+      // Confirm authenticated user exists (OTP step created session)
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr) throw userErr;
 

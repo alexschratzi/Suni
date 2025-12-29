@@ -8,7 +8,7 @@ export default function LogoutScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    let alive = true;
+    let cancelled = false;
 
     (async () => {
       try {
@@ -16,12 +16,14 @@ export default function LogoutScreen() {
       } catch (err) {
         console.warn("Logout failed:", err);
       } finally {
-        if (alive) router.replace("/(auth)");
+        // With the new root guard, unauthenticated users will be forced into /(auth) anyway.
+        // Still, doing it explicitly avoids any momentary "stuck" feeling.
+        if (!cancelled) router.replace("/(auth)");
       }
     })();
 
     return () => {
-      alive = false;
+      cancelled = true;
     };
   }, [router]);
 
