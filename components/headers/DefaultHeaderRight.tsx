@@ -9,7 +9,7 @@ export default function DefaultHeaderRight() {
   const router = useRouter();
 
   const goToGlobalSettings = () => {
-    router.push("/(drawer)/global_settings");
+    router.push("/(app)/global_settings");
   };
 
   return (

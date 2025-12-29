@@ -46,17 +46,17 @@ export function TimetableHeaderRight() {
 
   const goToCalendarSettings = () => {
     closeMenu();
-    router.push("/(drawer)/settings/timetable");
+    router.push("/(app)/settings/timetable");
   };
 
   const goToGeneralSettings = () => {
     closeMenu();
-    router.push("/(drawer)/global_settings");
+    router.push("/(app)/global_settings");
   };
 
   const goToProfile = () => {
     closeMenu();
-    router.push("/(drawer)/profile");
+    router.push("/(app)/profile");
   };
 
   return (

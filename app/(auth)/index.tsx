@@ -62,7 +62,7 @@ export default function LoginScreen() {
   const computeRole = (v: string) => (isOehEmail(v) ? "oeh" : "student");
 
   const goHome = () => {
-    router.replace("/(drawer)/(tabs)/timetable");
+    router.replace("/(app)/(tabs)/timetable");
   };
 
   const sendOtp = async () => {

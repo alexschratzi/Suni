@@ -37,7 +37,7 @@ export default function DirectList({ directs, router, onToggleHidden, accentColo
         compact
         icon="account-multiple"
         style={{ alignSelf: "flex-start", marginHorizontal: 12, marginVertical: 10 }}
-        onPress={() => router.push("/(drawer)/friends")}
+        onPress={() => router.push("/(app)/friends")}
       >
         {t("chat.direct.showRequests")}
       </Button>

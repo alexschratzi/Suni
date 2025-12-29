@@ -337,7 +337,7 @@ export default function FriendsScreen() {
             mode="text"
             compact
             icon="account-circle"
-            onPress={() => router.push("/(drawer)/profile")}
+            onPress={() => router.push("/(app)/profile")}
           >
             {t("profile.title", "Profil")}
           </Button>
