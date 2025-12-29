@@ -1,61 +1,81 @@
 // app/(app)/_layout.tsx
 import React from "react";
-import { Stack, useSegments } from "expo-router";
-import { Text, useTheme } from "react-native-paper";
+import { Drawer } from "expo-router/drawer";
+import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "react-native-paper";
 
-import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
-import { TimetableHeaderTitle, TimetableHeaderRight } from "@/components/headers/TimetableHeader";
-
-export default function AppLayout() {
+function AppDrawerContent(props: any) {
+  const router = useRouter();
   const theme = useTheme();
-  const segments = useSegments();
 
-  // Determine active tab from segments
-  const lastSegment = (segments[segments.length - 1] ?? "") as string;
-  const currentTab =
-    (["news", "uni", "timetable", "chat"].includes(lastSegment) ? lastSegment : "news") as
-      | "news"
-      | "uni"
-      | "timetable"
-      | "chat";
+  const go = (path: string) => {
+    props.navigation.closeDrawer();
+    router.push(path);
+  };
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: true,
-        headerStyle: { backgroundColor: theme.colors.surface },
-        headerTintColor: theme.colors.onSurface,
-        headerTitleStyle: { color: theme.colors.onSurface },
-        contentStyle: { backgroundColor: theme.colors.surface },
-      }}
-    >
-      {/* Tabs = base of the app */}
-      <Stack.Screen
-        name="(tabs)"
-        options={{
-          headerTitle: () =>
-            currentTab === "timetable" ? (
-              <TimetableHeaderTitle />
-            ) : (
-              <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
-                Amadeus
-              </Text>
-            ),
-          headerRight: () =>
-            currentTab === "timetable" ? <TimetableHeaderRight /> : <DefaultHeaderRight />,
-        }}
+    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 0 }}>
+      {/* You can style this the same way you did before (header, logo, etc.) */}
+
+      {/* Main stack is tabs, so drawer items push stack screens */}
+      <DrawerItem
+        label="Profil"
+        labelStyle={{ color: theme.colors.onSurface }}
+        icon={({ size }) => <Ionicons name="person-outline" size={size} color={theme.colors.onSurface} />}
+        onPress={() => go("/(app)/(stack)/profile")}
+      />
+      <DrawerItem
+        label="To-Dos"
+        labelStyle={{ color: theme.colors.onSurface }}
+        icon={({ size }) => <Ionicons name="checkbox-outline" size={size} color={theme.colors.onSurface} />}
+        onPress={() => go("/(app)/(stack)/todos")}
+      />
+      <DrawerItem
+        label="Freunde"
+        labelStyle={{ color: theme.colors.onSurface }}
+        icon={({ size }) => <Ionicons name="people-outline" size={size} color={theme.colors.onSurface} />}
+        onPress={() => go("/(app)/(stack)/friends")}
+      />
+      <DrawerItem
+        label="Einstellungen"
+        labelStyle={{ color: theme.colors.onSurface }}
+        icon={({ size }) => <Ionicons name="settings-outline" size={size} color={theme.colors.onSurface} />}
+        onPress={() => go("/(app)/(stack)/global_settings")}
       />
 
-      {/* Everything else is pushed on top of tabs */}
-      <Stack.Screen name="profile" options={{ title: "Profil" }} />
-      <Stack.Screen name="todos" options={{ title: "To-Dos" }} />
-      <Stack.Screen name="global_settings" options={{ title: "Einstellungen" }} />
-      <Stack.Screen name="settings/timetable" options={{ title: "Stundenplan-Einstellungen" }} />
-      <Stack.Screen name="reply" options={{ title: "Antwort" }} />
-      <Stack.Screen name="friends" options={{ title: "Freunde" }} />
+      {/* Optional */}
+      <DrawerItem
+        label="Logout"
+        labelStyle={{ color: theme.colors.onSurface }}
+        icon={({ size }) => <Ionicons name="log-out-outline" size={size} color={theme.colors.onSurface} />}
+        onPress={() => go("/(app)/(stack)/logout")}
+      />
+    </DrawerContentScrollView>
+  );
+}
 
-      {/* If logout is a route */}
-      <Stack.Screen name="logout" options={{ headerShown: false }} />
-    </Stack>
+export default function AppDrawerLayout() {
+  const theme = useTheme();
+
+  return (
+    <Drawer
+      drawerContent={(props) => <AppDrawerContent {...props} />}
+      screenOptions={{
+        headerShown: false, // important: Stack controls header now
+        drawerStyle: { backgroundColor: theme.colors.surface },
+        drawerActiveTintColor: theme.colors.primary,
+        drawerInactiveTintColor: theme.colors.onSurfaceVariant,
+      }}
+    >
+      {/* Single screen: the real app lives in the stack */}
+      <Drawer.Screen
+        name="(stack)"
+        options={{
+          title: "App",
+        }}
+      />
+    </Drawer>
   );
 }

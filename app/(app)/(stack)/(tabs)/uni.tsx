@@ -1,9 +1,9 @@
 // app/(tabs)/uni.tsx
 import * as React from "react";
-import LinkHub from "../../../components/university/LinkHub";
-import Onboarding from "../../../components/university/Onboarding";
-import Grades from "../../../components/university/grades";
-import { useUniversity } from "../../../components/university/UniversityContext";
+import LinkHub from "../../../../components/university/LinkHub";
+import Onboarding from "../../../../components/university/Onboarding";
+import Grades from "../../../../components/university/grades";
+import { useUniversity } from "../../../../components/university/UniversityContext";
 import { Surface, useTheme } from "react-native-paper";
 
 type UniView = "hub" | "grades";

@@ -1,4 +1,4 @@
-// app/(app)/(tabs)/_layout.tsx
+// app/(app)/(stack)/(tabs)/_layout.tsx
 import * as React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";

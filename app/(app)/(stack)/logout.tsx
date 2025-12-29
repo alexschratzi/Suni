@@ -1,4 +1,4 @@
-// app/(app)/logout.tsx
+// app/(app)/(stack)/logout.tsx
 import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";

@@ -1,4 +1,4 @@
-// app/(app)/global_settings.tsx
+// app/(app)/(stack)/global_settings.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -15,9 +15,8 @@ import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 
-import { useAppTheme, ThemeMode, TextScale } from "../../components/theme/AppThemeProvider";
-import { auth, db } from "../../firebase";
-import firestore from "@react-native-firebase/firestore";
+import { useAppTheme, ThemeMode, TextScale } from "@/components/theme/AppThemeProvider";
+import { auth, db } from "@/firebase";
 
 type LanguageCode = "de" | "en";
 type SectionKey =

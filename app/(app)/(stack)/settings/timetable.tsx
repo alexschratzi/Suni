@@ -1,4 +1,4 @@
-// app/(app)/settings/timetable.tsx
+// app/(app)/(stack)/settings/timetable.tsx
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import {
@@ -342,7 +342,7 @@ export default function TimetableSettingsScreen() {
                 )}
                 onPress={() =>
                   router.push({
-                    pathname: "/(app)/(tabs)/timetable",
+                    pathname: "/(app)/(stack)/(tabs)/timetable",
                     params: { jumpToToday: "1" },
                   })
                 }

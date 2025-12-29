@@ -14,7 +14,7 @@ import {
   useTheme,
 } from "react-native-paper";
 
-import { supabase } from "../../src/lib/supabase";
+import { supabase } from "../../../src/lib/supabase";
 
 type ProfileRow = {
   id: string;

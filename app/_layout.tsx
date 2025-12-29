@@ -122,7 +122,7 @@ export default function RootLayout() {
 
     // DEV bypass: treat as "fully authed"
     if (__DEV__ && devBypassEnabled) {
-      if (!inAppGroup) router.replace("/(app)/(tabs)/timetable");
+      if (!inAppGroup) router.replace("/(app)/(stack)/(tabs)/timetable");
       return;
     }
 
@@ -140,7 +140,7 @@ export default function RootLayout() {
 
     // Logged in and ready -> go to home
     if (sessionUserId && profileReady) {
-      if (!inAppGroup) router.replace("/(app)/(tabs)/timetable");
+      if (!inAppGroup) router.replace("/(app)/(stack)/(tabs)/timetable");
       return;
     }
   }, [

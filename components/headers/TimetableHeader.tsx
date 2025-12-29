@@ -1,4 +1,4 @@
-// app/(app)/headers/timetable.tsx
+// app/(app)/(stack)/headers/timetable.tsx
 import React, { useMemo, useState } from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 import {
@@ -46,17 +46,17 @@ export function TimetableHeaderRight() {
 
   const goToCalendarSettings = () => {
     closeMenu();
-    router.push("/(app)/settings/timetable");
+    router.push("/(app)/(stack)/settings/timetable");
   };
 
   const goToGeneralSettings = () => {
     closeMenu();
-    router.push("/(app)/global_settings");
+    router.push("/(app)/(stack)/global_settings");
   };
 
   const goToProfile = () => {
     closeMenu();
-    router.push("/(app)/profile");
+    router.push("/(app)/(stack)/profile");
   };
 
   return (

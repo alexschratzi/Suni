@@ -1,4 +1,4 @@
-// app/(app)/friends.tsx
+// app/(app)/(stack)/friends.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -337,7 +337,7 @@ export default function FriendsScreen() {
             mode="text"
             compact
             icon="account-circle"
-            onPress={() => router.push("/(app)/profile")}
+            onPress={() => router.push("/(app)/(stack)/profile")}
           >
             {t("profile.title", "Profil")}
           </Button>

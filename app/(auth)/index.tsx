@@ -63,7 +63,7 @@ export default function LoginScreen() {
                 // await supabase.auth.signOut();
 
                 Alert.alert("DEV", "Auth bypass enabled. Routing to app.");
-                router.replace("/(app)/(tabs)/timetable");
+                router.replace("/(app)/(stack)/(tabs)/timetable");
             } else {
                 Alert.alert("DEV", "Auth bypass disabled.");
                 // Stay on auth screen
@@ -115,7 +115,7 @@ export default function LoginScreen() {
     const computeRole = (v: string) => (isOehEmail(v) ? "oeh" : "student");
 
     const goHome = () => {
-        router.replace("/(app)/(tabs)/timetable");
+        router.replace("/(app)/(stack)/(tabs)/timetable");
     };
 
     const sendOtp = async () => {
