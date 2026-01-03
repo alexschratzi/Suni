@@ -1,4 +1,4 @@
-// app/(tabs)/uni.tsx
+// app/(app)/(stack)/(tabs)/uni.tsx
 import * as React from "react";
 import LinkHub from "../../../../components/university/LinkHub";
 import Onboarding from "../../../../components/university/Onboarding";

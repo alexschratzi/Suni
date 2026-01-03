@@ -1,4 +1,4 @@
-// src/screens/EmbeddedBrowser.tsx
+// screens/EmbeddedBrowser.tsx
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {BackHandler, StyleSheet, View} from "react-native";
 import {Appbar, ProgressBar, Text} from "react-native-paper";
