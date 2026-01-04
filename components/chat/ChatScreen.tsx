@@ -379,14 +379,26 @@ export default function ChatScreen() {
     if (!input.trim() || !room || !username || !userId) return;
 
     try {
+      const messageText = input.trim();
+      const now = new Date().toISOString();
       const { error } = await supabase.from(TABLES.roomMessages).insert({
         [COLUMNS.roomMessages.roomKey]: room,
         [COLUMNS.roomMessages.senderId]: userId,
         [COLUMNS.roomMessages.username]: username,
-        [COLUMNS.roomMessages.text]: input.trim(),
-        [COLUMNS.roomMessages.createdAt]: new Date().toISOString(),
+        [COLUMNS.roomMessages.text]: messageText,
+        [COLUMNS.roomMessages.createdAt]: now,
       });
       if (error) throw error;
+      setMessages((prev) => [
+        {
+          id: `local-${now}-${userId}`,
+          sender: userId,
+          username,
+          text: messageText,
+          timestamp: now,
+        },
+        ...prev,
+      ]);
       setInput("");
       setInputHeight(40);
     } catch (err) {

@@ -233,6 +233,8 @@ export default function ReplyScreen() {
     if (!input.trim() || !username || !userId) return;
 
     try {
+      const messageText = input.trim();
+      const now = new Date().toISOString();
       // === DM ===
       if (dmId) {
         const { data: thread, error: threadErr } = await supabase
@@ -280,19 +282,29 @@ export default function ReplyScreen() {
           [COLUMNS.dmMessages.threadId]: String(dmId),
           [COLUMNS.dmMessages.senderId]: userId,
           [COLUMNS.dmMessages.username]: username,
-          [COLUMNS.dmMessages.text]: input.trim(),
-          [COLUMNS.dmMessages.createdAt]: new Date().toISOString(),
+          [COLUMNS.dmMessages.text]: messageText,
+          [COLUMNS.dmMessages.createdAt]: now,
         });
         if (error) throw error;
 
         await supabase
           .from(TABLES.dmThreads)
           .update({
-            [COLUMNS.dmThreads.lastMessage]: input.trim(),
-            [COLUMNS.dmThreads.lastTimestamp]: new Date().toISOString(),
+            [COLUMNS.dmThreads.lastMessage]: messageText,
+            [COLUMNS.dmThreads.lastTimestamp]: now,
           })
           .eq(COLUMNS.dmThreads.id, String(dmId));
 
+        setReplies((prev) => [
+          ...prev,
+          {
+            id: `local-${now}-${userId}`,
+            sender: userId,
+            username,
+            text: messageText,
+            timestamp: now,
+          },
+        ]);
         setInput("");
         return;
       }
@@ -303,11 +315,21 @@ export default function ReplyScreen() {
           [COLUMNS.roomReplies.roomMessageId]: String(messageId),
           [COLUMNS.roomReplies.senderId]: userId,
           [COLUMNS.roomReplies.username]: username,
-          [COLUMNS.roomReplies.text]: input.trim(),
-          [COLUMNS.roomReplies.createdAt]: new Date().toISOString(),
+          [COLUMNS.roomReplies.text]: messageText,
+          [COLUMNS.roomReplies.createdAt]: now,
         });
         if (error) throw error;
 
+        setReplies((prev) => [
+          ...prev,
+          {
+            id: `local-${now}-${userId}`,
+            sender: userId,
+            username,
+            text: messageText,
+            timestamp: now,
+          },
+        ]);
         setInput("");
         setInputHeight(40);
       }
