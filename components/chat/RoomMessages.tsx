@@ -57,7 +57,7 @@ type Message = {
   id: string;
   username?: string;
   text: string;
-  timestamp?: any; // Firestore Timestamp
+  timestamp?: any;
 };
 
 type Props = {
@@ -101,6 +101,17 @@ export default function RoomMessages(props: Props) {
       : room === "oesterreich"
       ? t("chat.rooms.oesterreich.title")
       : t("chat.rooms.wirtschaft.title");
+
+  const toDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (typeof value.toDate === "function") return value.toDate();
+    return null;
+  };
 
   const openThread = (message: Message) => {
     router.push({
@@ -158,16 +169,15 @@ export default function RoomMessages(props: Props) {
             paddingBottom: 8,
           }}
           renderItem={({ item }) => {
-            const date = item.timestamp?.toDate
-              ? item.timestamp
-                  .toDate()
-                  .toLocaleString(locale, {
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
+            const dateValue = toDate(item.timestamp);
+            const date = dateValue
+              ? dateValue.toLocaleString(locale, {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
               : t("chat.justNow");
             return (
               <TouchableOpacity onPress={() => openThread(item)}>

@@ -1,7 +1,7 @@
 // utils/logout.ts
-import {auth} from "../firebase";
+import { supabase } from "../src/lib/supabase";
 
 export async function logout() {
-    await auth.signOut();
-    console.log("✅ User ausgeloggt");
+  await supabase.auth.signOut();
+  console.log("User ausgeloggt");
 }

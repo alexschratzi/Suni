@@ -1,6 +1,7 @@
 // localUser.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { db } from "./firebase";
+import { supabase } from "./src/lib/supabase";
+import { TABLES, COLUMNS } from "./src/lib/supabaseTables";
 
 export type LocalUser = {
   email: string;
@@ -8,20 +9,38 @@ export type LocalUser = {
   role: "student";
 };
 
-// Prüfen ob Benutzername vergeben ist
 export async function isUsernameTaken(username: string): Promise<boolean> {
-  const snapshot = await db.collection("usernames").where("username", "==", username).get();
-  return !snapshot.empty;
+  const { data, error } = await supabase
+    .from(TABLES.profiles)
+    .select(COLUMNS.profiles.id)
+    .eq(COLUMNS.profiles.username, username)
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!data;
 }
 
-// Student speichern (nur beim ersten Login)
 export async function saveLocalUser(email: string, username: string) {
   if (await isUsernameTaken(username)) {
     throw new Error("Benutzername ist schon vergeben!");
   }
 
-  // Username global reservieren
-  await db.collection("usernames").add({ username });
+  const { data: userRes, error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw userErr;
+  const userId = userRes.user?.id;
+  if (!userId) throw new Error("Not authenticated");
+
+  const { error: upsertErr } = await supabase
+    .from(TABLES.profiles)
+    .upsert(
+      {
+        [COLUMNS.profiles.id]: userId,
+        [COLUMNS.profiles.username]: username,
+        [COLUMNS.profiles.role]: "student",
+      },
+      { onConflict: COLUMNS.profiles.id }
+    );
+  if (upsertErr) throw upsertErr;
 
   const user: LocalUser = { email, username, role: "student" };
   await AsyncStorage.setItem("localUser", JSON.stringify(user));
@@ -29,26 +48,15 @@ export async function saveLocalUser(email: string, username: string) {
   return user;
 }
 
-// Local User laden
 export async function loadLocalUser(): Promise<LocalUser | null> {
   const data = await AsyncStorage.getItem("localUser");
   return data ? JSON.parse(data) : null;
 }
 
-// Logout
 export async function clearLocalUser() {
-  const local = await loadLocalUser();
-  if (local) {
-    // alten Namen aus Firestore löschen
-    const snapshot = await db.collection("usernames").where("username", "==", local.username).get();
-    for (const d of snapshot.docs) {
-      await d.ref.delete();
-    }
-  }
   await AsyncStorage.removeItem("localUser");
 }
 
-// Benutzernamen ändern
 export async function updateUsername(newUsername: string) {
   const local = await loadLocalUser();
   if (!local) throw new Error("Kein User eingeloggt");
@@ -57,14 +65,16 @@ export async function updateUsername(newUsername: string) {
     throw new Error("Benutzername ist schon vergeben!");
   }
 
-  // alten Namen löschen
-  const snapshot = await db.collection("usernames").where("username", "==", local.username).get();
-  for (const d of snapshot.docs) {
-    await d.ref.delete();
-  }
+  const { data: userRes, error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw userErr;
+  const userId = userRes.user?.id;
+  if (!userId) throw new Error("Not authenticated");
 
-  // neuen Namen speichern
-  await db.collection("usernames").add({ username: newUsername });
+  const { error } = await supabase
+    .from(TABLES.profiles)
+    .update({ [COLUMNS.profiles.username]: newUsername })
+    .eq(COLUMNS.profiles.id, userId);
+  if (error) throw error;
 
   const updated: LocalUser = { ...local, username: newUsername };
   await AsyncStorage.setItem("localUser", JSON.stringify(updated));

@@ -12,19 +12,14 @@ import {
   useTheme,
 } from "react-native-paper";
 
-import { auth, db } from "@/firebase";
 import { initials } from "@/utils/utils";
-
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  setDoc,
-  arrayUnion,
-  arrayRemove,
-} from "firebase/firestore";
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
+
+const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
 export default function FriendRequestsScreen() {
   const [requests, setRequests] = useState<string[]>([]);
@@ -33,45 +28,84 @@ export default function FriendRequestsScreen() {
   const [loading, setLoading] = useState(true);
 
   const theme = useTheme();
-  const me = auth.currentUser;
+  const userId = useSupabaseUserId();
 
   useEffect(() => {
-    if (!me) return;
+    if (!userId) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
 
-    const userRef = doc(db, "users", me.uid);
+    let cancelled = false;
 
-    const unsub = onSnapshot(
-      userRef,
-      (snap) => {
-        if (snap.exists()) {
-          setRequests((snap.data() as any).pendingReceived || []);
-        } else {
+    const loadRequests = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.friendRequests)
+        .select(COLUMNS.friendRequests.fromUser)
+        .eq(COLUMNS.friendRequests.toUser, userId);
+
+      if (error) {
+        console.error("FriendRequests load error:", error.message);
+        if (!cancelled) {
           setRequests([]);
+          setLoading(false);
         }
-        setLoading(false);
-      },
-      (err) => {
-        console.error("FriendRequests onSnapshot error:", err);
-        setRequests([]);
-        setLoading(false);
+        return;
       }
-    );
 
-    return () => unsub();
-  }, [me?.uid]);
+      if (cancelled) return;
+      setRequests(
+        (data || [])
+          .map((row: any) => row?.[COLUMNS.friendRequests.fromUser])
+          .filter(Boolean)
+      );
+      setLoading(false);
+    };
+
+    loadRequests();
+
+    const channel = supabase
+      .channel(`friend-requests-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendRequests,
+          filter: `${COLUMNS.friendRequests.toUser}=eq.${userId}`,
+        },
+        loadRequests
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   useEffect(() => {
     const missing = Array.from(new Set(requests.filter((uid) => !profiles[uid])));
     if (!missing.length) return;
 
     (async () => {
-      const entries = await Promise.all(
-        missing.map(async (uid) => {
-          const snap = await getDoc(doc(db, "users", uid));
-          const username = snap.exists() ? (snap.data() as any)?.username : undefined;
-          return [uid, { username }] as const;
-        })
-      );
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .in(COLUMNS.profiles.id, missing);
+
+      if (error) {
+        console.error("FriendRequests profile load error:", error.message);
+        return;
+      }
+
+      const entries =
+        (data || []).map((row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          const username = row?.[COLUMNS.profiles.username];
+          return [id, { username }] as const;
+        }) || [];
 
       setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
@@ -83,57 +117,59 @@ export default function FriendRequestsScreen() {
   );
 
   const accept = async (otherUid: string) => {
-    if (!me) return;
-
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    if (!userId) return;
 
     try {
-      const [mySnap, otherSnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
+      const [a, b] = pairFor(userId, otherUid);
+      const existing = await supabase
+        .from(TABLES.friendships)
+        .select("id")
+        .eq(COLUMNS.friendships.userId, a)
+        .eq(COLUMNS.friendships.friendId, b)
+        .maybeSingle();
 
-      const myFriends: string[] = (mySnap.data() as any)?.friends || [];
-      if (myFriends.includes(otherUid)) {
+      if (existing.data) {
         setSnack("Ihr seid bereits befreundet");
         return;
       }
 
-      // 1) Friends + pending updates
-      await setDoc(
-        myRef,
-        {
-          pendingReceived: arrayRemove(otherUid),
-          friends: arrayUnion(otherUid),
-        },
-        { merge: true }
-      );
+      const { error: insertErr } = await supabase.from(TABLES.friendships).insert({
+        [COLUMNS.friendships.userId]: a,
+        [COLUMNS.friendships.friendId]: b,
+      });
+      if (insertErr) throw insertErr;
 
-      await setDoc(
-        otherRef,
-        {
-          pendingSent: arrayRemove(me.uid),
-          friends: arrayUnion(me.uid),
-        },
-        { merge: true }
-      );
+      const { error: deleteErr } = await supabase
+        .from(TABLES.friendRequests)
+        .delete()
+        .eq(COLUMNS.friendRequests.fromUser, otherUid)
+        .eq(COLUMNS.friendRequests.toUser, userId);
+      if (deleteErr) throw deleteErr;
 
-      // 2) Create DM thread if not exists
-      const threadId = me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
-      const threadRef = doc(db, "dm_threads", threadId);
-      const threadSnap = await getDoc(threadRef);
+      const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
 
-      if (!threadSnap.exists()) {
-        await setDoc(
-          threadRef,
-          {
-            users: [me.uid, otherUid],
-            lastMessage: "",
-            lastTimestamp: null,
-          },
-          { merge: true }
-        );
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.userIds, [userId]);
+
+      if (!error) {
+        const exists = (data || []).some((row: any) => {
+          const userIds = row?.[COLUMNS.dmThreads.userIds];
+          return Array.isArray(userIds) && userIds.includes(userId) && userIds.includes(otherUid);
+        });
+
+        if (!exists) {
+          await supabase.from(TABLES.dmThreads).insert({
+            [COLUMNS.dmThreads.userIds]: [userId, otherUid],
+            [COLUMNS.dmThreads.lastMessage]: "",
+            [COLUMNS.dmThreads.lastTimestamp]: null,
+            [COLUMNS.dmThreads.hiddenBy]: [],
+          });
+        }
       }
 
-      setSnack("Freund hinzugefügt!");
+      setSnack("Freund hinzugef?gt!");
     } catch (err) {
       console.error("Fehler beim Annehmen:", err);
       setSnack("Fehler beim Annehmen");
@@ -141,14 +177,15 @@ export default function FriendRequestsScreen() {
   };
 
   const decline = async (otherUid: string) => {
-    if (!me) return;
-
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    if (!userId) return;
 
     try {
-      await setDoc(myRef, { pendingReceived: arrayRemove(otherUid) }, { merge: true });
-      await setDoc(otherRef, { pendingSent: arrayRemove(me.uid) }, { merge: true });
+      const { error } = await supabase
+        .from(TABLES.friendRequests)
+        .delete()
+        .eq(COLUMNS.friendRequests.fromUser, otherUid)
+        .eq(COLUMNS.friendRequests.toUser, userId);
+      if (error) throw error;
 
       setSnack("Anfrage abgelehnt");
     } catch (err) {

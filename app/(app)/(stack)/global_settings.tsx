@@ -20,11 +20,9 @@ import {
   ThemeMode,
   TextScale,
 } from "@/components/theme/AppThemeProvider";
-import { auth, db } from "@/firebase";
-
-// ✅ Firestore v9+ modular API
-import { doc, getDoc, setDoc } from "firebase/firestore";
-
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 type LanguageCode = "de" | "en";
 type SectionKey =
   | "general"
@@ -61,6 +59,7 @@ export default function SettingsScreen() {
     setTextScale,
   } = useAppTheme();
   const { t, i18n } = useTranslation();
+  const userId = useSupabaseUserId();
   const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
   const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
   const listItemTextStyles = React.useMemo(
@@ -177,14 +176,21 @@ export default function SettingsScreen() {
   // Preferences laden
   useEffect(() => {
     const loadPrefs = async () => {
-      if (!auth.currentUser) return;
+      if (!userId) {
+        setLoadingPrefs(false);
+        return;
+      }
       setLoadingPrefs(true);
       try {
-        const ref = doc(db, "users", auth.currentUser.uid);
-        const snap = await getDoc(ref);
+        const { data, error } = await supabase
+          .from(TABLES.profiles)
+          .select(COLUMNS.profiles.settings)
+          .eq(COLUMNS.profiles.id, userId)
+          .maybeSingle();
 
-        const data = snap.data() || {};
-        const settings = (data.settings as any) || {};
+        if (error) throw error;
+
+        const settings = (data as any)?.[COLUMNS.profiles.settings] || {};
         const notif = settings.notifications || {};
 
         if (typeof notif.global === "boolean") setNotifGlobal(notif.global);
@@ -211,13 +217,15 @@ export default function SettingsScreen() {
         } else {
           setTextScale("medium");
         }
+      } catch (err) {
+        console.error("Failed to load settings", err);
       } finally {
         setLoadingPrefs(false);
       }
     };
 
     loadPrefs();
-  }, [setTextScale]);
+  }, [setTextScale, userId]);
 
   const saveNotifications = async (next: {
     global?: boolean;
@@ -234,7 +242,7 @@ export default function SettingsScreen() {
     };
     textScale?: TextScale;
   }) => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
 
     const newGlobal = next.global ?? notifGlobal;
     const newChat = next.chat ?? notifChat;
@@ -263,11 +271,10 @@ export default function SettingsScreen() {
     setTextScale(newTextScale);
 
     try {
-      const ref = doc(db, "users", auth.currentUser.uid);
-      await setDoc(
-        ref,
-        {
-          settings: {
+      const { error } = await supabase
+        .from(TABLES.profiles)
+        .update({
+          [COLUMNS.profiles.settings]: {
             notifications: {
               global: newGlobal,
               chat: newChat,
@@ -282,9 +289,10 @@ export default function SettingsScreen() {
             },
             textScale: newTextScale,
           },
-        },
-        { merge: true }
-      );
+        })
+        .eq(COLUMNS.profiles.id, userId);
+
+      if (error) throw error;
     } catch (err) {
       console.error("Failed to save notification settings", err);
     }

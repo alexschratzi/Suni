@@ -14,30 +14,21 @@ import {
   ActivityIndicator,
 } from "react-native-paper";
 import { useRouter } from "expo-router";
-import { auth, db } from "@/firebase";
 import { initials } from "@/utils/utils";
 import { useTranslation } from "react-i18next";
-
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  setDoc,
-  where,
-  arrayUnion,
-  arrayRemove,
-} from "firebase/firestore";
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
 type SearchResult = { username: string; uid: string };
 
+const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
+
 export default function FriendsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const me = auth.currentUser;
+  const userId = useSupabaseUserId();
   const { t } = useTranslation();
 
   const [searchValue, setSearchValue] = useState("");
@@ -52,30 +43,108 @@ export default function FriendsScreen() {
   const [loadingLists, setLoadingLists] = useState(true);
 
   useEffect(() => {
-    if (!me) return;
+    if (!userId) {
+      setIncoming([]);
+      setOutgoing([]);
+      setBlocked([]);
+      setLoadingLists(false);
+      return;
+    }
 
-    const userRef = doc(db, "users", me.uid);
+    let cancelled = false;
 
-    const unsub = onSnapshot(
-      userRef,
-      (snap) => {
-        const data = snap.data() || {};
-        setIncoming((data as any).pendingReceived || []);
-        setOutgoing((data as any).pendingSent || []);
-        setBlocked((data as any).blocked || []);
-        setLoadingLists(false);
-      },
-      (err) => {
-        console.error("Friends onSnapshot error:", err);
-        setIncoming([]);
-        setOutgoing([]);
-        setBlocked([]);
-        setLoadingLists(false);
+    const loadLists = async () => {
+      setLoadingLists(true);
+      const [incomingRes, outgoingRes, blockedRes] = await Promise.all([
+        supabase
+          .from(TABLES.friendRequests)
+          .select(COLUMNS.friendRequests.fromUser)
+          .eq(COLUMNS.friendRequests.toUser, userId),
+        supabase
+          .from(TABLES.friendRequests)
+          .select(COLUMNS.friendRequests.toUser)
+          .eq(COLUMNS.friendRequests.fromUser, userId),
+        supabase
+          .from(TABLES.blocks)
+          .select(COLUMNS.blocks.blockedId)
+          .eq(COLUMNS.blocks.blockerId, userId),
+      ]);
+
+      if (incomingRes.error || outgoingRes.error || blockedRes.error) {
+        console.error(
+          "Friends load error:",
+          incomingRes.error?.message || outgoingRes.error?.message || blockedRes.error?.message
+        );
+        if (!cancelled) {
+          setIncoming([]);
+          setOutgoing([]);
+          setBlocked([]);
+          setLoadingLists(false);
+        }
+        return;
       }
-    );
 
-    return () => unsub();
-  }, [me?.uid]);
+      if (cancelled) return;
+
+      setIncoming(
+        (incomingRes.data || [])
+          .map((row: any) => row?.[COLUMNS.friendRequests.fromUser])
+          .filter(Boolean)
+      );
+      setOutgoing(
+        (outgoingRes.data || [])
+          .map((row: any) => row?.[COLUMNS.friendRequests.toUser])
+          .filter(Boolean)
+      );
+      setBlocked(
+        (blockedRes.data || [])
+          .map((row: any) => row?.[COLUMNS.blocks.blockedId])
+          .filter(Boolean)
+      );
+      setLoadingLists(false);
+    };
+
+    loadLists();
+
+    const channel = supabase
+      .channel(`friends-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendRequests,
+          filter: `${COLUMNS.friendRequests.toUser}=eq.${userId}`,
+        },
+        loadLists
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendRequests,
+          filter: `${COLUMNS.friendRequests.fromUser}=eq.${userId}`,
+        },
+        loadLists
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.blocks,
+          filter: `${COLUMNS.blocks.blockerId}=eq.${userId}`,
+        },
+        loadLists
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   useEffect(() => {
     const all = [...incoming, ...outgoing, ...blocked];
@@ -83,13 +152,22 @@ export default function FriendsScreen() {
     if (!missing.length) return;
 
     (async () => {
-      const entries = await Promise.all(
-        missing.map(async (uid) => {
-          const snap = await getDoc(doc(db, "users", uid));
-          const username = snap.exists() ? (snap.data() as any)?.username : undefined;
-          return [uid, { username }] as const;
-        })
-      );
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .in(COLUMNS.profiles.id, missing);
+
+      if (error) {
+        console.error("Friend profiles load error:", error.message);
+        return;
+      }
+
+      const entries =
+        (data || []).map((row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          const username = row?.[COLUMNS.profiles.username];
+          return [id, { username }] as const;
+        }) || [];
       setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
   }, [incoming, outgoing, blocked, profiles]);
@@ -100,7 +178,7 @@ export default function FriendsScreen() {
   );
 
   const searchUser = async () => {
-    if (!me) {
+    if (!userId) {
       setSnack(t("friends.snacks.needLogin"));
       return;
     }
@@ -113,14 +191,22 @@ export default function FriendsScreen() {
 
     setSearching(true);
     try {
-      const q = query(collection(db, "usernames"), where("username", "==", value));
-      const snap = await getDocs(q);
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .eq(COLUMNS.profiles.username, value)
+        .maybeSingle();
 
-      if (snap.empty) {
+      if (error) throw error;
+
+      if (!data) {
         setResult(null);
         setSnack(t("friends.errors.notFound"));
       } else {
-        setResult(snap.docs[0].data() as SearchResult);
+        setResult({
+          uid: (data as any)?.[COLUMNS.profiles.id],
+          username: (data as any)?.[COLUMNS.profiles.username],
+        });
       }
     } catch (err) {
       console.error("Fehler bei Suche:", err);
@@ -131,47 +217,76 @@ export default function FriendsScreen() {
   };
 
   const sendRequest = async (targetUid: string) => {
-    if (!me) return;
-    if (targetUid === me.uid) {
+    if (!userId) return;
+    if (targetUid === userId) {
       setSnack(t("friends.snacks.self"));
       return;
     }
 
-    const myRef = doc(db, "users", me.uid);
-    const targetRef = doc(db, "users", targetUid);
-
     try {
-      const [mySnap, targetSnap] = await Promise.all([getDoc(myRef), getDoc(targetRef)]);
-      const myData = mySnap.data() || {};
-      const targetData = targetSnap.data() || {};
+      const [blockedByOther, blockedByMe, existingFriend, outgoingReq, incomingReq] =
+        await Promise.all([
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, targetUid)
+            .eq(COLUMNS.blocks.blockedId, userId)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, userId)
+            .eq(COLUMNS.blocks.blockedId, targetUid)
+            .maybeSingle(),
+          (() => {
+            const [a, b] = pairFor(userId, targetUid);
+            return supabase
+              .from(TABLES.friendships)
+              .select("id")
+              .eq(COLUMNS.friendships.userId, a)
+              .eq(COLUMNS.friendships.friendId, b)
+              .maybeSingle();
+          })(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, userId)
+            .eq(COLUMNS.friendRequests.toUser, targetUid)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, targetUid)
+            .eq(COLUMNS.friendRequests.toUser, userId)
+            .maybeSingle(),
+        ]);
 
-      if ((targetData as any).blocked?.includes(me.uid)) {
+      if (blockedByOther.data) {
         setSnack(t("friends.snacks.blockedByOther"));
         return;
       }
-      if ((myData as any).blocked?.includes(targetUid)) {
+      if (blockedByMe.data) {
         setSnack(t("friends.snacks.youBlocked"));
         return;
       }
-      if ((myData as any).friends?.includes(targetUid)) {
+      if (existingFriend.data) {
         setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
-      if ((myData as any).pendingSent?.includes(targetUid)) {
+      if (outgoingReq.data) {
         setSnack(t("friends.snacks.pendingSent"));
         return;
       }
-      if ((myData as any).pendingReceived?.includes(targetUid)) {
+      if (incomingReq.data) {
         setSnack(t("friends.snacks.pendingReceived"));
         return;
       }
-      if ((targetData as any).pendingReceived?.includes(me.uid)) {
-        setSnack(t("friends.snacks.alreadyOpen"));
-        return;
-      }
 
-      await setDoc(myRef, { pendingSent: arrayUnion(targetUid) }, { merge: true });
-      await setDoc(targetRef, { pendingReceived: arrayUnion(me.uid) }, { merge: true });
+      const { error } = await supabase.from(TABLES.friendRequests).insert({
+        [COLUMNS.friendRequests.fromUser]: userId,
+        [COLUMNS.friendRequests.toUser]: targetUid,
+      });
+      if (error) throw error;
 
       setSnack(t("friends.snacks.sent"));
     } catch (err) {
@@ -181,54 +296,59 @@ export default function FriendsScreen() {
   };
 
   const accept = async (otherUid: string) => {
-    if (!me) return;
-
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    if (!userId) return;
 
     try {
-      const [mySnap, otherSnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
+      const [a, b] = pairFor(userId, otherUid);
+      const existing = await supabase
+        .from(TABLES.friendships)
+        .select("id")
+        .eq(COLUMNS.friendships.userId, a)
+        .eq(COLUMNS.friendships.friendId, b)
+        .maybeSingle();
 
-      const myFriends: string[] = ((mySnap.data() as any)?.friends) || [];
-      if (myFriends.includes(otherUid)) {
+      if (existing.data) {
         setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
 
-      // DM-Thread erstellen, falls er noch nicht existiert
-      const threadId = me.uid < otherUid ? `${me.uid}_${otherUid}` : `${otherUid}_${me.uid}`;
-      const threadRef = doc(db, "dm_threads", threadId);
-      const threadSnap = await getDoc(threadRef);
+      const { error: insertErr } = await supabase.from(TABLES.friendships).insert({
+        [COLUMNS.friendships.userId]: a,
+        [COLUMNS.friendships.friendId]: b,
+      });
+      if (insertErr) throw insertErr;
 
-      await setDoc(
-        myRef,
-        {
-          pendingReceived: arrayRemove(otherUid),
-          friends: arrayUnion(otherUid),
-        },
-        { merge: true }
-      );
+      const { error: deleteErr } = await supabase
+        .from(TABLES.friendRequests)
+        .delete()
+        .eq(COLUMNS.friendRequests.fromUser, otherUid)
+        .eq(COLUMNS.friendRequests.toUser, userId);
+      if (deleteErr) throw deleteErr;
 
-      await setDoc(
-        otherRef,
-        {
-          pendingSent: arrayRemove(me.uid),
-          friends: arrayUnion(me.uid),
-        },
-        { merge: true }
-      );
+      const columns = [
+        COLUMNS.dmThreads.id,
+        COLUMNS.dmThreads.userIds,
+      ].join(",");
 
-      if (!threadSnap.exists()) {
-        await setDoc(
-          threadRef,
-          {
-            users: [me.uid, otherUid],
-            lastMessage: "",
-            lastTimestamp: null,
-            hiddenBy: [],
-          },
-          { merge: true }
-        );
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.userIds, [userId]);
+
+      if (!error) {
+        const exists = (data || []).some((row: any) => {
+          const userIds = row?.[COLUMNS.dmThreads.userIds];
+          return Array.isArray(userIds) && userIds.includes(userId) && userIds.includes(otherUid);
+        });
+
+        if (!exists) {
+          await supabase.from(TABLES.dmThreads).insert({
+            [COLUMNS.dmThreads.userIds]: [userId, otherUid],
+            [COLUMNS.dmThreads.lastMessage]: "",
+            [COLUMNS.dmThreads.lastTimestamp]: null,
+            [COLUMNS.dmThreads.hiddenBy]: [],
+          });
+        }
       }
 
       setSnack(t("friends.snacks.added"));
@@ -239,14 +359,15 @@ export default function FriendsScreen() {
   };
 
   const decline = async (otherUid: string) => {
-    if (!me) return;
-
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    if (!userId) return;
 
     try {
-      await setDoc(myRef, { pendingReceived: arrayRemove(otherUid) }, { merge: true });
-      await setDoc(otherRef, { pendingSent: arrayRemove(me.uid) }, { merge: true });
+      const { error } = await supabase
+        .from(TABLES.friendRequests)
+        .delete()
+        .eq(COLUMNS.friendRequests.fromUser, otherUid)
+        .eq(COLUMNS.friendRequests.toUser, userId);
+      if (error) throw error;
 
       setSnack(t("friends.snacks.declined"));
     } catch (err) {
@@ -256,39 +377,47 @@ export default function FriendsScreen() {
   };
 
   const blockUser = async (otherUid: string) => {
-    if (!me) return;
-    const myRef = doc(db, "users", me.uid);
-    const otherRef = doc(db, "users", otherUid);
+    if (!userId) return;
 
     try {
-      const [mySnap] = await Promise.all([getDoc(myRef), getDoc(otherRef)]);
-      const myData = mySnap.data() || {};
+      const { data: existingBlock } = await supabase
+        .from(TABLES.blocks)
+        .select("id")
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, otherUid)
+        .maybeSingle();
 
-      if (((myData as any).blocked || []).includes(otherUid)) {
+      if (existingBlock) {
         setSnack(t("friends.snacks.blocked"));
         return;
       }
 
-      await setDoc(
-        myRef,
-        {
-          blocked: arrayUnion(otherUid),
-          friends: arrayRemove(otherUid),
-          pendingSent: arrayRemove(otherUid),
-          pendingReceived: arrayRemove(otherUid),
-        },
-        { merge: true }
-      );
+      const { error: blockErr } = await supabase
+        .from(TABLES.blocks)
+        .insert({
+          [COLUMNS.blocks.blockerId]: userId,
+          [COLUMNS.blocks.blockedId]: otherUid,
+        });
+      if (blockErr) throw blockErr;
 
-      await setDoc(
-        otherRef,
-        {
-          friends: arrayRemove(me.uid),
-          pendingSent: arrayRemove(me.uid),
-          pendingReceived: arrayRemove(me.uid),
-        },
-        { merge: true }
-      );
+      const [a, b] = pairFor(userId, otherUid);
+      await Promise.all([
+        supabase
+          .from(TABLES.friendships)
+          .delete()
+          .eq(COLUMNS.friendships.userId, a)
+          .eq(COLUMNS.friendships.friendId, b),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, userId)
+          .eq(COLUMNS.friendRequests.toUser, otherUid),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, otherUid)
+          .eq(COLUMNS.friendRequests.toUser, userId),
+      ]);
 
       setSnack(t("friends.snacks.blocked"));
     } catch (err) {
@@ -298,10 +427,14 @@ export default function FriendsScreen() {
   };
 
   const unblockUser = async (otherUid: string) => {
-    if (!me) return;
-    const myRef = doc(db, "users", me.uid);
+    if (!userId) return;
     try {
-      await setDoc(myRef, { blocked: arrayRemove(otherUid) }, { merge: true });
+      const { error } = await supabase
+        .from(TABLES.blocks)
+        .delete()
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, otherUid);
+      if (error) throw error;
       setSnack(t("friends.snacks.unblocked"));
     } catch (err) {
       console.error("Fehler beim Entblocken:", err);
@@ -309,7 +442,7 @@ export default function FriendsScreen() {
     }
   };
 
-  if (!me) {
+  if (!userId) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
         <Text>{t("friends.snacks.needLogin")}</Text>
@@ -344,8 +477,185 @@ export default function FriendsScreen() {
         </View>
       </Surface>
 
-      {/* rest of your JSX stays the same */}
-      {/* (No further Firebase-specific code below this point.) */}
+      <Surface style={styles.card} mode="elevated">
+        <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
+          {t("friends.searchLabel")}
+        </Text>
+        <TextInput
+          mode="outlined"
+          value={searchValue}
+          onChangeText={setSearchValue}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="@username"
+          style={{ marginTop: 8 }}
+        />
+        <Button
+          mode="contained"
+          onPress={searchUser}
+          loading={searching}
+          style={{ marginTop: 10, alignSelf: "flex-start" }}
+        >
+          {t("friends.searchButton")}
+        </Button>
+
+        {result && (
+          <>
+            <Divider style={{ marginVertical: 12 }} />
+            <List.Item
+              title={result.username}
+              description={t("friends.findUser")}
+              titleStyle={{ color: theme.colors.onSurface }}
+              descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+              left={(props) => (
+                <Avatar.Text
+                  {...props}
+                  size={40}
+                  label={initials(result.username)}
+                  color={theme.colors.onPrimary}
+                  style={{ backgroundColor: theme.colors.primary }}
+                />
+              )}
+              right={() => (
+                <Button
+                  mode="contained"
+                  compact
+                  onPress={() => sendRequest(result.uid)}
+                >
+                  {t("friends.request")}
+                </Button>
+              )}
+            />
+          </>
+        )}
+      </Surface>
+
+      {loadingLists ? (
+        <Surface style={styles.card} mode="elevated">
+          <ActivityIndicator />
+        </Surface>
+      ) : (
+        <>
+          <Surface style={styles.card} mode="elevated">
+            <List.Section>
+              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+                {t("friends.incomingTitle")}
+              </List.Subheader>
+              {incoming.length === 0 ? (
+                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
+                  {t("friends.incomingEmpty")}
+                </Text>
+              ) : (
+                incoming.map((uid, idx) => (
+                  <View key={uid}>
+                    <List.Item
+                      title={displayName(uid)}
+                      titleStyle={{ color: theme.colors.onSurface }}
+                      left={(props) => (
+                        <Avatar.Text
+                          {...props}
+                          size={40}
+                          label={initials(displayName(uid))}
+                          color={theme.colors.onPrimary}
+                          style={{ backgroundColor: theme.colors.primary }}
+                        />
+                      )}
+                      right={() => (
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Button onPress={() => accept(uid)}>{t("friends.accept")}</Button>
+                          <Button onPress={() => decline(uid)} textColor="red">
+                            {t("friends.decline")}
+                          </Button>
+                          <Button onPress={() => blockUser(uid)}>{t("friends.block")}</Button>
+                        </View>
+                      )}
+                    />
+                    {idx < incoming.length - 1 && (
+                      <Divider style={{ marginLeft: 56 }} />
+                    )}
+                  </View>
+                ))
+              )}
+            </List.Section>
+          </Surface>
+
+          <Surface style={styles.card} mode="elevated">
+            <List.Section>
+              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+                {t("friends.outgoingTitle")}
+              </List.Subheader>
+              {outgoing.length === 0 ? (
+                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
+                  {t("friends.outgoingEmpty")}
+                </Text>
+              ) : (
+                outgoing.map((uid, idx) => (
+                  <View key={uid}>
+                    <List.Item
+                      title={displayName(uid)}
+                      description={t("friends.sentLabel")}
+                      titleStyle={{ color: theme.colors.onSurface }}
+                      descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                      left={(props) => (
+                        <Avatar.Text
+                          {...props}
+                          size={40}
+                          label={initials(displayName(uid))}
+                          color={theme.colors.onPrimary}
+                          style={{ backgroundColor: theme.colors.primary }}
+                        />
+                      )}
+                      right={() => (
+                        <Button onPress={() => blockUser(uid)}>{t("friends.block")}</Button>
+                      )}
+                    />
+                    {idx < outgoing.length - 1 && (
+                      <Divider style={{ marginLeft: 56 }} />
+                    )}
+                  </View>
+                ))
+              )}
+            </List.Section>
+          </Surface>
+
+          <Surface style={styles.card} mode="elevated">
+            <List.Section>
+              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+                {t("friends.blockedTitle")}
+              </List.Subheader>
+              {blocked.length === 0 ? (
+                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
+                  {t("friends.blockedEmpty")}
+                </Text>
+              ) : (
+                blocked.map((uid, idx) => (
+                  <View key={uid}>
+                    <List.Item
+                      title={displayName(uid)}
+                      titleStyle={{ color: theme.colors.onSurface }}
+                      left={(props) => (
+                        <Avatar.Text
+                          {...props}
+                          size={40}
+                          label={initials(displayName(uid))}
+                          color={theme.colors.onPrimary}
+                          style={{ backgroundColor: theme.colors.primary }}
+                        />
+                      )}
+                      right={() => (
+                        <Button onPress={() => unblockUser(uid)}>{t("friends.unblock")}</Button>
+                      )}
+                    />
+                    {idx < blocked.length - 1 && (
+                      <Divider style={{ marginLeft: 56 }} />
+                    )}
+                  </View>
+                ))
+              )}
+            </List.Section>
+          </Surface>
+        </>
+      )}
 
       <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={2000}>
         {snack}

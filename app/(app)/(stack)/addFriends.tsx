@@ -3,18 +3,11 @@ import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import { Text, TextInput, Button, useTheme, Snackbar, List } from "react-native-paper";
 
-import { auth, db } from "@/firebase";
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  getDoc,
-  setDoc,
-  arrayUnion,
-} from "firebase/firestore";
+const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
 export default function AddFriendScreen() {
   const theme = useTheme();
@@ -23,30 +16,34 @@ export default function AddFriendScreen() {
   const [loading, setLoading] = useState(false);
   const [snack, setSnack] = useState("");
 
-  const me = auth.currentUser;
+  const userId = useSupabaseUserId();
 
   const searchUser = async () => {
     if (!username.trim()) {
       setSnack("Bitte Username eingeben");
       return;
     }
-    if (!me) return;
+    if (!userId) return;
 
     setLoading(true);
 
     try {
-      const q = query(
-        collection(db, "usernames"),
-        where("username", "==", username.trim())
-      );
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .eq(COLUMNS.profiles.username, username.trim())
+        .maybeSingle();
 
-      const resultSnap = await getDocs(q);
+      if (error) throw error;
 
-      if (resultSnap.empty) {
+      if (!data) {
         setResult(null);
         setSnack("User nicht gefunden");
       } else {
-        setResult(resultSnap.docs[0].data());
+        setResult({
+          uid: (data as any)?.[COLUMNS.profiles.id],
+          username: (data as any)?.[COLUMNS.profiles.username],
+        });
       }
     } catch (err) {
       console.error("Fehler bei Suche:", err);
@@ -57,53 +54,77 @@ export default function AddFriendScreen() {
   };
 
   const sendRequest = async (targetUid: string) => {
-    if (!me) return;
+    if (!userId) return;
 
-    if (targetUid === me.uid) {
-      setSnack("Du kannst dich nicht selbst hinzufügen");
+    if (targetUid === userId) {
+      setSnack("Du kannst dich nicht selbst hinzufuegen");
       return;
     }
 
-    const myRef = doc(db, "users", me.uid);
-    const targetRef = doc(db, "users", targetUid);
-
     try {
-      const [mySnap, targetSnap] = await Promise.all([getDoc(myRef), getDoc(targetRef)]);
+      const [existingFriend, outgoingReq, incomingReq, blockedByOther, blockedByMe] =
+        await Promise.all([
+          (() => {
+            const [a, b] = pairFor(userId, targetUid);
+            return supabase
+              .from(TABLES.friendships)
+              .select("id")
+              .eq(COLUMNS.friendships.userId, a)
+              .eq(COLUMNS.friendships.friendId, b)
+              .maybeSingle();
+          })(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, userId)
+            .eq(COLUMNS.friendRequests.toUser, targetUid)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, targetUid)
+            .eq(COLUMNS.friendRequests.toUser, userId)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, targetUid)
+            .eq(COLUMNS.blocks.blockedId, userId)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, userId)
+            .eq(COLUMNS.blocks.blockedId, targetUid)
+            .maybeSingle(),
+        ]);
 
-      const myData = mySnap.data() || {};
-      const targetData = targetSnap.data() || {};
-
-      if ((myData.friends || []).includes(targetUid)) {
+      if (blockedByOther.data) {
+        setSnack("Du wurdest blockiert");
+        return;
+      }
+      if (blockedByMe.data) {
+        setSnack("Du hast diesen Nutzer blockiert");
+        return;
+      }
+      if (existingFriend.data) {
         setSnack("Ihr seid bereits befreundet");
         return;
       }
-
-      if ((myData.pendingSent || []).includes(targetUid)) {
+      if (outgoingReq.data) {
         setSnack("Anfrage bereits gesendet");
         return;
       }
-
-      if ((myData.pendingReceived || []).includes(targetUid)) {
+      if (incomingReq.data) {
         setSnack("Dieser Nutzer hat dir bereits geschrieben");
         return;
       }
 
-      if ((targetData.pendingReceived || []).includes(me.uid)) {
-        setSnack("Anfrage ist schon offen");
-        return;
-      }
-
-      await setDoc(
-        myRef,
-        { pendingSent: arrayUnion(targetUid) },
-        { merge: true }
-      );
-
-      await setDoc(
-        targetRef,
-        { pendingReceived: arrayUnion(me.uid) },
-        { merge: true }
-      );
+      const { error } = await supabase.from(TABLES.friendRequests).insert({
+        [COLUMNS.friendRequests.fromUser]: userId,
+        [COLUMNS.friendRequests.toUser]: targetUid,
+      });
+      if (error) throw error;
 
       setSnack("Freundschaftsanfrage gesendet");
     } catch (err) {

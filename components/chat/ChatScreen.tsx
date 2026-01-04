@@ -5,22 +5,9 @@ import { useRouter } from "expo-router";
 import { useTheme } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
-import { db, auth } from "@/firebase";
-
-import {
-  addDoc,
-  arrayRemove,
-  arrayUnion,
-  collection,
-  doc,
-  getDoc,
-  setDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
@@ -44,6 +31,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { t, i18n } = useTranslation();
+  const userId = useSupabaseUserId();
 
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
@@ -65,89 +53,247 @@ export default function ChatScreen() {
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Username/pending/blocked/settings live
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!userId) {
+      setUsername("");
+      setPendingCount(0);
+      setBlocked([]);
+      setChatColor(null);
+      return;
+    }
 
-    const userRef = doc(db, "users", auth.currentUser.uid);
-    const unsubscribe = onSnapshot(userRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as any;
-        setUsername(data.username);
-        setPendingCount((data.pendingReceived || []).length);
-        setBlocked(data.blocked || []);
-        if (data.settings?.chatThemeColor) {
-          setChatColor(data.settings.chatThemeColor as string);
-        }
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.username},${COLUMNS.profiles.settings}`)
+        .eq(COLUMNS.profiles.id, userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Chat profile load error:", error.message);
+        return;
       }
-    });
+      if (cancelled) return;
 
-    return () => unsubscribe();
-  }, []);
+      const settings = (data as any)?.[COLUMNS.profiles.settings] || {};
+      setUsername((data as any)?.[COLUMNS.profiles.username] ?? "");
+      setChatColor(
+        typeof settings.chatThemeColor === "string" ? settings.chatThemeColor : null
+      );
+    };
 
-  const ROOMS = {
-    salzburg: "messages_salzburg",
-    oesterreich: "messages_oesterreich",
-    wirtschaft: "messages_wirtschaft",
-  } as const;
+    const loadPending = async () => {
+      const { count, error } = await supabase
+        .from(TABLES.friendRequests)
+        .select(COLUMNS.friendRequests.fromUser, { count: "exact", head: true })
+        .eq(COLUMNS.friendRequests.toUser, userId);
 
-  // Room messages live
+      if (error) {
+        console.error("Chat pending load error:", error.message);
+        return;
+      }
+      if (cancelled) return;
+      setPendingCount(count ?? 0);
+    };
+
+    const loadBlocked = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.blocks)
+        .select(COLUMNS.blocks.blockedId)
+        .eq(COLUMNS.blocks.blockerId, userId);
+
+      if (error) {
+        console.error("Chat blocked load error:", error.message);
+        return;
+      }
+      if (cancelled) return;
+      const ids = (data || []).map(
+        (row: any) => row?.[COLUMNS.blocks.blockedId]
+      );
+      setBlocked(ids.filter(Boolean));
+    };
+
+    const loadAll = async () => {
+      await Promise.all([loadProfile(), loadPending(), loadBlocked()]);
+    };
+
+    loadAll();
+
+    const channel = supabase
+      .channel(`chat-user-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendRequests,
+          filter: `${COLUMNS.friendRequests.toUser}=eq.${userId}`,
+        },
+        loadPending
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.blocks,
+          filter: `${COLUMNS.blocks.blockerId}=eq.${userId}`,
+        },
+        loadBlocked
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: TABLES.profiles,
+          filter: `${COLUMNS.profiles.id}=eq.${userId}`,
+        },
+        loadProfile
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
   useEffect(() => {
     if (!room) return;
 
     setLoadingMsgs(true);
+    let cancelled = false;
 
-    const roomCol = collection(db, ROOMS[room]);
-    const q = query(roomCol, orderBy("timestamp", "desc"), orderBy("username"));
+    const loadMessages = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.roomMessages)
+        .select(
+          [
+            COLUMNS.roomMessages.id,
+            COLUMNS.roomMessages.senderId,
+            COLUMNS.roomMessages.username,
+            COLUMNS.roomMessages.text,
+            COLUMNS.roomMessages.createdAt,
+          ].join(",")
+        )
+        .eq(COLUMNS.roomMessages.roomKey, room)
+        .order(COLUMNS.roomMessages.createdAt, { ascending: false });
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setMessages(msgs);
-        setLoadingMsgs(false);
-      },
-      (err) => {
-        console.error("Room onSnapshot error:", err);
-        setMessages([]);
-        setLoadingMsgs(false);
+      if (error) {
+        console.error("Room load error:", error.message);
+        if (!cancelled) {
+          setMessages([]);
+          setLoadingMsgs(false);
+        }
+        return;
       }
-    );
 
-    return () => unsubscribe();
+      if (cancelled) return;
+      const msgs =
+        (data || []).map((row: any) => ({
+          id: row?.[COLUMNS.roomMessages.id],
+          sender: row?.[COLUMNS.roomMessages.senderId],
+          username: row?.[COLUMNS.roomMessages.username],
+          text: row?.[COLUMNS.roomMessages.text],
+          timestamp: row?.[COLUMNS.roomMessages.createdAt],
+        })) || [];
+      setMessages(msgs);
+      setLoadingMsgs(false);
+    };
+
+    loadMessages();
+
+    const channel = supabase
+      .channel(`room-${room}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.roomMessages,
+          filter: `${COLUMNS.roomMessages.roomKey}=eq.${room}`,
+        },
+        loadMessages
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }, [room]);
 
-  // Direct threads live
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
+    if (!userId) {
+      setRawDirects([]);
+      return;
+    }
 
-    const threadsCol = collection(db, "dm_threads");
-    const q = query(threadsCol, where("users", "array-contains", uid));
+    let cancelled = false;
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const arr: RawDirect[] = snap.docs.map((d) => {
-          const data = d.data() as any;
-          const otherUid = (data.users || []).find((u: string) => u !== uid) || uid;
-          return {
-            id: d.id,
-            otherUid,
-            last: data.lastMessage ?? "",
-            hidden: (data.hiddenBy || []).includes(uid),
-          };
-        });
-        setRawDirects(arr);
-      },
-      (err) => {
-        console.error("Direct threads onSnapshot error:", err);
-        setRawDirects([]);
+    const loadThreads = async () => {
+      const columns = [
+        COLUMNS.dmThreads.id,
+        COLUMNS.dmThreads.userIds,
+        COLUMNS.dmThreads.lastMessage,
+        COLUMNS.dmThreads.lastTimestamp,
+        COLUMNS.dmThreads.hiddenBy,
+      ].join(",");
+
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.userIds, [userId])
+        .order(COLUMNS.dmThreads.lastTimestamp, { ascending: false });
+
+      if (error) {
+        console.error("Direct threads load error:", error.message);
+        if (!cancelled) setRawDirects([]);
+        return;
       }
-    );
 
-    return () => unsubscribe();
-  }, []);
+      if (cancelled) return;
+
+      const arr: RawDirect[] = (data || []).map((row: any) => {
+        const userIds = row?.[COLUMNS.dmThreads.userIds];
+        const hiddenBy = Array.isArray(row?.[COLUMNS.dmThreads.hiddenBy])
+          ? row?.[COLUMNS.dmThreads.hiddenBy]
+          : [];
+
+        let otherUid = userId;
+        if (Array.isArray(userIds)) {
+          otherUid = userIds.find((id: string) => id !== userId) || userId;
+        }
+
+        return {
+          id: row?.[COLUMNS.dmThreads.id],
+          otherUid,
+          last: row?.[COLUMNS.dmThreads.lastMessage] ?? "",
+          hidden: hiddenBy.includes(userId),
+        };
+      });
+      setRawDirects(arr);
+    };
+
+    loadThreads();
+
+    const channel = supabase
+      .channel(`dm-threads-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: TABLES.dmThreads },
+        loadThreads
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   // Fetch missing profiles for directs
   useEffect(() => {
@@ -158,13 +304,22 @@ export default function ChatScreen() {
     if (!missing.length) return;
 
     (async () => {
-      const entries = await Promise.all(
-        missing.map(async (uid) => {
-          const snap = await getDoc(doc(db, "users", uid));
-          const profile: UserProfile = snap.exists() ? { username: (snap.data() as any).username } : {};
-          return [uid, profile] as const;
-        })
-      );
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .in(COLUMNS.profiles.id, missing);
+
+      if (error) {
+        console.error("Direct profile load error:", error.message);
+        return;
+      }
+
+      const entries =
+        (data || []).map((row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          const profile: UserProfile = { username: row?.[COLUMNS.profiles.username] };
+          return [id, profile] as const;
+        }) || [];
 
       setUserProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
@@ -221,19 +376,21 @@ export default function ChatScreen() {
 
   // Send message
   const sendMessage = async () => {
-    if (!input.trim() || !room || !username) return;
+    if (!input.trim() || !room || !username || !userId) return;
 
     try {
-      await addDoc(collection(db, ROOMS[room]), {
-        sender: auth.currentUser?.uid,
-        username,
-        text: input,
-        timestamp: serverTimestamp(),
+      const { error } = await supabase.from(TABLES.roomMessages).insert({
+        [COLUMNS.roomMessages.roomKey]: room,
+        [COLUMNS.roomMessages.senderId]: userId,
+        [COLUMNS.roomMessages.username]: username,
+        [COLUMNS.roomMessages.text]: input.trim(),
+        [COLUMNS.roomMessages.createdAt]: new Date().toISOString(),
       });
+      if (error) throw error;
       setInput("");
       setInputHeight(40);
     } catch (err) {
-      console.error("❌ Nachricht konnte nicht gesendet werden:", err);
+      console.error("Room message send failed:", err);
     }
   };
 
@@ -254,18 +411,29 @@ export default function ChatScreen() {
           directs={filteredDirects}
           router={router}
           onToggleHidden={async (id, makeHidden) => {
-            const uid = auth.currentUser?.uid;
-            if (!uid) return;
-
-            const threadRef = doc(db, "dm_threads", id);
+            if (!userId) return;
             try {
-              await setDoc(
-                threadRef,
-                {
-                  hiddenBy: makeHidden ? arrayUnion(uid) : arrayRemove(uid),
-                },
-                { merge: true }
-              );
+              const { data, error } = await supabase
+                .from(TABLES.dmThreads)
+                .select(COLUMNS.dmThreads.hiddenBy)
+                .eq(COLUMNS.dmThreads.id, id)
+                .maybeSingle();
+
+              if (error) throw error;
+
+              const current = Array.isArray(data?.[COLUMNS.dmThreads.hiddenBy])
+                ? (data?.[COLUMNS.dmThreads.hiddenBy] as string[])
+                : [];
+
+              const next = makeHidden
+                ? Array.from(new Set([...current, userId]))
+                : current.filter((v) => v !== userId);
+
+              const { error: updErr } = await supabase
+                .from(TABLES.dmThreads)
+                .update({ [COLUMNS.dmThreads.hiddenBy]: next })
+                .eq(COLUMNS.dmThreads.id, id);
+              if (updErr) throw updErr;
             } catch (err) {
               console.error("Fehler beim Ausblenden:", err);
             }
