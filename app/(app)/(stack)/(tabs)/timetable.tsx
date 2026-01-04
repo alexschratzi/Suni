@@ -26,7 +26,7 @@ import type {
   OnEventResponse,
   ThemeConfigs,
 } from "@howljs/calendar-kit";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
@@ -41,7 +41,14 @@ import {
 } from "react-native-paper";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { Ev } from "@/types/timetable";
+import type {
+  EvWithMeta,
+  ICalEventMeta,
+  EventEditorForm,
+  RawIcalEvent,
+  ICalSubscription,
+  ActivePicker,
+} from "@/types/timetable";
 import { mapPaperToCalendarTheme } from "@/components/timetable/mapPaperToCalendarTheme";
 import {
   getICalSubscriptions,
@@ -62,52 +69,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // ✅ Header event bus (fast, no nav params)
 const TIMETABLE_HEADER_EVENT = "timetable:currentMonday";
 
-type EventEditorForm = {
-  fullTitle: string;
-  titleAbbr: string;
-  from: string;
-  until: string;
-  note: string;
-  color: string;
-};
-
-type EventSource = "local" | "ical";
-
-type EvWithMeta = Ev & {
-  fullTitle?: string;
-  titleAbbr?: string;
-  isTitleAbbrCustom?: boolean;
-  note?: string;
-  source?: EventSource;
-  icalSubscriptionId?: string;
-  icalEventUid?: string;
-  metaKey?: string;
-};
-
-type ActivePicker = "from" | "until" | null;
-
 const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
-
-type ICalSubscription = {
-  id: string;
-  name: string;
-  url: string;
-  color: string;
-};
-
-type ICalEventMeta = {
-  titleAbbr?: string;
-  note?: string;
-  color?: string;
-  isTitleAbbrCustom?: boolean;
-};
-
-type RawIcalEvent = {
-  uid: string;
-  summary: string;
-  start: string;
-  end: string;
-};
 
 const ICAL_ASYNC_KEY = "ical_subscriptions_v1";
 const LOCAL_EVENTS_KEY = "timetable_local_events_v1";
@@ -116,10 +78,8 @@ const ICAL_EVENT_META_KEY = "ical_event_meta_v1";
 export default function TimetableScreen() {
   const paper = useTheme();
   const router = useRouter();
-
   const { jumpToToday } = useLocalSearchParams<{ jumpToToday?: string }>();
 
-  const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<EvWithMeta[]>([]);
   const theme = useMemo<DeepPartial<ThemeConfigs>>(
     () => mapPaperToCalendarTheme(paper),
@@ -134,9 +94,6 @@ export default function TimetableScreen() {
   // Prevent onDateChanged during animated jumps (e.g. double tap)
   const suppressDateChangedRef = useRef(false);
 
-  // Debounce weekOffset updates (header does NOT use this)
-  const weekOffsetDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // 🔒 Jump lock (prevents header being overwritten during goToDate animations)
   const pendingJumpMondayIsoRef = useRef<string | null>(null);
   const jumpUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,7 +107,6 @@ export default function TimetableScreen() {
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
 
-  const [iCalSyncing, setICalSyncing] = useState(true);
   const [icalMeta, setIcalMeta] = useState<Record<string, ICalEventMeta>>({});
 
   const userId = "1234"; // TODO: real auth
@@ -172,7 +128,6 @@ export default function TimetableScreen() {
 
   useEffect(() => {
     return () => {
-      if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
       if (jumpLockTimeoutRef.current) clearTimeout(jumpLockTimeoutRef.current);
       clearJumpLock();
     };
@@ -194,7 +149,13 @@ export default function TimetableScreen() {
     try {
       const raw = await AsyncStorage.getItem(LOCAL_EVENTS_KEY);
       if (!raw) return [];
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as EvWithMeta[];
+
+      // Backward-compat: ensure `source` exists for older stored events
+      return parsed.map((e) => ({
+        ...e,
+        source: e.source ?? "local",
+      }));
     } catch (e) {
       console.warn("Failed to load local events:", e);
       return [];
@@ -399,8 +360,6 @@ export default function TimetableScreen() {
 
   const syncOnFocus = useCallback(async () => {
     try {
-      setICalSyncing(true);
-
       const storedMeta = await loadIcalMeta();
       setIcalMeta(storedMeta);
 
@@ -460,8 +419,6 @@ export default function TimetableScreen() {
       console.warn("Failed to sync on timetable focus:", e);
       const storedLocalEvents = await loadLocalEvents();
       setEvents(storedLocalEvents);
-    } finally {
-      setICalSyncing(false);
     }
   }, [loadIcalMeta, saveLocalICalSubscriptions, saveLocalEvents, loadLocalEvents, userId]);
 
@@ -486,7 +443,7 @@ export default function TimetableScreen() {
   }, [emitCurrentMonday]);
 
   /* ------------------------------------------------------------------------ */
-  /* Existing timetable logic                                                 */
+  /* Editor logic                                                             */
   /* ------------------------------------------------------------------------ */
 
   const openEditorForEvent = useCallback((ev: EvWithMeta) => {
@@ -623,7 +580,7 @@ export default function TimetableScreen() {
     }
 
     const fullTitle = editorForm.fullTitle || "Untitled";
-    const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(editorForm.fullTitle);
+    const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
 
     const updated: EvWithMeta = {
       ...editingEvent,
@@ -635,6 +592,7 @@ export default function TimetableScreen() {
       titleAbbr,
       note: editorForm.note,
       isTitleAbbrCustom: hasCustomTitleAbbr,
+      source: "local",
     };
 
     setEvents((prev) => {
@@ -665,7 +623,7 @@ export default function TimetableScreen() {
     closeEditor();
   };
 
-  const handlePickerChange = (event: DateTimePickerEvent, date?: Date | undefined) => {
+  const handlePickerChange = (_event: DateTimePickerEvent, date?: Date) => {
     if (!editorForm || editingEvent?.source === "ical") return;
     if (!date) return;
 
@@ -675,7 +633,7 @@ export default function TimetableScreen() {
   };
 
   /* ------------------------------------------------------------------------ */
-  /* Week tracking                                                            */
+  /* Week bounds + zoom                                                       */
   /* ------------------------------------------------------------------------ */
 
   const baseMonday = useMemo(() => getMonday(new Date()), []);
@@ -711,7 +669,7 @@ export default function TimetableScreen() {
   useEffect(() => {
     if (!jumpToToday) return;
 
-    // ✅ ignore if a jump is already running (prevents triple-tap weird offset)
+    // ignore if a jump is already running (prevents triple-tap weird offset)
     if (isJumpingRef.current) {
       router.setParams({ jumpToToday: undefined });
       return;
@@ -726,14 +684,6 @@ export default function TimetableScreen() {
     suppressDateChangedRef.current = true;
 
     emitCurrentMonday(mondayIso);
-
-    if (weekOffsetDebounceRef.current) {
-      clearTimeout(weekOffsetDebounceRef.current);
-      weekOffsetDebounceRef.current = null;
-    }
-
-    const diffWeeks = Math.round((getMonday(today).getTime() - baseMonday.getTime()) / WEEK_MS);
-    setWeekOffset(diffWeeks);
 
     requestAnimationFrame(() => {
       calendarRef.current?.goToDate({
@@ -768,7 +718,7 @@ export default function TimetableScreen() {
         jumpLockTimeoutRef.current = null;
       }
     };
-  }, [jumpToToday, baseMonday, emitCurrentMonday, router, clearJumpLock]);
+  }, [jumpToToday, emitCurrentMonday, router, clearJumpLock]);
 
   const renderDayItem = useCallback(
     ({ dateUnix }: { dateUnix: number }) => {
@@ -777,18 +727,10 @@ export default function TimetableScreen() {
       const dayNum = dayjs(date).format("D");
 
       return (
-        <Surface
-          mode="flat"
-          elevation={0}
-          style={{ alignItems: "center", backgroundColor: "transparent" }}
-        >
+        <Surface mode="flat" elevation={0} style={{ alignItems: "center", backgroundColor: "transparent" }}>
           <Text
             variant="labelSmall"
-            style={{
-              fontSize: 12,
-              fontWeight: "700",
-              color: paper.colors.onSurface,
-            }}
+            style={{ fontSize: 12, fontWeight: "700", color: paper.colors.onSurface }}
           >
             {`${dayLabel} ${dayNum}`}
           </Text>
@@ -861,11 +803,6 @@ export default function TimetableScreen() {
 
             // normal: update header instantly
             emitCurrentMonday(mondayIso);
-
-            // optional: weekOffset tracking (debounced)
-            const diffWeeks = Math.round((getMonday(d).getTime() - baseMonday.getTime()) / WEEK_MS);
-            if (weekOffsetDebounceRef.current) clearTimeout(weekOffsetDebounceRef.current);
-            weekOffsetDebounceRef.current = setTimeout(() => setWeekOffset(diffWeeks), 50);
           }}
         >
           <Surface
@@ -1024,14 +961,7 @@ export default function TimetableScreen() {
                   })}
                 </View>
 
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "flex-end",
-                    marginTop: 16,
-                    columnGap: 8,
-                  }}
-                >
+                <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 16, columnGap: 8 }}>
                   {editingEvent?.source === "local" && (
                     <Button onPress={handleDeleteEvent} textColor={paper.colors.error}>
                       Löschen
