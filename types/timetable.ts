@@ -24,8 +24,6 @@ export type EvWithMeta = Ev & {
   isTitleAbbrCustom?: boolean;
   note?: string;
 
-  // ✅ make this effectively required in app logic
-  // (timetable.tsx ensures older stored events default to "local")
   source: EventSource;
 
   icalSubscriptionId?: string;
