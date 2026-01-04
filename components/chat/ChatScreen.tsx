@@ -381,24 +381,41 @@ export default function ChatScreen() {
     try {
       const messageText = input.trim();
       const now = new Date().toISOString();
-      const { error } = await supabase.from(TABLES.roomMessages).insert({
-        [COLUMNS.roomMessages.roomKey]: room,
-        [COLUMNS.roomMessages.senderId]: userId,
-        [COLUMNS.roomMessages.username]: username,
-        [COLUMNS.roomMessages.text]: messageText,
-        [COLUMNS.roomMessages.createdAt]: now,
-      });
+      const { data, error } = await supabase
+        .from(TABLES.roomMessages)
+        .insert({
+          [COLUMNS.roomMessages.roomKey]: room,
+          [COLUMNS.roomMessages.senderId]: userId,
+          [COLUMNS.roomMessages.username]: username,
+          [COLUMNS.roomMessages.text]: messageText,
+          [COLUMNS.roomMessages.createdAt]: now,
+        })
+        .select(
+          [
+            COLUMNS.roomMessages.id,
+            COLUMNS.roomMessages.senderId,
+            COLUMNS.roomMessages.username,
+            COLUMNS.roomMessages.text,
+            COLUMNS.roomMessages.createdAt,
+          ].join(",")
+        )
+        .single();
       if (error) throw error;
-      setMessages((prev) => [
-        {
-          id: `local-${now}-${userId}`,
-          sender: userId,
-          username,
-          text: messageText,
-          timestamp: now,
-        },
-        ...prev,
-      ]);
+
+      if (data) {
+        const entry = {
+          id: (data as any)?.[COLUMNS.roomMessages.id],
+          sender: (data as any)?.[COLUMNS.roomMessages.senderId],
+          username: (data as any)?.[COLUMNS.roomMessages.username],
+          text: (data as any)?.[COLUMNS.roomMessages.text],
+          timestamp: (data as any)?.[COLUMNS.roomMessages.createdAt],
+        };
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === entry.id)) return prev;
+          return [entry, ...prev];
+        });
+      }
+
       setInput("");
       setInputHeight(40);
     } catch (err) {

@@ -13,6 +13,16 @@ export default function ReplyScreen() {
   const router = useRouter();
   const { room, messageId, messageText, messageUser, dmId } = useLocalSearchParams();
   const userId = useSupabaseUserId();
+  const toSingle = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+  const isUuid = (value: string | undefined) =>
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    );
+  const roomValue = toSingle(room);
+  const messageIdValue = toSingle(messageId);
+  const dmIdValue = toSingle(dmId);
 
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
@@ -100,7 +110,7 @@ export default function ReplyScreen() {
   // Load replies (DM or group thread)
   useEffect(() => {
     // === DM THREAD ===
-    if (dmId) {
+    if (dmIdValue) {
       let cancelled = false;
 
       const loadDmReplies = async () => {
@@ -115,7 +125,7 @@ export default function ReplyScreen() {
               COLUMNS.dmMessages.createdAt,
             ].join(",")
           )
-          .eq(COLUMNS.dmMessages.threadId, String(dmId))
+          .eq(COLUMNS.dmMessages.threadId, dmIdValue)
           .order(COLUMNS.dmMessages.createdAt, { ascending: true });
 
         if (error) {
@@ -144,14 +154,14 @@ export default function ReplyScreen() {
       loadDmReplies();
 
       const channel = supabase
-        .channel(`dm-replies-${dmId}`)
+        .channel(`dm-replies-${dmIdValue}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: TABLES.dmMessages,
-            filter: `${COLUMNS.dmMessages.threadId}=eq.${String(dmId)}`,
+            filter: `${COLUMNS.dmMessages.threadId}=eq.${dmIdValue}`,
           },
           loadDmReplies
         )
@@ -164,7 +174,12 @@ export default function ReplyScreen() {
     }
 
     // === GROUP CHAT THREAD ===
-    if (room && messageId) {
+    if (roomValue && messageIdValue) {
+      if (!isUuid(messageIdValue)) {
+        setReplies([]);
+        return;
+      }
+
       let cancelled = false;
 
       const loadRoomReplies = async () => {
@@ -179,7 +194,7 @@ export default function ReplyScreen() {
               COLUMNS.roomReplies.createdAt,
             ].join(",")
           )
-          .eq(COLUMNS.roomReplies.roomMessageId, String(messageId))
+          .eq(COLUMNS.roomReplies.roomMessageId, messageIdValue)
           .order(COLUMNS.roomReplies.createdAt, { ascending: true });
 
         if (error) {
@@ -208,14 +223,14 @@ export default function ReplyScreen() {
       loadRoomReplies();
 
       const channel = supabase
-        .channel(`room-replies-${messageId}`)
+        .channel(`room-replies-${messageIdValue}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: TABLES.roomReplies,
-            filter: `${COLUMNS.roomReplies.roomMessageId}=eq.${String(messageId)}`,
+            filter: `${COLUMNS.roomReplies.roomMessageId}=eq.${messageIdValue}`,
           },
           loadRoomReplies
         )
@@ -226,7 +241,7 @@ export default function ReplyScreen() {
         supabase.removeChannel(channel);
       };
     }
-  }, [room, messageId, dmId, blocked]);
+  }, [roomValue, messageIdValue, dmIdValue, blocked]);
 
   // Send message
   const sendReply = async () => {
@@ -236,11 +251,11 @@ export default function ReplyScreen() {
       const messageText = input.trim();
       const now = new Date().toISOString();
       // === DM ===
-      if (dmId) {
+      if (dmIdValue) {
         const { data: thread, error: threadErr } = await supabase
           .from(TABLES.dmThreads)
           .select(COLUMNS.dmThreads.userIds)
-          .eq(COLUMNS.dmThreads.id, String(dmId))
+          .eq(COLUMNS.dmThreads.id, dmIdValue)
           .maybeSingle();
 
         if (threadErr) throw threadErr;
@@ -278,13 +293,25 @@ export default function ReplyScreen() {
           }
         }
 
-        const { error } = await supabase.from(TABLES.dmMessages).insert({
-          [COLUMNS.dmMessages.threadId]: String(dmId),
-          [COLUMNS.dmMessages.senderId]: userId,
-          [COLUMNS.dmMessages.username]: username,
-          [COLUMNS.dmMessages.text]: messageText,
-          [COLUMNS.dmMessages.createdAt]: now,
-        });
+        const { data, error } = await supabase
+          .from(TABLES.dmMessages)
+          .insert({
+            [COLUMNS.dmMessages.threadId]: dmIdValue,
+            [COLUMNS.dmMessages.senderId]: userId,
+            [COLUMNS.dmMessages.username]: username,
+            [COLUMNS.dmMessages.text]: messageText,
+            [COLUMNS.dmMessages.createdAt]: now,
+          })
+          .select(
+            [
+              COLUMNS.dmMessages.id,
+              COLUMNS.dmMessages.senderId,
+              COLUMNS.dmMessages.username,
+              COLUMNS.dmMessages.text,
+              COLUMNS.dmMessages.createdAt,
+            ].join(",")
+          )
+          .single();
         if (error) throw error;
 
         await supabase
@@ -293,43 +320,63 @@ export default function ReplyScreen() {
             [COLUMNS.dmThreads.lastMessage]: messageText,
             [COLUMNS.dmThreads.lastTimestamp]: now,
           })
-          .eq(COLUMNS.dmThreads.id, String(dmId));
+          .eq(COLUMNS.dmThreads.id, dmIdValue);
 
-        setReplies((prev) => [
-          ...prev,
-          {
-            id: `local-${now}-${userId}`,
-            sender: userId,
-            username,
-            text: messageText,
-            timestamp: now,
-          },
-        ]);
+        if (data) {
+          const entry = {
+            id: (data as any)?.[COLUMNS.dmMessages.id],
+            sender: (data as any)?.[COLUMNS.dmMessages.senderId],
+            username: (data as any)?.[COLUMNS.dmMessages.username],
+            text: (data as any)?.[COLUMNS.dmMessages.text],
+            timestamp: (data as any)?.[COLUMNS.dmMessages.createdAt],
+          };
+          setReplies((prev) => {
+            if (prev.some((item) => item.id === entry.id)) return prev;
+            return [...prev, entry];
+          });
+        }
         setInput("");
+        setInputHeight(40);
         return;
       }
 
       // === Group thread ===
-      if (room && messageId) {
-        const { error } = await supabase.from(TABLES.roomReplies).insert({
-          [COLUMNS.roomReplies.roomMessageId]: String(messageId),
-          [COLUMNS.roomReplies.senderId]: userId,
-          [COLUMNS.roomReplies.username]: username,
-          [COLUMNS.roomReplies.text]: messageText,
-          [COLUMNS.roomReplies.createdAt]: now,
-        });
+      if (roomValue && messageIdValue) {
+        if (!isUuid(messageIdValue)) return;
+        const { data, error } = await supabase
+          .from(TABLES.roomReplies)
+          .insert({
+            [COLUMNS.roomReplies.roomMessageId]: messageIdValue,
+            [COLUMNS.roomReplies.senderId]: userId,
+            [COLUMNS.roomReplies.username]: username,
+            [COLUMNS.roomReplies.text]: messageText,
+            [COLUMNS.roomReplies.createdAt]: now,
+          })
+          .select(
+            [
+              COLUMNS.roomReplies.id,
+              COLUMNS.roomReplies.senderId,
+              COLUMNS.roomReplies.username,
+              COLUMNS.roomReplies.text,
+              COLUMNS.roomReplies.createdAt,
+            ].join(",")
+          )
+          .single();
         if (error) throw error;
 
-        setReplies((prev) => [
-          ...prev,
-          {
-            id: `local-${now}-${userId}`,
-            sender: userId,
-            username,
-            text: messageText,
-            timestamp: now,
-          },
-        ]);
+        if (data) {
+          const entry = {
+            id: (data as any)?.[COLUMNS.roomReplies.id],
+            sender: (data as any)?.[COLUMNS.roomReplies.senderId],
+            username: (data as any)?.[COLUMNS.roomReplies.username],
+            text: (data as any)?.[COLUMNS.roomReplies.text],
+            timestamp: (data as any)?.[COLUMNS.roomReplies.createdAt],
+          };
+          setReplies((prev) => {
+            if (prev.some((item) => item.id === entry.id)) return prev;
+            return [...prev, entry];
+          });
+        }
         setInput("");
         setInputHeight(40);
       }
@@ -363,7 +410,7 @@ export default function ReplyScreen() {
         </Surface>
 
         {/* Original message (only group chats) */}
-        {!dmId && (
+        {!dmIdValue && (
           <Surface
             style={{
               padding: 12,
