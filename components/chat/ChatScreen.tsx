@@ -445,7 +445,7 @@ export default function ChatScreen() {
     const match = (d: Direct) =>
       d.displayName.toLowerCase().includes(q) || (d.last ?? "").toLowerCase().includes(q);
 
-    return directs.filter(match);
+    return directs.filter((d) => !d.hidden && match(d));
   }, [directs, search]);
 
   // Hide blocked senders

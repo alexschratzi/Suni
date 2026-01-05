@@ -34,6 +34,7 @@
       "chat": "Chat",
       "friends": "Friends",
       "uni": "University",
+      "news": "News",
       "data": "Data & cache",
       "security": "Security",
       "accessibility": "Accessibility",
@@ -68,6 +69,11 @@
       "notifyMentionDesc": "Notify when you are mentioned",
       "notifyDirect": "Direct messages",
       "notifyDirectDesc": "Notify on new private messages",
+      "hiddenTitle": "Hidden chats",
+      "hiddenDesc": "Manage hidden direct chats",
+      "hiddenEmpty": "No hidden chats",
+      "hiddenUnhide": "Unhide",
+      "hiddenNoMessage": "No messages yet",
       "notifyRooms": "Thread activity",
       "notifyRoomsDesc": "Notify when someone posts in your current threads",
       "mediaDownload": "Media auto-download",
@@ -76,7 +82,23 @@
     "friendsSection": {
       "whoCanRequest": "Who can send requests?",
       "autoAccept": "Auto-accept",
-      "blocked": "Blocked users"
+      "blocked": "Blocked users",
+      "blockedDesc": "Manage blocked users",
+      "blockedEmpty": "No blocked users",
+      "blockedUnblock": "Unblock",
+      "hiddenTitle": "Hidden chats",
+      "hiddenDesc": "Manage hidden direct chats",
+      "hiddenEmpty": "No hidden chats",
+      "hiddenUnhide": "Unhide",
+      "hiddenNoMessage": "No messages yet"
+    },
+    "newsSection": {
+      "push": "News push",
+      "pushDesc": "Notify on new posts",
+      "topics": "Topics",
+      "topicsDesc": "Uni, city, business",
+      "sources": "Sources",
+      "sourcesDesc": "Manage feeds"
     },
     "uniSection": {
       "degree": "Degree",

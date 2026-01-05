@@ -34,6 +34,7 @@
       "chat": "Chat",
       "friends": "Freunde",
       "uni": "Universität",
+      "news": "News",
       "data": "Daten & Cache",
       "security": "Sicherheit",
       "accessibility": "Barrierefreiheit",
@@ -68,6 +69,11 @@
       "notifyMentionDesc": "Benachrichtigen, wenn du erwähnt wirst",
       "notifyDirect": "Private Nachrichten",
       "notifyDirectDesc": "Benachrichtigen bei neuen privaten Nachrichten",
+      "hiddenTitle": "Ausgeblendete Chats",
+      "hiddenDesc": "Verwalte ausgeblendete Direktchats",
+      "hiddenEmpty": "Keine ausgeblendeten Chats",
+      "hiddenUnhide": "Einblenden",
+      "hiddenNoMessage": "Noch keine Nachrichten",
       "notifyRooms": "Thread-Aktivität",
       "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Threads postet",
       "mediaDownload": "Medien-Auto-Download",
@@ -76,7 +82,23 @@
     "friendsSection": {
       "whoCanRequest": "Wer darf Anfragen schicken?",
       "autoAccept": "Automatisch annehmen",
-      "blocked": "Blockierte Nutzer"
+      "blocked": "Blockierte Nutzer",
+      "blockedDesc": "Verwalte blockierte Nutzer",
+      "blockedEmpty": "Keine blockierten Nutzer",
+      "blockedUnblock": "Entblocken",
+      "hiddenTitle": "Ausgeblendete Chats",
+      "hiddenDesc": "Verwalte ausgeblendete Direktchats",
+      "hiddenEmpty": "Keine ausgeblendeten Chats",
+      "hiddenUnhide": "Einblenden",
+      "hiddenNoMessage": "Noch keine Nachrichten"
+    },
+    "newsSection": {
+      "push": "News-Push",
+      "pushDesc": "Benachrichtigen bei neuen News",
+      "topics": "Themen",
+      "topicsDesc": "Uni, Stadt, Wirtschaft",
+      "sources": "Quellen",
+      "sourcesDesc": "Feeds verwalten"
     },
     "uniSection": {
       "degree": "Studiengang",
