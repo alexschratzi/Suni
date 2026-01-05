@@ -68,8 +68,8 @@
       "notifyMentionDesc": "Benachrichtigen, wenn du erwähnt wirst",
       "notifyDirect": "Private Nachrichten",
       "notifyDirectDesc": "Benachrichtigen bei neuen privaten Nachrichten",
-      "notifyRooms": "Raum-Aktivität",
-      "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Räumen postet",
+      "notifyRooms": "Thread-Aktivität",
+      "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Threads postet",
       "mediaDownload": "Medien-Auto-Download",
       "theme": "Chat-Theme"
     },
@@ -115,17 +115,17 @@
 
   "chat": {
     "tabs": {
-      "rooms": "Chaträume",
+      "rooms": "Threads",
       "direct": "Direkt"
     },
     "search": {
-      "roomsPlaceholder": "Räume suchen…",
+      "roomsPlaceholder": "Threads suchen…",
       "directPlaceholder": "Direktnachrichten suchen…"
     },
     "rooms": {
       "salzburg": {
         "title": "Salzburg",
-        "subtitle": "Allgemeiner Chat für Salzburg"
+        "subtitle": "Allgemeiner Thread für Salzburg"
       },
       "oesterreich": {
         "title": "Österreich",
@@ -137,8 +137,8 @@
       }
     },
     "empty": {
-      "roomsTitle": "Keine Chaträume gefunden",
-      "roomsSubtitle": "Passe die Suche an oder erstelle später neue Räume.",
+      "roomsTitle": "Keine Threads gefunden",
+      "roomsSubtitle": "Passe die Suche an oder erstelle später neue Threads.",
       "directTitle": "Keine Direktnachrichten",
       "directSubtitle": "Starte eine neue Unterhaltung."
     },
@@ -159,6 +159,10 @@
     "subtitle": "Suche Nutzer, schicke Anfragen und verwalte eingehende sowie gesendete Requests.",
     "searchLabel": "Freund finden",
     "searchButton": "Suchen & Anfrage senden",
+    "listTitle": "Freundesliste",
+    "listEmpty": "Noch keine Freunde",
+    "requestsTitle": "Freundesanfragen",
+    "chat": "Chat",
     "incomingTitle": "Eingehende Anfragen",
     "incomingEmpty": "Keine offenen Anfragen",
     "outgoingTitle": "Gesendete Anfragen",
