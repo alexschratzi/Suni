@@ -1,19 +1,20 @@
 // app/(app)/(stack)/global_settings.tsx
 import React, { useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import {
   Text,
   useTheme,
   List,
   Divider,
   Surface,
+  ActivityIndicator,
   Switch,
   Button,
   Chip,
 } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
   useAppTheme,
@@ -30,10 +31,18 @@ type SectionKey =
   | "chat"
   | "friends"
   | "uni"
+  | "news"
   | "data"
   | "security"
   | "accessibility"
   | "info";
+
+type HiddenThread = {
+  id: string;
+  otherUid: string;
+  last?: string | null;
+  lastTimestamp?: string | null;
+};
 
 const TodoTag = ({
   label = "TODO",
@@ -60,6 +69,7 @@ export default function SettingsScreen() {
   } = useAppTheme();
   const { t, i18n } = useTranslation();
   const userId = useSupabaseUserId();
+  const router = useRouter();
   const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
   const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
   const listItemTextStyles = React.useMemo(
@@ -76,6 +86,7 @@ export default function SettingsScreen() {
     { key: "chat", label: t("settings.sections.chat") },
     { key: "friends", label: t("settings.sections.friends") },
     { key: "uni", label: t("settings.sections.uni") },
+    { key: "news", label: t("settings.sections.news") },
     { key: "data", label: t("settings.sections.data") },
     { key: "security", label: t("settings.sections.security") },
     { key: "accessibility", label: t("settings.sections.accessibility") },
@@ -107,6 +118,65 @@ export default function SettingsScreen() {
     uniEvents: boolean;
     cityEvents: boolean;
   }>({ uniParties: true, uniEvents: true, cityEvents: true });
+  const [blockedExpanded, setBlockedExpanded] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+  const [blockedProfiles, setBlockedProfiles] = useState<Record<string, { username?: string }>>({});
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [hiddenExpanded, setHiddenExpanded] = useState(false);
+  const [hiddenThreads, setHiddenThreads] = useState<HiddenThread[]>([]);
+  const [hiddenProfiles, setHiddenProfiles] = useState<Record<string, { username?: string }>>({});
+  const [hiddenLoading, setHiddenLoading] = useState(false);
+  const [clearingLocal, setClearingLocal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const hiddenDisplayName = React.useMemo(
+    () => (uid: string) => hiddenProfiles[uid]?.username || uid,
+    [hiddenProfiles]
+  );
+  const blockedDisplayName = React.useMemo(
+    () => (uid: string) => blockedProfiles[uid]?.username || uid,
+    [blockedProfiles]
+  );
+  const fetchUsernames = React.useCallback(async (ids: string[]) => {
+    let remaining = ids;
+    const profileMap: Record<string, { username?: string }> = {};
+
+    const { data: profileData, error: profileError } = await supabase
+      .from(TABLES.profiles)
+      .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+      .in(COLUMNS.profiles.id, remaining);
+
+    if (profileError) {
+      console.error("Profiles load error:", profileError.message);
+    } else {
+      (profileData || []).forEach((row: any) => {
+        const id = row?.[COLUMNS.profiles.id];
+        const username = row?.[COLUMNS.profiles.username];
+        if (id) profileMap[id] = { username };
+      });
+      remaining = remaining.filter((uid) => !profileMap[uid]?.username);
+    }
+
+    if (remaining.length === 0) return profileMap;
+
+    const { data: usernameData, error: usernameError } = await supabase
+      .from(TABLES.usernames)
+      .select(`${COLUMNS.usernames.userId},${COLUMNS.usernames.username}`)
+      .in(COLUMNS.usernames.userId, remaining);
+
+    if (usernameError) {
+      console.error("Usernames load error:", usernameError.message);
+      return profileMap;
+    }
+
+    (usernameData || []).forEach((row: any) => {
+      const id = row?.[COLUMNS.usernames.userId];
+      const username = row?.[COLUMNS.usernames.username];
+      if (id) profileMap[id] = { username };
+    });
+
+    return profileMap;
+  }, []);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const [positions, setPositions] = useState<Record<SectionKey, number>>(
@@ -227,6 +297,194 @@ export default function SettingsScreen() {
     loadPrefs();
   }, [setTextScale, userId]);
 
+  useEffect(() => {
+    if (!userId) {
+      setBlockedUsers([]);
+      setBlockedProfiles({});
+      setBlockedLoading(false);
+      return;
+    }
+
+    if (!blockedExpanded) return;
+
+    let cancelled = false;
+
+    const loadBlockedUsers = async () => {
+      setBlockedLoading(true);
+      const { data, error } = await supabase
+        .from(TABLES.blocks)
+        .select(COLUMNS.blocks.blockedId)
+        .eq(COLUMNS.blocks.blockerId, userId);
+
+      if (error) {
+        console.error("Blocked users load error:", error.message);
+        if (!cancelled) {
+          setBlockedUsers([]);
+          setBlockedLoading(false);
+        }
+        return;
+      }
+
+      if (cancelled) return;
+      const ids =
+        (data || [])
+          .map((row: any) => row?.[COLUMNS.blocks.blockedId])
+          .filter(Boolean) || [];
+      setBlockedUsers(ids);
+      setBlockedLoading(false);
+    };
+
+    loadBlockedUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [blockedExpanded, userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setHiddenThreads([]);
+      setHiddenProfiles({});
+      setHiddenLoading(false);
+      return;
+    }
+
+    if (!hiddenExpanded) return;
+
+    let cancelled = false;
+
+    const loadHiddenThreads = async () => {
+      setHiddenLoading(true);
+      const columns = [
+        COLUMNS.dmThreads.id,
+        COLUMNS.dmThreads.userIds,
+        COLUMNS.dmThreads.lastMessage,
+        COLUMNS.dmThreads.lastTimestamp,
+        COLUMNS.dmThreads.hiddenBy,
+      ].join(",");
+
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.hiddenBy, [userId])
+        .order(COLUMNS.dmThreads.lastTimestamp, { ascending: false, nullsFirst: false });
+
+      if (error) {
+        console.error("Hidden chats load error:", error.message);
+        if (!cancelled) {
+          setHiddenThreads([]);
+          setHiddenLoading(false);
+        }
+        return;
+      }
+
+      if (cancelled) return;
+      const threads =
+        (data || [])
+          .map((row: any) => {
+            const userIds = row?.[COLUMNS.dmThreads.userIds];
+            let otherUid = userId;
+            if (Array.isArray(userIds)) {
+              otherUid = userIds.find((id: string) => id !== userId) || userId;
+            }
+            return {
+              id: row?.[COLUMNS.dmThreads.id],
+              otherUid,
+              last: row?.[COLUMNS.dmThreads.lastMessage] ?? "",
+              lastTimestamp: row?.[COLUMNS.dmThreads.lastTimestamp] ?? null,
+            };
+          })
+          .filter((row: HiddenThread) => row.id && row.otherUid) || [];
+
+      setHiddenThreads(threads);
+      setHiddenLoading(false);
+    };
+
+    loadHiddenThreads();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hiddenExpanded, userId]);
+
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(
+        hiddenThreads.map((thread) => thread.otherUid).filter((uid) => !hiddenProfiles[uid])
+      )
+    );
+    if (!missing.length) return;
+
+    (async () => {
+      const profileMap = await fetchUsernames(missing);
+      if (Object.keys(profileMap).length > 0) {
+        setHiddenProfiles((prev) => ({ ...prev, ...profileMap }));
+      }
+    })();
+  }, [hiddenThreads, hiddenProfiles, fetchUsernames]);
+
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(blockedUsers.filter((uid) => !blockedProfiles[uid]))
+    );
+    if (!missing.length) return;
+
+    (async () => {
+      const profileMap = await fetchUsernames(missing);
+      if (Object.keys(profileMap).length > 0) {
+        setBlockedProfiles((prev) => ({ ...prev, ...profileMap }));
+      }
+    })();
+  }, [blockedUsers, blockedProfiles, fetchUsernames]);
+
+  const unhideThread = async (threadId: string) => {
+    if (!userId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(COLUMNS.dmThreads.hiddenBy)
+        .eq(COLUMNS.dmThreads.id, threadId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const current = Array.isArray(data?.[COLUMNS.dmThreads.hiddenBy])
+        ? (data?.[COLUMNS.dmThreads.hiddenBy] as string[])
+        : [];
+      const next = current.filter((id) => id !== userId);
+
+      const { error: updateError } = await supabase
+        .from(TABLES.dmThreads)
+        .update({ [COLUMNS.dmThreads.hiddenBy]: next })
+        .eq(COLUMNS.dmThreads.id, threadId);
+
+      if (updateError) throw updateError;
+
+      setHiddenThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+    } catch (err) {
+      console.error("Hidden chat unhide error:", err);
+    }
+  };
+
+  const unblockUser = async (blockedId: string) => {
+    if (!userId) return;
+
+    try {
+      const { error } = await supabase
+        .from(TABLES.blocks)
+        .delete()
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, blockedId);
+
+      if (error) throw error;
+
+      setBlockedUsers((prev) => prev.filter((id) => id !== blockedId));
+    } catch (err) {
+      console.error("Blocked user unblock error:", err);
+    }
+  };
+
   const saveNotifications = async (next: {
     global?: boolean;
     chat?: boolean;
@@ -296,6 +554,62 @@ export default function SettingsScreen() {
     } catch (err) {
       console.error("Failed to save notification settings", err);
     }
+  };
+
+  const confirmClearLocal = () => {
+    if (clearingLocal) return;
+    Alert.alert(
+      t("settings.dataSection.clearLocalConfirmTitle"),
+      t("settings.dataSection.clearLocalConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.dataSection.clearLocalConfirmAction"),
+          style: "destructive",
+          onPress: async () => {
+            setClearingLocal(true);
+            try {
+              await AsyncStorage.clear();
+              await supabase.auth.signOut();
+              router.replace("/(auth)");
+            } catch (err) {
+              console.error("Clear local data failed:", err);
+            } finally {
+              setClearingLocal(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = () => {
+    if (deletingAccount) return;
+    Alert.alert(
+      t("settings.dataSection.deleteAccountConfirmTitle"),
+      t("settings.dataSection.deleteAccountConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.dataSection.deleteAccountConfirmAction"),
+          style: "destructive",
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              const { error } = await supabase.rpc("delete_user");
+              if (error) throw error;
+
+              await supabase.auth.signOut();
+              router.replace("/(auth)");
+            } catch (err) {
+              console.error("Account deletion failed:", err);
+            } finally {
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSectionLayout = (key: SectionKey) => (e: any) => {
@@ -638,7 +952,6 @@ export default function SettingsScreen() {
                 />
               )}
             />
-            <Divider />
             <List.Item
               title={t("settings.chatSection.notifyRooms")}
               description={t("settings.chatSection.notifyRoomsDesc")}
@@ -707,12 +1020,78 @@ export default function SettingsScreen() {
               right={() => <TodoTag scale={scale} />}
             />
             <Divider />
-            <List.Item
-              title={t("settings.friendsSection.blocked")}
-              description="Verwalten"
-              {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
-            />
+            <List.Accordion
+              title={`${t("settings.friendsSection.blocked")} (${blockedUsers.length})`}
+              description={t("settings.friendsSection.blockedDesc")}
+              expanded={blockedExpanded}
+              onPress={() => setBlockedExpanded((v) => !v)}
+            >
+              {blockedLoading ? (
+                <View style={{ paddingVertical: 12 }}>
+                  <ActivityIndicator />
+                </View>
+              ) : blockedUsers.length === 0 ? (
+                <Text style={{ paddingHorizontal: 16, color: paperTheme.colors.onSurfaceVariant }}>
+                  {t("settings.friendsSection.blockedEmpty")}
+                </Text>
+              ) : (
+                blockedUsers.map((uid, idx) => (
+                  <View key={uid}>
+                    <List.Item
+                      title={blockedDisplayName(uid)}
+                      {...listItemTextStyles}
+                      left={(props) => <List.Icon {...props} icon="account-cancel-outline" />}
+                      right={() => (
+                        <Button compact onPress={() => unblockUser(uid)}>
+                          {t("settings.friendsSection.blockedUnblock")}
+                        </Button>
+                      )}
+                    />
+                    {idx < blockedUsers.length - 1 && (
+                      <Divider style={{ marginLeft: 56 }} />
+                    )}
+                  </View>
+                ))
+              )}
+            </List.Accordion>
+            <Divider />
+            <List.Accordion
+              title={`${t("settings.friendsSection.hiddenTitle")} (${hiddenThreads.length})`}
+              description={t("settings.friendsSection.hiddenDesc")}
+              expanded={hiddenExpanded}
+              onPress={() => setHiddenExpanded((v) => !v)}
+            >
+              {hiddenLoading ? (
+                <View style={{ paddingVertical: 12 }}>
+                  <ActivityIndicator />
+                </View>
+              ) : hiddenThreads.length === 0 ? (
+                <Text style={{ paddingHorizontal: 16, color: paperTheme.colors.onSurfaceVariant }}>
+                  {t("settings.friendsSection.hiddenEmpty")}
+                </Text>
+              ) : (
+                hiddenThreads.map((thread, idx) => (
+                  <View key={thread.id}>
+                    <List.Item
+                      title={hiddenDisplayName(thread.otherUid)}
+                      description={
+                        thread.last || t("settings.friendsSection.hiddenNoMessage")
+                      }
+                      {...listItemTextStyles}
+                      left={(props) => <List.Icon {...props} icon="account" />}
+                      right={() => (
+                        <Button compact onPress={() => unhideThread(thread.id)}>
+                          {t("settings.friendsSection.hiddenUnhide")}
+                        </Button>
+                      )}
+                    />
+                    {idx < hiddenThreads.length - 1 && (
+                      <Divider style={{ marginLeft: 56 }} />
+                    )}
+                  </View>
+                ))
+              )}
+            </List.Accordion>
           </List.Section>
         </Surface>
       </View>
@@ -749,6 +1128,38 @@ export default function SettingsScreen() {
         </Surface>
       </View>
 
+      {/* News */}
+      <View onLayout={handleSectionLayout("news")}>
+        <Surface style={styles.card} mode="elevated">
+          <List.Section>
+            <List.Subheader style={styles.subheader}>
+              {t("settings.sections.news")}
+            </List.Subheader>
+
+            <List.Item
+              title={t("settings.newsSection.push")}
+              description={t("settings.newsSection.pushDesc")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.newsSection.topics")}
+              description={t("settings.newsSection.topicsDesc")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+            <Divider />
+            <List.Item
+              title={t("settings.newsSection.sources")}
+              description={t("settings.newsSection.sourcesDesc")}
+              {...listItemTextStyles}
+              right={() => <TodoTag scale={scale} />}
+            />
+          </List.Section>
+        </Surface>
+      </View>
+
       {/* Daten & Cache */}
       <View onLayout={handleSectionLayout("data")}>
         <Surface style={styles.card} mode="elevated">
@@ -758,21 +1169,37 @@ export default function SettingsScreen() {
             </List.Subheader>
 
             <List.Item
-              title={t("settings.dataSection.clearMedia")}
+              title={t("settings.dataSection.clearLocal")}
+              description={t("settings.dataSection.clearLocalDesc")}
               {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
+              right={() => (
+                <Button
+                  mode="contained-tonal"
+                  onPress={confirmClearLocal}
+                  loading={clearingLocal}
+                  disabled={clearingLocal}
+                >
+                  {t("settings.dataSection.clearLocalAction")}
+                </Button>
+              )}
             />
             <Divider />
             <List.Item
-              title={t("settings.dataSection.resetOffline")}
+              title={t("settings.dataSection.deleteAccount")}
+              description={t("settings.dataSection.deleteAccountDesc")}
               {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
-            />
-            <Divider />
-            <List.Item
-              title={t("settings.dataSection.export")}
-              {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
+              right={() => (
+                <Button
+                  mode="contained"
+                  buttonColor={paperTheme.colors.error}
+                  textColor={paperTheme.colors.onError}
+                  onPress={confirmDeleteAccount}
+                  loading={deletingAccount}
+                  disabled={deletingAccount}
+                >
+                  {t("settings.dataSection.deleteAccountAction")}
+                </Button>
+              )}
             />
           </List.Section>
         </Surface>

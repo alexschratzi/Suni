@@ -71,7 +71,10 @@ export function TimetableHeaderRight() {
 
   const goToGeneralSettings = () => {
     closeMenu();
-    router.push("/(app)/(stack)/global_settings");
+    router.push({
+      pathname: "/(app)/(stack)/global_settings",
+      params: { section: "calendar" },
+    });
   };
 
   const goToProfile = () => {

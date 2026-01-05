@@ -53,8 +53,18 @@ export default function AppStackLayout() {
                 Amadeus
               </Text>
             ),
-          headerRight: () =>
-            currentTab === "timetable" ? <TimetableHeaderRight /> : <DefaultHeaderRight />,
+          headerRight: () => {
+            if (currentTab === "timetable") return <TimetableHeaderRight />;
+            const section =
+              currentTab === "news"
+                ? "news"
+                : currentTab === "uni"
+                ? "uni"
+                : currentTab === "chat"
+                ? "chat"
+                : undefined;
+            return <DefaultHeaderRight section={section} />;
+          },
         }}
       />
 

@@ -34,6 +34,7 @@
       "chat": "Chat",
       "friends": "Friends",
       "uni": "University",
+      "news": "News",
       "data": "Data & cache",
       "security": "Security",
       "accessibility": "Accessibility",
@@ -68,15 +69,36 @@
       "notifyMentionDesc": "Notify when you are mentioned",
       "notifyDirect": "Direct messages",
       "notifyDirectDesc": "Notify on new private messages",
-      "notifyRooms": "Room activity",
-      "notifyRoomsDesc": "Notify when someone posts in your current rooms",
+      "hiddenTitle": "Hidden chats",
+      "hiddenDesc": "Manage hidden direct chats",
+      "hiddenEmpty": "No hidden chats",
+      "hiddenUnhide": "Unhide",
+      "hiddenNoMessage": "No messages yet",
+      "notifyRooms": "Thread activity",
+      "notifyRoomsDesc": "Notify when someone posts in your current threads",
       "mediaDownload": "Media auto-download",
       "theme": "Chat theme"
     },
     "friendsSection": {
       "whoCanRequest": "Who can send requests?",
       "autoAccept": "Auto-accept",
-      "blocked": "Blocked users"
+      "blocked": "Blocked users",
+      "blockedDesc": "Manage blocked users",
+      "blockedEmpty": "No blocked users",
+      "blockedUnblock": "Unblock",
+      "hiddenTitle": "Hidden chats",
+      "hiddenDesc": "Manage hidden direct chats",
+      "hiddenEmpty": "No hidden chats",
+      "hiddenUnhide": "Unhide",
+      "hiddenNoMessage": "No messages yet"
+    },
+    "newsSection": {
+      "push": "News push",
+      "pushDesc": "Notify on new posts",
+      "topics": "Topics",
+      "topicsDesc": "Uni, city, business",
+      "sources": "Sources",
+      "sourcesDesc": "Manage feeds"
     },
     "uniSection": {
       "degree": "Degree",
@@ -84,9 +106,18 @@
       "newsPush": "Uni news push"
     },
     "dataSection": {
-      "clearMedia": "Clear media cache",
-      "resetOffline": "Reset offline data",
-      "export": "Export / Backup"
+      "clearLocal": "Clear local data",
+      "clearLocalDesc": "Remove AsyncStorage and local session",
+      "clearLocalAction": "Clear",
+      "clearLocalConfirmTitle": "Clear local data?",
+      "clearLocalConfirmBody": "All locally stored data will be removed. You will be signed out.",
+      "clearLocalConfirmAction": "Clear now",
+      "deleteAccount": "Delete account",
+      "deleteAccountDesc": "Your profile and related data will be deleted",
+      "deleteAccountAction": "Delete account",
+      "deleteAccountConfirmTitle": "Delete account permanently?",
+      "deleteAccountConfirmBody": "This action cannot be undone.",
+      "deleteAccountConfirmAction": "Delete permanently"
     },
     "securitySection": {
       "pin": "App PIN / biometrics",
@@ -115,17 +146,17 @@
 
   "chat": {
     "tabs": {
-      "rooms": "Rooms",
+      "rooms": "Threads",
       "direct": "Direct"
     },
     "search": {
-      "roomsPlaceholder": "Search rooms…",
+      "roomsPlaceholder": "Search threads…",
       "directPlaceholder": "Search direct messages…"
     },
     "rooms": {
       "salzburg": {
         "title": "Salzburg",
-        "subtitle": "General chat for Salzburg"
+        "subtitle": "General thread for Salzburg"
       },
       "oesterreich": {
         "title": "Austria",
@@ -137,8 +168,8 @@
       }
     },
     "empty": {
-      "roomsTitle": "No chat rooms found",
-      "roomsSubtitle": "Adjust the search or create new rooms later.",
+      "roomsTitle": "No threads found",
+      "roomsSubtitle": "Adjust the search or create new threads later.",
       "directTitle": "No direct messages",
       "directSubtitle": "Start a new conversation."
     },
@@ -159,6 +190,10 @@
     "subtitle": "Search users, send requests, manage incoming/outgoing.",
     "searchLabel": "Friend finder",
     "searchButton": "Search & send request",
+    "listTitle": "Friends",
+    "listEmpty": "No friends yet",
+    "requestsTitle": "Friend requests",
+    "chat": "Chat",
     "incomingTitle": "Incoming requests",
     "incomingEmpty": "No open requests",
     "outgoingTitle": "Sent requests",
@@ -225,5 +260,8 @@
     "successMsg": "Login successful!",
     "testSuccessTitle": "Test mode activated",
     "testSuccessMsg": "You are now logged in as a test user!"
+  },
+  "common": {
+    "cancel": "Cancel"
   }
 }

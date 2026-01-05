@@ -34,6 +34,7 @@
       "chat": "Chat",
       "friends": "Freunde",
       "uni": "Universität",
+      "news": "News",
       "data": "Daten & Cache",
       "security": "Sicherheit",
       "accessibility": "Barrierefreiheit",
@@ -68,15 +69,36 @@
       "notifyMentionDesc": "Benachrichtigen, wenn du erwähnt wirst",
       "notifyDirect": "Private Nachrichten",
       "notifyDirectDesc": "Benachrichtigen bei neuen privaten Nachrichten",
-      "notifyRooms": "Raum-Aktivität",
-      "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Räumen postet",
+      "hiddenTitle": "Ausgeblendete Chats",
+      "hiddenDesc": "Verwalte ausgeblendete Direktchats",
+      "hiddenEmpty": "Keine ausgeblendeten Chats",
+      "hiddenUnhide": "Einblenden",
+      "hiddenNoMessage": "Noch keine Nachrichten",
+      "notifyRooms": "Thread-Aktivität",
+      "notifyRoomsDesc": "Benachrichtigen, wenn jemand in deinen aktuellen Threads postet",
       "mediaDownload": "Medien-Auto-Download",
       "theme": "Chat-Theme"
     },
     "friendsSection": {
       "whoCanRequest": "Wer darf Anfragen schicken?",
       "autoAccept": "Automatisch annehmen",
-      "blocked": "Blockierte Nutzer"
+      "blocked": "Blockierte Nutzer",
+      "blockedDesc": "Verwalte blockierte Nutzer",
+      "blockedEmpty": "Keine blockierten Nutzer",
+      "blockedUnblock": "Entblocken",
+      "hiddenTitle": "Ausgeblendete Chats",
+      "hiddenDesc": "Verwalte ausgeblendete Direktchats",
+      "hiddenEmpty": "Keine ausgeblendeten Chats",
+      "hiddenUnhide": "Einblenden",
+      "hiddenNoMessage": "Noch keine Nachrichten"
+    },
+    "newsSection": {
+      "push": "News-Push",
+      "pushDesc": "Benachrichtigen bei neuen News",
+      "topics": "Themen",
+      "topicsDesc": "Uni, Stadt, Wirtschaft",
+      "sources": "Quellen",
+      "sourcesDesc": "Feeds verwalten"
     },
     "uniSection": {
       "degree": "Studiengang",
@@ -84,9 +106,18 @@
       "newsPush": "Uni-News Push"
     },
     "dataSection": {
-      "clearMedia": "Mediencache löschen",
-      "resetOffline": "Offline-Daten zurücksetzen",
-      "export": "Export / Backup"
+      "clearLocal": "Lokale Daten löschen",
+      "clearLocalDesc": "AsyncStorage und lokale Session löschen",
+      "clearLocalAction": "Löschen",
+      "clearLocalConfirmTitle": "Lokale Daten löschen?",
+      "clearLocalConfirmBody": "Alle lokal gespeicherten Daten werden entfernt. Du wirst abgemeldet.",
+      "clearLocalConfirmAction": "Jetzt löschen",
+      "deleteAccount": "Account löschen",
+      "deleteAccountDesc": "Dein Profil und alle zugehörigen Daten werden gelöscht",
+      "deleteAccountAction": "Account löschen",
+      "deleteAccountConfirmTitle": "Account endgültig löschen?",
+      "deleteAccountConfirmBody": "Dieser Vorgang ist nicht rückgängig zu machen.",
+      "deleteAccountConfirmAction": "Endgültig löschen"
     },
     "securitySection": {
       "pin": "App-PIN / Biometrie",
@@ -115,17 +146,17 @@
 
   "chat": {
     "tabs": {
-      "rooms": "Chaträume",
+      "rooms": "Threads",
       "direct": "Direkt"
     },
     "search": {
-      "roomsPlaceholder": "Räume suchen…",
+      "roomsPlaceholder": "Threads suchen…",
       "directPlaceholder": "Direktnachrichten suchen…"
     },
     "rooms": {
       "salzburg": {
         "title": "Salzburg",
-        "subtitle": "Allgemeiner Chat für Salzburg"
+        "subtitle": "Allgemeiner Thread für Salzburg"
       },
       "oesterreich": {
         "title": "Österreich",
@@ -137,8 +168,8 @@
       }
     },
     "empty": {
-      "roomsTitle": "Keine Chaträume gefunden",
-      "roomsSubtitle": "Passe die Suche an oder erstelle später neue Räume.",
+      "roomsTitle": "Keine Threads gefunden",
+      "roomsSubtitle": "Passe die Suche an oder erstelle später neue Threads.",
       "directTitle": "Keine Direktnachrichten",
       "directSubtitle": "Starte eine neue Unterhaltung."
     },
@@ -159,6 +190,10 @@
     "subtitle": "Suche Nutzer, schicke Anfragen und verwalte eingehende sowie gesendete Requests.",
     "searchLabel": "Freund finden",
     "searchButton": "Suchen & Anfrage senden",
+    "listTitle": "Freundesliste",
+    "listEmpty": "Noch keine Freunde",
+    "requestsTitle": "Freundesanfragen",
+    "chat": "Chat",
     "incomingTitle": "Eingehende Anfragen",
     "incomingEmpty": "Keine offenen Anfragen",
     "outgoingTitle": "Gesendete Anfragen",
@@ -225,5 +260,8 @@
     "successMsg": "Login erfolgreich!",
     "testSuccessTitle": "Testmodus aktiviert",
     "testSuccessMsg": "Du bist jetzt als Test-User eingeloggt!"
+  },
+  "common": {
+    "cancel": "Abbrechen"
   }
 }
