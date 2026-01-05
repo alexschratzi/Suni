@@ -106,9 +106,18 @@
       "newsPush": "Uni-News Push"
     },
     "dataSection": {
-      "clearMedia": "Mediencache löschen",
-      "resetOffline": "Offline-Daten zurücksetzen",
-      "export": "Export / Backup"
+      "clearLocal": "Lokale Daten löschen",
+      "clearLocalDesc": "AsyncStorage und lokale Session löschen",
+      "clearLocalAction": "Löschen",
+      "clearLocalConfirmTitle": "Lokale Daten löschen?",
+      "clearLocalConfirmBody": "Alle lokal gespeicherten Daten werden entfernt. Du wirst abgemeldet.",
+      "clearLocalConfirmAction": "Jetzt löschen",
+      "deleteAccount": "Account löschen",
+      "deleteAccountDesc": "Dein Profil und alle zugehörigen Daten werden gelöscht",
+      "deleteAccountAction": "Account löschen",
+      "deleteAccountConfirmTitle": "Account endgültig löschen?",
+      "deleteAccountConfirmBody": "Dieser Vorgang ist nicht rückgängig zu machen.",
+      "deleteAccountConfirmAction": "Endgültig löschen"
     },
     "securitySection": {
       "pin": "App-PIN / Biometrie",
@@ -251,5 +260,8 @@
     "successMsg": "Login erfolgreich!",
     "testSuccessTitle": "Testmodus aktiviert",
     "testSuccessMsg": "Du bist jetzt als Test-User eingeloggt!"
+  },
+  "common": {
+    "cancel": "Abbrechen"
   }
 }

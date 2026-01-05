@@ -1,6 +1,6 @@
 // app/(app)/(stack)/global_settings.tsx
 import React, { useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import {
   Text,
   useTheme,
@@ -14,7 +14,7 @@ import {
 } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
   useAppTheme,
@@ -69,6 +69,7 @@ export default function SettingsScreen() {
   } = useAppTheme();
   const { t, i18n } = useTranslation();
   const userId = useSupabaseUserId();
+  const router = useRouter();
   const scale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
   const textSizeLabel = t(`settings.accessibilitySection.${textScale}`);
   const listItemTextStyles = React.useMemo(
@@ -125,6 +126,8 @@ export default function SettingsScreen() {
   const [hiddenThreads, setHiddenThreads] = useState<HiddenThread[]>([]);
   const [hiddenProfiles, setHiddenProfiles] = useState<Record<string, { username?: string }>>({});
   const [hiddenLoading, setHiddenLoading] = useState(false);
+  const [clearingLocal, setClearingLocal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const hiddenDisplayName = React.useMemo(
     () => (uid: string) => hiddenProfiles[uid]?.username || uid,
@@ -551,6 +554,62 @@ export default function SettingsScreen() {
     } catch (err) {
       console.error("Failed to save notification settings", err);
     }
+  };
+
+  const confirmClearLocal = () => {
+    if (clearingLocal) return;
+    Alert.alert(
+      t("settings.dataSection.clearLocalConfirmTitle"),
+      t("settings.dataSection.clearLocalConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.dataSection.clearLocalConfirmAction"),
+          style: "destructive",
+          onPress: async () => {
+            setClearingLocal(true);
+            try {
+              await AsyncStorage.clear();
+              await supabase.auth.signOut();
+              router.replace("/(auth)");
+            } catch (err) {
+              console.error("Clear local data failed:", err);
+            } finally {
+              setClearingLocal(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = () => {
+    if (deletingAccount) return;
+    Alert.alert(
+      t("settings.dataSection.deleteAccountConfirmTitle"),
+      t("settings.dataSection.deleteAccountConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.dataSection.deleteAccountConfirmAction"),
+          style: "destructive",
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              const { error } = await supabase.rpc("delete_user");
+              if (error) throw error;
+
+              await supabase.auth.signOut();
+              router.replace("/(auth)");
+            } catch (err) {
+              console.error("Account deletion failed:", err);
+            } finally {
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSectionLayout = (key: SectionKey) => (e: any) => {
@@ -1110,21 +1169,37 @@ export default function SettingsScreen() {
             </List.Subheader>
 
             <List.Item
-              title={t("settings.dataSection.clearMedia")}
+              title={t("settings.dataSection.clearLocal")}
+              description={t("settings.dataSection.clearLocalDesc")}
               {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
+              right={() => (
+                <Button
+                  mode="contained-tonal"
+                  onPress={confirmClearLocal}
+                  loading={clearingLocal}
+                  disabled={clearingLocal}
+                >
+                  {t("settings.dataSection.clearLocalAction")}
+                </Button>
+              )}
             />
             <Divider />
             <List.Item
-              title={t("settings.dataSection.resetOffline")}
+              title={t("settings.dataSection.deleteAccount")}
+              description={t("settings.dataSection.deleteAccountDesc")}
               {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
-            />
-            <Divider />
-            <List.Item
-              title={t("settings.dataSection.export")}
-              {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
+              right={() => (
+                <Button
+                  mode="contained"
+                  buttonColor={paperTheme.colors.error}
+                  textColor={paperTheme.colors.onError}
+                  onPress={confirmDeleteAccount}
+                  loading={deletingAccount}
+                  disabled={deletingAccount}
+                >
+                  {t("settings.dataSection.deleteAccountAction")}
+                </Button>
+              )}
             />
           </List.Section>
         </Surface>

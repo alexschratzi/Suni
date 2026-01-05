@@ -106,9 +106,18 @@
       "newsPush": "Uni news push"
     },
     "dataSection": {
-      "clearMedia": "Clear media cache",
-      "resetOffline": "Reset offline data",
-      "export": "Export / Backup"
+      "clearLocal": "Clear local data",
+      "clearLocalDesc": "Remove AsyncStorage and local session",
+      "clearLocalAction": "Clear",
+      "clearLocalConfirmTitle": "Clear local data?",
+      "clearLocalConfirmBody": "All locally stored data will be removed. You will be signed out.",
+      "clearLocalConfirmAction": "Clear now",
+      "deleteAccount": "Delete account",
+      "deleteAccountDesc": "Your profile and related data will be deleted",
+      "deleteAccountAction": "Delete account",
+      "deleteAccountConfirmTitle": "Delete account permanently?",
+      "deleteAccountConfirmBody": "This action cannot be undone.",
+      "deleteAccountConfirmAction": "Delete permanently"
     },
     "securitySection": {
       "pin": "App PIN / biometrics",
@@ -251,5 +260,8 @@
     "successMsg": "Login successful!",
     "testSuccessTitle": "Test mode activated",
     "testSuccessMsg": "You are now logged in as a test user!"
+  },
+  "common": {
+    "cancel": "Cancel"
   }
 }
