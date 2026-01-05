@@ -1,25 +1,20 @@
 // components/theme/AppThemeProvider.tsx
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Appearance } from "react-native";
 import {
   Provider as PaperProvider,
-  MD3LightTheme,
   MD3DarkTheme,
+  MD3LightTheme,
+  type MD3Theme,
 } from "react-native-paper";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type TextScale = "small" | "medium" | "large";
 
 type AppThemeContextValue = {
-  mode: ThemeMode;                      // ausgewählte Einstellung
-  effectiveMode: "light" | "dark";      // tatsächlich aktiv
+  mode: ThemeMode; // ausgewählte Einstellung
+  effectiveMode: "light" | "dark"; // tatsächlich aktiv
   isDark: boolean;
   setMode: (m: ThemeMode) => void;
   toggleTheme: () => void;
@@ -33,9 +28,36 @@ const STORAGE_KEY = "@amadeus:themeMode";
 const STORAGE_CONTRAST_KEY = "@amadeus:contrast";
 const STORAGE_TEXTSCALE_KEY = "@amadeus:textScale";
 
-const AppThemeContext = createContext<AppThemeContextValue | undefined>(
-  undefined
-);
+const AppThemeContext = createContext<AppThemeContextValue | undefined>(undefined);
+
+/**
+ * Paper MD3 font tokens are typed such that some entries may not include fontSize/lineHeight.
+ * We only scale those that actually have numeric values.
+ */
+function scaleMd3Fonts<TFonts extends Record<string, any>>(fonts: TFonts, fontScale: number): TFonts {
+  // Create a shallow copy preserving keys
+  const out: Record<string, any> = { ...fonts };
+
+  for (const key of Object.keys(out)) {
+    const token = out[key];
+
+    // Defensive: token can be undefined or not an object in weird cases
+    if (!token || typeof token !== "object") continue;
+
+    const hasFontSize = typeof (token as any).fontSize === "number";
+    const hasLineHeight = typeof (token as any).lineHeight === "number";
+
+    if (!hasFontSize && !hasLineHeight) continue;
+
+    out[key] = {
+      ...token,
+      ...(hasFontSize ? { fontSize: Math.round((token as any).fontSize * fontScale) } : null),
+      ...(hasLineHeight ? { lineHeight: Math.round((token as any).lineHeight * fontScale) } : null),
+    };
+  }
+
+  return out as TFonts;
+}
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>("system");
@@ -107,10 +129,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        await AsyncStorage.setItem(
-          STORAGE_CONTRAST_KEY,
-          highContrast ? "true" : "false"
-        );
+        await AsyncStorage.setItem(STORAGE_CONTRAST_KEY, highContrast ? "true" : "false");
       } catch {}
     })();
   }, [highContrast]);
@@ -123,15 +142,15 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [textScale]);
 
-  const effectiveMode: "light" | "dark" =
-    mode === "system" ? systemScheme : mode;
+  const effectiveMode: "light" | "dark" = mode === "system" ? systemScheme : mode;
 
-  const paperTheme = useMemo(() => {
+  const paperTheme = useMemo<MD3Theme>(() => {
     const base = effectiveMode === "dark" ? MD3DarkTheme : MD3LightTheme;
+
     const contrastColors =
       effectiveMode === "dark"
         ? {
-            primary: "#ffd700", // kräftiges Gelb für maximale Sichtbarkeit
+            primary: "#ffd700",
             onPrimary: "#000000",
             secondary: "#ffffff",
             onSecondary: "#000000",
@@ -167,22 +186,14 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
             onTertiary: "#ffffff",
           };
 
-    const colors = highContrast ? { ...base.colors, ...contrastColors } : base.colors;
-    const fontScale =
-      textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
+    const colors = highContrast ? ({ ...base.colors, ...contrastColors } as MD3Theme["colors"]) : base.colors;
 
-    const scaledFonts = Object.fromEntries(
-      Object.entries(base.fonts).map(([k, v]) => [
-        k,
-        {
-          ...v,
-          fontSize: Math.round((v.fontSize ?? 14) * fontScale),
-          lineHeight: v.lineHeight ? Math.round(v.lineHeight * fontScale) : undefined,
-        },
-      ])
-    );
+    const fontScale = textScale === "small" ? 0.85 : textScale === "large" ? 1.25 : 1;
 
-    return { ...base, colors, fonts: scaledFonts };
+    // ✅ Fix: only scale tokens that actually include fontSize/lineHeight
+    const fonts = scaleMd3Fonts(base.fonts, fontScale);
+
+    return { ...base, colors, fonts };
   }, [effectiveMode, highContrast, textScale]);
 
   const value = useMemo<AppThemeContextValue>(
@@ -191,8 +202,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       effectiveMode,
       isDark: effectiveMode === "dark",
       setMode,
-      toggleTheme: () =>
-        setMode((prev) => (prev === "dark" ? "light" : "dark")),
+      toggleTheme: () => setMode((prev) => (prev === "dark" ? "light" : "dark")),
       highContrast,
       setHighContrast,
       textScale,
@@ -210,7 +220,6 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppTheme() {
   const ctx = useContext(AppThemeContext);
-  if (!ctx)
-    throw new Error("useAppTheme must be used within <AppThemeProvider/>");
+  if (!ctx) throw new Error("useAppTheme must be used within <AppThemeProvider/>");
   return ctx;
 }

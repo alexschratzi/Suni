@@ -1,5 +1,5 @@
 // app/(app)/(stack)/(tabs)/timetable.tsx
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceEventEmitter, PixelRatio, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Surface, Text, useTheme } from "react-native-paper";
@@ -29,6 +29,10 @@ const MAX_H = 24;
 // ✅ Header event bus (fast, no nav params)
 const TIMETABLE_HEADER_EVENT = "timetable:currentMonday";
 
+// ✅ NEW: mode event
+type TimetableDisplayMode = "courses" | "party";
+const TIMETABLE_MODE_EVENT = "timetable:displayMode";
+
 export default function TimetableScreen() {
   const paper = useTheme();
   const router = useRouter();
@@ -41,6 +45,22 @@ export default function TimetableScreen() {
 
   const calendarRef = useRef<CalendarKitHandle>(null!) as React.RefObject<CalendarKitHandle>;
 
+  // ✅ NEW: display mode state (default "courses")
+  const [displayMode, setDisplayMode] = useState<TimetableDisplayMode>("courses");
+
+  // ✅ Listen to header toggle
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      TIMETABLE_MODE_EVENT,
+      (mode?: TimetableDisplayMode) => {
+        if (mode === "courses" || mode === "party") {
+          setDisplayMode(mode);
+        }
+      },
+    );
+
+    return () => sub.remove();
+  }, []);
 
   const theme = useMemo<DeepPartial<ThemeConfigs>>(
     () => mapPaperToCalendarTheme(paper),
@@ -81,6 +101,23 @@ export default function TimetableScreen() {
 
   const { events, setEvents, icalMeta, setIcalMeta } = useTimetableSync({ userId });
 
+  // ✅ TODO: Apply displayMode to what events should be displayed.
+  // - courses: show course-related events (and maybe iCal courses)
+  // - party: show party/social events (and maybe different iCal feeds)
+  const visibleEvents = useMemo(() => {
+    // TODO: implement filtering based on displayMode
+    return events;
+  }, [events, displayMode]);
+
+  // ✅ TODO: Apply displayMode to calendar styling (colors / theme mapping)
+  // Example idea:
+  // - courses: normal theme
+  // - party: higher contrast / different primary color / etc.
+  const calendarTheme = useMemo(() => {
+    // TODO: implement mode-based theme overrides
+    return theme;
+  }, [theme, displayMode]);
+
   const editor = useTimetableEditor({
     userId,
     events,
@@ -118,6 +155,10 @@ export default function TimetableScreen() {
     [paper.colors.onSurface],
   );
 
+  const onHeaderLayout = useCallback((h: number) => {
+    setHeaderBlockH(h);
+  }, []);
+
   return (
     <Surface
       mode="flat"
@@ -128,8 +169,8 @@ export default function TimetableScreen() {
       <View style={{ flex: 1 }}>
         <TimetableCalendar
           calendarRef={calendarRef}
-          events={events as EvWithMeta[]}
-          theme={theme}
+          events={visibleEvents as EvWithMeta[]}
+          theme={calendarTheme}
           initialDate={initialDate}
           minDate={minDate}
           maxDate={maxDate}
@@ -146,7 +187,7 @@ export default function TimetableScreen() {
           onChange={onChange}
           onDateChanged={onDateChanged}
           renderDayItem={renderDayItem}
-          onHeaderLayout={(h) => setHeaderBlockH(h)}
+          onHeaderLayout={onHeaderLayout}
         />
       </View>
 
