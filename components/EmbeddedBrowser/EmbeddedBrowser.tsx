@@ -1,9 +1,9 @@
 // screens/EmbeddedBrowser.tsx
-import React, {useCallback, useEffect, useRef, useState} from "react";
-import {BackHandler, StyleSheet, View} from "react-native";
-import {Appbar, ProgressBar, Text} from "react-native-paper";
-import {WebView} from "react-native-webview";
-import type {LoginDetectionConfig}  from "@/components/university/uni-login";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { BackHandler, StyleSheet, View } from "react-native";
+import { Appbar, ProgressBar, Text } from "react-native-paper";
+import { WebView } from "react-native-webview";
+import type { LoginDetectionConfig } from "@/components/university/uni-login";
 
 type Props = {
     initialUrl: string;
@@ -23,13 +23,13 @@ function hostOf(url: string): string | null {
 }
 
 export default function EmbeddedBrowser({
-                                            initialUrl,
-                                            title = "Browser",
-                                            onClose,
-                                            onUrlChange,
-                                            onLoginDetected,
-                                            loginDetection,
-                                        }: Props) {
+    initialUrl,
+    title = "Browser",
+    onClose,
+    onUrlChange,
+    onLoginDetected,
+    loginDetection,
+}: Props) {
     const webRef = useRef<WebView>(null);
     const [canGoBack, setCanGoBack] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -78,20 +78,20 @@ export default function EmbeddedBrowser({
     return (
         <View style={styles.root}>
             <Appbar.Header mode="small">
-                <Appbar.Action icon="close" onPress={onClose}/>
-                <Appbar.Content title={currentTitle}/>
-                <Appbar.Action icon="arrow-left" disabled={!canGoBack} onPress={() => webRef.current?.goBack()}/>
-                <Appbar.Action icon="arrow-right" onPress={() => webRef.current?.goForward()}/>
-                <Appbar.Action icon="refresh" onPress={() => webRef.current?.reload()}/>
+                <Appbar.Action icon="close" onPress={onClose} />
+                <Appbar.Content title={currentTitle} />
+                <Appbar.Action icon="arrow-left" disabled={!canGoBack} onPress={() => webRef.current?.goBack()} />
+                <Appbar.Action icon="arrow-right" onPress={() => webRef.current?.goForward()} />
+                <Appbar.Action icon="refresh" onPress={() => webRef.current?.reload()} />
             </Appbar.Header>
 
-            {progress > 0 && progress < 1 ? <ProgressBar progress={progress}/> : null}
+            {progress > 0 && progress < 1 ? <ProgressBar progress={progress} /> : null}
 
             <WebView
                 ref={webRef}
-                source={{uri: initialUrl}}
+                source={{ uri: initialUrl }}
                 onNavigationStateChange={onNavStateChange}
-                onLoadProgress={({nativeEvent}) => setProgress(nativeEvent.progress)}
+                onLoadProgress={({ nativeEvent }) => setProgress(nativeEvent.progress)}
                 onLoadEnd={() => setProgress(0)}
                 onContentProcessDidTerminate={() => webRef.current?.reload()}
                 setSupportMultipleWindows={false}
@@ -109,6 +109,6 @@ export default function EmbeddedBrowser({
 }
 
 const styles = StyleSheet.create({
-    root: {flex: 1, backgroundColor: "#fff"},
-    errorBox: {padding: 16},
+    root: { flex: 1, backgroundColor: "#fff" },
+    errorBox: { padding: 16 },
 });

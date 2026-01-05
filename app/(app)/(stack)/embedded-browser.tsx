@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import EmbeddedBrowser from "@/screens/EmbeddedBrowser";
+import EmbeddedBrowser from "@/components/EmbeddedBrowser.tsx/EmbeddedBrowser";
 
 export default function EmbeddedBrowserScreen() {
   const router = useRouter();
