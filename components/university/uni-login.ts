@@ -1,76 +1,104 @@
 // components/university/uni-login.ts
-// A tiny client for the uni-service with ETag-based in-memory caching.
+import { supabase } from "@/src/lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 export type Country = { id: number; name: string };
 export type University = { id: number; name: string; countryId: number };
-export type Program = { id: number; name: string; universityId: number };
 
-export type LinkItem = { id: string; title: string; url: string };
-export type LoginDetectionConfig = {
-    successHostSuffixes: string[];
-    idpHosts?: string[];
-};
+export type LinkHubLink = { title: string; link: string };
+
 export type UniConfig = {
-    uniId: number;
-    loginUrl?: string;
-    links?: LinkItem[];
-    loginDetection?: LoginDetectionConfig;
+  uniId: number;
+  loginUrl: string;                 
+  linkhubLinks: LinkHubLink[];          
+  cookieLinks: string[];             
 };
 
-const BASE = process.env.EXPO_PUBLIC_UNI_API_BASE ?? "https://uni-service.lancealot.at";
-type CacheEntry<T> = { etag?: string; payload?: T; lastFetched?: number };
-const cache: Record<string, CacheEntry<any>> = {};
-
-export function clearUniApiClientCache(): void {
-    for (const k of Object.keys(cache)) delete cache[k];
+function ensureArray<T>(v: any): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
 }
 
-async function getJson<T>(path: string, fallback?: () => Promise<T> | T): Promise<T> {
-    
-    const url = `${BASE}${path}`;
-    console.log("fetching: " + url);
-    const entry = cache[url] || {};
-    const headers: Record<string, string> = {};
-    if (entry.etag) headers["If-None-Match"] = entry.etag;
+const UNI_CFG_KEY = "uni:config";
 
-    try {
-        const res = await fetch(url, {headers});
-        if (res.status === 304 && entry.payload) {
-            return entry.payload as T;
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const etag = res.headers.get("etag") ?? undefined;
-        const data = (await res.json()) as T;
-        cache[url] = {etag, payload: data, lastFetched: Date.now()};
-        return data;
-    } catch (e) {
-        // graceful fallback
-        if (entry.payload) return entry.payload as T;
-        if (fallback) return await Promise.resolve(fallback());
-        console.log(e);
-        throw e;
-    }
+export async function saveActiveUniConfig(cfg: UniConfig): Promise<void> {
+  await AsyncStorage.setItem(UNI_CFG_KEY, JSON.stringify(cfg));
 }
 
-/** API surface */
-export function fetchCountries(fallback?: () => Promise<Country[]> | Country[]) {
-    return getJson<Country[]>("/v1/countries", fallback);
+/** Load currently selected uni config */
+export async function loadActiveUniConfig(): Promise<UniConfig | null> {
+  const raw = await AsyncStorage.getItem(UNI_CFG_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.uniId !== "number") return null;
+
+    return {
+      uniId: parsed.uniId,
+      loginUrl: typeof parsed.loginUrl === "string" ? parsed.loginUrl : "",
+      linkhubLinks: ensureArray<LinkHubLink>(parsed.linkhubLinks),
+      cookieLinks: ensureArray<string>(parsed.cookieLinks),
+    };
+  } catch {
+    return null;
+  }
 }
 
-export function fetchUniversities(countryId: number, fallback?: () => Promise<University[]> | University[]) {
-    const q = encodeURI(`/v1/universities?countryId=${countryId}`);
-    return getJson<University[]>(q, fallback);
+export async function clearActiveUniConfig(): Promise<void> {
+  await AsyncStorage.removeItem(UNI_CFG_KEY);
 }
 
-export function fetchPrograms(universityId: number, fallback?: () => Promise<Program[]> | Program[]) {
-    const q = encodeURI(`/v1/programs?universityId=${universityId}`);
-    return getJson<Program[]>(q, fallback);
+export async function fetchCountries(): Promise<Country[]> {
+  const { data, error } = await supabase
+    .schema("uni")
+    .from("countries")
+    .select("id, name")
+    .order("name");
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Country[];
 }
 
-export function fetchUniConfig(uniId: number, fallback?: () => Promise<UniConfig> | UniConfig) {
-    return getJson<UniConfig>(`/v1/unis/${uniId}/config`, fallback);
+export async function fetchUniversities(countryId: number): Promise<University[]> {
+  const { data, error } = await supabase
+    .schema("uni")
+    .from("universities")
+    .select("id, name, country_id")
+    .eq("country_id", countryId)
+    .order("name");
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    countryId: r.country_id,
+  }));
 }
 
-export function fetchUniLinks(uniId: number, fallback?: () => Promise<{ links: LinkItem[] }> | { links: LinkItem[] }) {
-    return getJson<{ links: LinkItem[] }>(`/v1/unis/${uniId}/links`, fallback);
+export async function fetchUniConfig(uniId: number): Promise<UniConfig> {
+  const { data, error } = await supabase
+    .schema("uni")
+    .from("config")
+    .select("uni_id, login_link, linkhub_links, cookie_links")
+    .eq("uni_id", uniId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  const cfg: UniConfig = {
+    uniId: data?.uni_id ?? uniId,
+    loginUrl: data?.login_link ?? "",
+    linkhubLinks: data?.linkhub_links ?? [],
+    cookieLinks: ensureArray<string>(data?.cookie_links),
+  };
+
+  await saveActiveUniConfig(cfg);
+  return cfg;
+}
+
+export async function fetchActiveUniConfig(): Promise<UniConfig | null> {
+  return await loadActiveUniConfig();
 }

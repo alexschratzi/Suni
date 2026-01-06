@@ -12,12 +12,8 @@ import { useRouter } from "expo-router";
 
 import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
-import {
-  fetchUniLinks,
-  fetchUniConfig,
-  LinkItem,
-  UniConfig,
-} from "./uni-login";
+import { LinkHubLink, UniConfig, loadActiveUniConfig } from "./uni-login";
+
 import { useResetOnboarding } from "./useResetOnboarding";
 import CookieManager from "@react-native-cookies/cookies";
 
@@ -32,10 +28,12 @@ export default function LinkHub({ onOpenGrades }: Props) {
   const theme = useTheme();
   const router = useRouter();
 
-  const [links, setLinks] = React.useState<LinkItem[]>([]);
+  const [links, setLinks] = React.useState<LinkHubLink[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const resetOnboarding = useResetOnboarding();
+  const [browserResetToken, setBrowserResetToken] = React.useState(0);
+
 
   // uni config for loginUrl (to derive cookie domain)
   const [uniCfg, setUniCfg] = React.useState<UniConfig | null>(null);
@@ -58,15 +56,19 @@ export default function LinkHub({ onOpenGrades }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const [linksRes, cfgRes] = await Promise.all([
-          fetchUniLinks(university.id),
-          fetchUniConfig(university.id),
-        ]);
-
+        const cached = await loadActiveUniConfig();
         if (!alive) return;
 
-        setLinks(linksRes.links ?? []);
-        setUniCfg(cfgRes);
+        // Cache missing or belongs to a different uni => user must re-run onboarding login
+        if (!cached || cached.uniId !== university.id) {
+          setLinks([]);
+          setUniCfg(null);
+          setError("Keine Uni-Konfiguration im Cache. Bitte erneut anmelden (Onboarding).");
+          return;
+        }
+
+        setUniCfg(cached);
+        setLinks(cached.linkhubLinks ?? []);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message ?? "Request failed");
@@ -83,7 +85,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
     };
   }, [university]);
 
-  // ---- Cookie helpers ----
 
   const cookieDomains = React.useMemo(() => {
     const base: string[] = [
@@ -91,18 +92,21 @@ export default function LinkHub({ onOpenGrades }: Props) {
       "https://login.microsoft.com",
       "https://sts.windows.net",
     ];
-
-    if (uniCfg?.loginUrl) {
+    for (const u of uniCfg?.cookieLinks ?? []) {
       try {
-        const origin = new URL(uniCfg.loginUrl).origin;
-        base.push(origin);
+        base.push(new URL(u).origin);
       } catch {
-        // ignore
+        if (typeof u === "string" && u.startsWith("http")) base.push(u);
       }
     }
-
-    return base;
-  }, [uniCfg?.loginUrl]);
+    // keep loginUrl as fallback domain
+    if (uniCfg?.loginUrl) {
+      try {
+        base.push(new URL(uniCfg.loginUrl).origin);
+      } catch { }
+    }
+    return Array.from(new Set(base));
+  }, [uniCfg?.cookieLinks, uniCfg?.loginUrl]);
 
   const relevantName = React.useCallback((name: string) => {
     const n = name.toLowerCase();
@@ -219,10 +223,14 @@ export default function LinkHub({ onOpenGrades }: Props) {
     (url: string, title?: string) => {
       router.push({
         pathname: "/(app)/(stack)/embedded-browser",
-        params: { url, title: title ?? "FH Browser" },
+        params: {
+          url,
+          title: title ?? "Uni Browser",
+          resetToken: String(browserResetToken),
+        },
       });
     },
-    [router]
+    [router, browserResetToken]
   );
 
   return (
@@ -245,13 +253,13 @@ export default function LinkHub({ onOpenGrades }: Props) {
       ) : (
         <FlatList
           data={links}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.link}
           numColumns={2}
           columnWrapperStyle={{ gap: 12, paddingHorizontal: 10 }}
           contentContainerStyle={{ gap: 12, paddingVertical: 10 }}
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => openEmbeddedBrowser(item.url, item.title)}
+              onPress={() => openEmbeddedBrowser(item.link, item.title)}
               style={styles.tilePressable}
             >
               <Surface style={styles.tile}>
@@ -282,6 +290,21 @@ export default function LinkHub({ onOpenGrades }: Props) {
                 disabled={scraping}
               >
                 Debug: Cookies anzeigen
+              </Button>
+
+              <Button
+                mode="outlined"
+                style={{ marginTop: 6, marginBottom: 10 }}
+                onPress={async () => {
+                  try {
+                    await CookieManager.clearAll(true);
+                  } catch { }
+                  setBrowserResetToken((x) => x + 1);
+                  setScrapeResult("Browser-Session zurückgesetzt (Cookies + WebView reset).");
+                }}
+                disabled={scraping}
+              >
+                Hard Reset: Browser Session
               </Button>
 
               <Button

@@ -1,3 +1,4 @@
+import { CookiesByOrigin } from "@/components/university/Onboarding";
 import { StudentProfile } from "../dto/uniScraperDTO";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -84,4 +85,21 @@ export async function getCachedStudentProfile(): Promise<StudentProfile | null> 
 
 export async function clearStudentProfileCache(): Promise<void> {
   await AsyncStorage.removeItem(STUDENT_PROFILE_CACHE_KEY);
+}
+
+export async function checkLoginWithBackend(
+  universityId: string,
+  cookiesByOrigin: CookiesByOrigin
+) {
+  const resp = await fetch("https://uni-scraper.eliasbader.de/check-login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      university_id: universityId,
+      cookies_by_origin: cookiesByOrigin,
+    }),
+  });
+
+  if (!resp.ok) throw new Error(`check-login HTTP ${resp.status}`);
+  return (await resp.json()) as { status: 1; authenticated: boolean } | { status: 0; error: string };
 }
