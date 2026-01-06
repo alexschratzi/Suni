@@ -13,11 +13,14 @@ import { useRouter } from "expo-router";
 import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
 import { LinkHubLink, UniConfig, loadActiveUniConfig } from "./uni-login";
-
 import { useResetOnboarding } from "./useResetOnboarding";
-import CookieManager from "@react-native-cookies/cookies";
+import { scrapeStudentProfile } from "../../src/server/uniScraper";
 
-import { CookieJsonRecord, scrapeStudentProfile } from "../../src/server/uniScraper";
+import {
+  collectCookiesByOrigin,
+  flattenToCookiesJson,
+  clearAllCookies,
+} from "@/components/university/cookies";
 
 type Props = {
   onOpenGrades?: () => void;
@@ -33,7 +36,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
   const [error, setError] = React.useState<string | null>(null);
   const resetOnboarding = useResetOnboarding();
   const [browserResetToken, setBrowserResetToken] = React.useState(0);
-
 
   // uni config for loginUrl (to derive cookie domain)
   const [uniCfg, setUniCfg] = React.useState<UniConfig | null>(null);
@@ -85,13 +87,13 @@ export default function LinkHub({ onOpenGrades }: Props) {
     };
   }, [university]);
 
-
   const cookieDomains = React.useMemo(() => {
     const base: string[] = [
       "https://login.microsoftonline.com",
       "https://login.microsoft.com",
       "https://sts.windows.net",
     ];
+
     for (const u of uniCfg?.cookieLinks ?? []) {
       try {
         base.push(new URL(u).origin);
@@ -99,125 +101,16 @@ export default function LinkHub({ onOpenGrades }: Props) {
         if (typeof u === "string" && u.startsWith("http")) base.push(u);
       }
     }
+
     // keep loginUrl as fallback domain
     if (uniCfg?.loginUrl) {
       try {
         base.push(new URL(uniCfg.loginUrl).origin);
-      } catch { }
+      } catch {}
     }
+
     return Array.from(new Set(base));
   }, [uniCfg?.cookieLinks, uniCfg?.loginUrl]);
-
-  const relevantName = React.useCallback((name: string) => {
-    const n = name.toLowerCase();
-    return (
-      n.startsWith("_shibsession_") ||
-      n.startsWith("_shibstate_") ||
-      n.startsWith("estsauth") || // ESTSAUTH, ESTSAUTHPERSISTENT, ESTSAUTHLIGHT
-      n.startsWith("esctx") || // esctx, esctx-*
-      n === "buid" ||
-      n === "msfpc" ||
-      n === "mc1" ||
-      n === "ms0" ||
-      n === "portal_version"
-    );
-  }, []);
-
-  const collectCookies = React.useCallback(async (): Promise<Record<string, CookieJsonRecord>> => {
-    const merged: Record<string, CookieJsonRecord> = {};
-
-    for (const d of cookieDomains) {
-      try {
-        const got = await CookieManager.get(d);
-        if (!got) continue;
-
-        for (const [name, c] of Object.entries(got)) {
-          const cookieAny = c as any;
-          merged[name] = {
-            name,
-            value: String(cookieAny?.value ?? ""),
-            path: cookieAny?.path ?? "/",
-            secure: Boolean(cookieAny?.secure ?? true),
-            httpOnly: Boolean(cookieAny?.httpOnly ?? true),
-            domain: cookieAny?.domain ?? null,
-          };
-        }
-      } catch (err) {
-        console.warn("Cookie fetch error for", d, err);
-      }
-    }
-
-    return merged;
-  }, [cookieDomains]);
-
-  const buildCookiesJson = React.useCallback(
-    (src: Record<string, CookieJsonRecord>, onlyRelevant: boolean) => {
-      const out: Record<string, CookieJsonRecord> = {};
-      for (const [name, rec] of Object.entries(src)) {
-        if (!onlyRelevant || relevantName(name)) {
-          out[name] = {
-            httpOnly: Boolean(rec.httpOnly),
-            path: rec.path ?? "/",
-            value: String(rec.value ?? ""),
-            secure: Boolean(rec.secure),
-            domain: rec.domain ?? null,
-            name,
-          };
-        }
-      }
-      return out;
-    },
-    [relevantName]
-  );
-
-  const handleStartScraping = React.useCallback(async () => {
-    if (!university && !uniCfg?.uniId) return;
-
-    setScraping(true);
-    setScrapeResult("Starte Scraping…");
-
-    try {
-      const merged = await collectCookies();
-      const cookiesJson = buildCookiesJson(merged, true);
-      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
-
-      const profile = await scrapeStudentProfile({
-        university_id,
-        cookies: cookiesJson,
-      });
-
-      setScrapeResult(JSON.stringify(profile, null, 2));
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      console.warn("Scraping error:", msg);
-      setScrapeResult("Fehler beim Scraping: " + msg);
-    } finally {
-      setScraping(false);
-    }
-  }, [collectCookies, buildCookiesJson, university, uniCfg]);
-
-  const handleDebugCookies = React.useCallback(async () => {
-    console.log("========== COOKIE DEBUG ==========");
-
-    try {
-      const merged = await collectCookies();
-      const cookiesJson = buildCookiesJson(merged, false);
-
-      const cookieCount = Object.keys(cookiesJson).length;
-
-      console.log(`Cookies Count: ${cookieCount}`);
-      console.log(`Websites for cookies:`);
-      cookieDomains.forEach((d) => console.log(` - ${d}`));
-
-      console.log(`\nCookies:\n----- COOKIES.JSON BEGIN -----`);
-      console.log(JSON.stringify(cookiesJson, null, 2));
-      console.log("----- COOKIES.JSON END -----");
-    } catch (err: any) {
-      console.warn("Cookie Debug Failed:", err?.message || String(err));
-    }
-
-    console.log("=================================\n");
-  }, [collectCookies, buildCookiesJson, cookieDomains]);
 
   const openEmbeddedBrowser = React.useCallback(
     (url: string, title?: string) => {
@@ -233,11 +126,55 @@ export default function LinkHub({ onOpenGrades }: Props) {
     [router, browserResetToken]
   );
 
+  const handleStartScraping = React.useCallback(async () => {
+    if (!university && !uniCfg?.uniId) return;
+
+    setScraping(true);
+    setScrapeResult("Starte Scraping…");
+
+    try {
+      const byOrigin = await collectCookiesByOrigin(cookieDomains);
+      const cookiesJson = flattenToCookiesJson(byOrigin);
+
+      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
+
+      const profile = await scrapeStudentProfile({
+        university_id,
+        cookies: cookiesJson,
+      });
+
+      setScrapeResult(JSON.stringify(profile, null, 2));
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      console.warn("Scraping error:", msg);
+      setScrapeResult("Fehler beim Scraping: " + msg);
+    } finally {
+      setScraping(false);
+    }
+  }, [cookieDomains, university, uniCfg]);
+
+  const handleDebugCookies = React.useCallback(async () => {
+    try {
+      const byOrigin = await collectCookiesByOrigin(cookieDomains);
+      const cookiesJson = flattenToCookiesJson(byOrigin);
+
+      // IMPORTANT: prints ONLY the JSON (no banners, no extra lines)
+      console.log(JSON.stringify(cookiesJson, null, 2));
+    } catch (err: any) {
+      console.warn("Cookie Debug Failed:", err?.message || String(err));
+    }
+  }, [cookieDomains]);
+
+  const handleHardResetBrowserSession = React.useCallback(async () => {
+    await clearAllCookies();
+    setBrowserResetToken((x) => x + 1);
+    setScrapeResult("Browser-Session zurückgesetzt (Cookies + WebView reset).");
+  }, []);
+
   return (
     <Surface style={styles.root}>
       <Header title={`${university?.name ?? "Uni"}:`} />
 
-      {/* main content */}
       {loading ? (
         <Surface style={{ padding: 16 }}>
           <ActivityIndicator />
@@ -295,13 +232,7 @@ export default function LinkHub({ onOpenGrades }: Props) {
               <Button
                 mode="outlined"
                 style={{ marginTop: 6, marginBottom: 10 }}
-                onPress={async () => {
-                  try {
-                    await CookieManager.clearAll(true);
-                  } catch { }
-                  setBrowserResetToken((x) => x + 1);
-                  setScrapeResult("Browser-Session zurückgesetzt (Cookies + WebView reset).");
-                }}
+                onPress={handleHardResetBrowserSession}
                 disabled={scraping}
               >
                 Hard Reset: Browser Session
@@ -315,7 +246,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
                 {scraping ? "Scraping läuft…" : "Scraping starten"}
               </Button>
 
-              {/* scrollable response view */}
               <Surface style={styles.scrapeBox}>
                 <ScrollView>
                   <ScrollView horizontal>

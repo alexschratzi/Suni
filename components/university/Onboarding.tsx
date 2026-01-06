@@ -11,7 +11,6 @@ import {
   View,
 } from "react-native";
 import { Button, Card, Divider, List, ProgressBar, Text } from "react-native-paper";
-import CookieManager from "@react-native-cookies/cookies";
 
 import EmbeddedBrowser from "../../components/EmbeddedBrowser/EmbeddedBrowser";
 import Header from "../ui/Header";
@@ -21,16 +20,16 @@ import { Country, University, useUniversity } from "./UniversityContext";
 import { useResetOnboarding } from "./useResetOnboarding";
 import { checkLoginWithBackend } from "@/src/server/uniScraper";
 
-type CookieJsonRecord = {
-  httpOnly: boolean;
-  path: string;
-  value: string;
-  secure: boolean;
-  domain: string | null;
-  name: string;
-};
+import {
+  collectCookiesByOrigin,
+  flattenToCookiesJson,
+  cookieFingerprint,
+  CookiesByOrigin,
+  clearAllCookies,
+} from "@/components/university/cookies";
 
-export type CookiesByOrigin = Record<string, Record<string, CookieJsonRecord>>;
+
+
 
 export default function Onboarding() {
   const resetOnboarding = useResetOnboarding();
@@ -73,26 +72,6 @@ export default function Onboarding() {
   const lastFpRef = React.useRef<string>("");
   const checkingRef = React.useRef(false);
 
-  function cookieFingerprint(cookiesByOrigin: CookiesByOrigin): string {
-    const origins = Object.keys(cookiesByOrigin).sort();
-
-    return origins
-      .map((origin) => {
-        const cookies = cookiesByOrigin[origin] || {};
-        const names = Object.keys(cookies).sort();
-
-        const fpPart = names
-          .map((name) => {
-            const v = cookies[name]?.value ?? "";
-            const head = v.slice(0, 8);
-            return `${name}:${v.length}:${head}`;
-          })
-          .join(",");
-
-        return `${origin}=>${fpPart}`;
-      })
-      .join("|");
-  }
   // Build list of origins we want cookies from:
   const cookieDomains = React.useMemo(() => {
     const base: string[] = [];
@@ -117,56 +96,6 @@ export default function Onboarding() {
     return Array.from(new Set(base));
   }, [uniCfg?.cookieLinks, uniCfg?.loginUrl]);
 
-  const collectCookies = React.useCallback(async (): Promise<Record<string, CookieJsonRecord>> => {
-    const merged: Record<string, CookieJsonRecord> = {};
-
-    for (const d of cookieDomains) {
-      try {
-        const got = await CookieManager.get(d);
-        if (!got) continue;
-
-        for (const [name, c] of Object.entries(got)) {
-          const cookieAny = c as any;
-          merged[`${d}|${name}`] = {
-            name,
-            value: String(cookieAny?.value ?? ""),
-            path: cookieAny?.path ?? "/",
-            secure: Boolean(cookieAny?.secure ?? true),
-            httpOnly: Boolean(cookieAny?.httpOnly ?? true),
-            domain: cookieAny?.domain ?? null,
-          };
-        }
-      } catch (err) {
-        console.warn("Cookie fetch error for", d, err);
-      }
-    }
-
-    return merged;
-  }, [cookieDomains]);
-
-  type CookiesByOrigin = Record<string, Record<string, CookieJsonRecord>>;
-
-  const collectCookiesByOrigin = React.useCallback(async (): Promise<CookiesByOrigin> => {
-    const out: CookiesByOrigin = {};
-    for (const origin of cookieDomains) {
-      const got = await CookieManager.get(origin);
-      if (!got) continue;
-
-      out[origin] = {};
-      for (const [name, c] of Object.entries(got)) {
-        const cookieAny = c as any;
-        out[origin][name] = {
-          name,
-          value: String(cookieAny?.value ?? ""),
-          path: cookieAny?.path ?? "/",
-          secure: Boolean(cookieAny?.secure ?? true),
-          httpOnly: Boolean(cookieAny?.httpOnly ?? true),
-          domain: null, // ignore
-        };
-      }
-    }
-    return out;
-  }, [cookieDomains]);
 
   const stopPolling = React.useCallback(() => {
     pollingRef.current = false;
@@ -186,18 +115,19 @@ export default function Onboarding() {
       if (checkingRef.current) return;
 
       try {
-        const merged = await collectCookiesByOrigin();
+        checkingRef.current = true;
 
-        if (Object.keys(merged).length === 0) return;
+        const cookiesByOrigin: CookiesByOrigin = await collectCookiesByOrigin(cookieDomains);
+        if (Object.keys(cookiesByOrigin).length === 0) return;
 
-        const fp = cookieFingerprint(merged);
+        const fp = cookieFingerprint(cookiesByOrigin);
         if (fp === lastFpRef.current) return;
+        lastFpRef.current = fp;
 
-        const result = await checkLoginWithBackend(String(university.id), merged);
+        const cookies = flattenToCookiesJson(cookiesByOrigin);
 
+        const result = await checkLoginWithBackend(String(university.id), cookies);
         console.log("[poll] backend result:", result);
-
-        checkingRef.current = false;
 
         if ("status" in result && result.status === 1 && result.authenticated) {
           stopPolling();
@@ -205,16 +135,18 @@ export default function Onboarding() {
           await acknowledgeLogin();
         }
       } catch (e: any) {
-        checkingRef.current = false;
         console.warn("Polling/check-login failed:", e?.message || String(e));
+      } finally {
+        checkingRef.current = false;
       }
     };
+
+
     runOnce();
     pollTimerRef.current = setInterval(runOnce, 1200);
   }, [
     university?.id,
-    cookieDomains.length,
-    collectCookies,
+    cookieDomains,
     acknowledgeLogin,
     stopPolling,
   ]);
@@ -331,10 +263,7 @@ export default function Onboarding() {
   const openLogin = React.useCallback(async () => {
     if (!uniCfg?.loginUrl) return;
 
-    try {
-      await CookieManager.clearAll(true);
-    } catch (e) {
-    }
+    await clearAllCookies();
 
     // reset browser
     setBrowserResetToken((x) => x + 1);
