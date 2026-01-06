@@ -8,8 +8,6 @@ import { withLayoutContext } from "expo-router";
 import { useTheme } from "react-native-paper";
 import { CommonActions } from "@react-navigation/native";
 
-import { UniversityProvider } from "@/components/university/UniversityContext";
-
 const { Navigator } = createMaterialTopTabNavigator();
 export const MaterialTopTabs = withLayoutContext(Navigator);
 
@@ -85,7 +83,6 @@ export default function TabLayout() {
   }, [calendarScale]);
 
   return (
-    <UniversityProvider>
       <MaterialTopTabs
         tabBarPosition="bottom"
         screenOptions={({ route }) => ({
@@ -163,6 +160,5 @@ export default function TabLayout() {
         />
         <MaterialTopTabs.Screen name="chat" options={{ title: "Chat" }} />
       </MaterialTopTabs>
-    </UniversityProvider>
   );
 }
