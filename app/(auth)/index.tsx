@@ -31,10 +31,10 @@ export default function LoginScreen() {
         paddingHorizontal: 12,
         paddingVertical: 10,
         marginBottom: 12,
-        backgroundColor: theme.colors.surface,
+        backgroundColor: theme.colors.background,
         color: theme.colors.onSurface,
       }) as const,
-    [theme.colors.onSurface, theme.colors.surface]
+    [theme.colors.onSurface, theme.colors.background]
   );
 
   const cleanEmail = (v: string) => v.trim().toLowerCase();

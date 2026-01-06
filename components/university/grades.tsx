@@ -351,4 +351,10 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         overflow: "hidden",
     },
+    card: {
+        marginBottom: 12,
+        backgroundColor: "transparent",
+        elevation: 0,
+        shadowColor: "transparent",
+    },
 });

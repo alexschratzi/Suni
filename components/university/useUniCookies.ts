@@ -1,6 +1,6 @@
 import * as React from "react";
 import CookieManager from "@react-native-cookies/cookies";
-import type { CookieJsonRecord } from "../../src/server/uniScraper";
+import { CookieJsonRecord } from "./cookies";
 import type { UniConfig } from "./uni-login";
 
 export function useUniCookies(uniCfg: UniConfig | null) {

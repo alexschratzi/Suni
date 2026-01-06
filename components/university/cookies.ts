@@ -12,6 +12,45 @@ export type CookieJsonRecord = {
 
 export type CookiesByOrigin = Record<string, Record<string, CookieJsonRecord>>;
 
+export function buildCookieOrigins(opts: {
+  cookieLinks?: string[] | null;
+  loginUrl?: string | null;
+  includeMicrosoftDefaults?: boolean; // default true
+}): string[] {
+  const base: string[] = [];
+
+  if (opts.includeMicrosoftDefaults !== false) {
+    base.push(
+      "https://login.microsoftonline.com",
+      "https://login.microsoft.com",
+      "https://sts.windows.net"
+    );
+  }
+
+  for (const u of opts.cookieLinks ?? []) {
+    const origin = toOrigin(u);
+    if (origin) base.push(origin);
+  }
+
+  const loginOrigin = toOrigin(opts.loginUrl ?? "");
+  if (loginOrigin) base.push(loginOrigin);
+
+  return Array.from(new Set(base));
+}
+
+function toOrigin(s: string): string | null {
+  if (!s) return null;
+  try {
+    // if it's a full URL, reduce to origin
+    return new URL(s).origin;
+  } catch {
+    // allow already-normalized origins
+    if (typeof s === "string" && s.startsWith("http")) return s;
+    return null;
+  }
+}
+
+
 export function cookieFingerprint(cookiesByOrigin: CookiesByOrigin): string {
   const origins = Object.keys(cookiesByOrigin).sort();
 

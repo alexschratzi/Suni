@@ -1,10 +1,12 @@
 // app/(app)/(stack)/(tabs)/uni.tsx
 import * as React from "react";
+import { View } from "react-native";
+import { useTheme } from "react-native-paper";
+
 import LinkHub from "../../../../components/university/LinkHub";
 import Onboarding from "../../../../components/university/Onboarding";
 import Grades from "../../../../components/university/grades";
 import { useUniversity } from "../../../../components/university/UniversityContext";
-import { Surface, useTheme } from "react-native-paper";
 
 type UniView = "hub" | "grades";
 
@@ -14,13 +16,12 @@ export default function Uni() {
 
   const [view, setView] = React.useState<UniView>("hub");
 
-  // If user logs out, force onboarding/hub state
   React.useEffect(() => {
     if (!shouldShowLinks) setView("hub");
   }, [shouldShowLinks]);
 
   return (
-    <Surface style={[{ backgroundColor: theme.colors.background }, { flex: 1 }]}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {!shouldShowLinks ? (
         <Onboarding />
       ) : view === "hub" ? (
@@ -28,6 +29,6 @@ export default function Uni() {
       ) : (
         <Grades onBack={() => setView("hub")} />
       )}
-    </Surface>
+    </View>
   );
 }

@@ -26,9 +26,8 @@ import {
   cookieFingerprint,
   CookiesByOrigin,
   clearAllCookies,
+  buildCookieOrigins,
 } from "@/components/university/cookies";
-
-
 
 
 export default function Onboarding() {
@@ -72,28 +71,12 @@ export default function Onboarding() {
   const lastFpRef = React.useRef<string>("");
   const checkingRef = React.useRef(false);
 
-  // Build list of origins we want cookies from:
   const cookieDomains = React.useMemo(() => {
-    const base: string[] = [];
-
-    // cookie links from DB (expected: list of urls/domains)
-    for (const u of uniCfg?.cookieLinks ?? []) {
-      try {
-        base.push(new URL(u).origin);
-      } catch {
-        // allow raw origins already
-        if (typeof u === "string" && u.startsWith("http")) base.push(u);
-      }
-    }
-
-    // include loginUrl origin as fallback
-    if (uniCfg?.loginUrl) {
-      try {
-        base.push(new URL(uniCfg.loginUrl).origin);
-      } catch { }
-    }
-
-    return Array.from(new Set(base));
+    return buildCookieOrigins({
+      cookieLinks: uniCfg?.cookieLinks ?? [],
+      loginUrl: uniCfg?.loginUrl ?? null,
+      includeMicrosoftDefaults: true,
+    });
   }, [uniCfg?.cookieLinks, uniCfg?.loginUrl]);
 
 
@@ -127,7 +110,6 @@ export default function Onboarding() {
         const cookies = flattenToCookiesJson(cookiesByOrigin);
 
         const result = await checkLoginWithBackend(String(university.id), cookies);
-        console.log("[poll] backend result:", result);
 
         if ("status" in result && result.status === 1 && result.authenticated) {
           stopPolling();
@@ -193,6 +175,8 @@ export default function Onboarding() {
     (async () => {
       if (!country) {
         setUniversities([]);
+        setError(null);
+        setLoading(false);
         return;
       }
       setLoading(true);
@@ -220,6 +204,8 @@ export default function Onboarding() {
     (async () => {
       if (step < 3 || !university) {
         setUniCfg(null);
+        setError(null);
+        setLoading(false);
         return;
       }
       setLoading(true);
@@ -362,12 +348,6 @@ export default function Onboarding() {
                 <Button mode="contained" disabled={!uniCfg?.loginUrl} onPress={openLogin}>
                   Anmelden ({university?.name})
                 </Button>
-
-                {/* Helpful status for POC */}
-                <View style={{ height: 12 }} />
-                <Text style={{ opacity: 0.7 }} selectable>
-                  Cookie Domains: {cookieDomains.length > 0 ? cookieDomains.join(", ") : "(keine)"}
-                </Text>
               </Card.Content>
             </Card>
           </View>
