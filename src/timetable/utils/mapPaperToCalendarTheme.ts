@@ -1,4 +1,4 @@
-// components/timetable/mapPaperToCalendarTheme.tsx
+// src/timetable/utils/mapPaperToCalendarTheme.ts
 import type { DeepPartial, ThemeConfigs } from "@howljs/calendar-kit";
 import { StyleSheet } from "react-native";
 

@@ -112,7 +112,7 @@ export function TimetableCalendar(props: Props) {
       onDragCreateEventEnd={onCreate}
       events={events}
       theme={theme}
-      pagesPerSide={5}
+      pagesPerSide={4}
       onPressEvent={onPressEvent}
       // ✅ NEW: fires during swipe/scroll
       onChange={onChange}

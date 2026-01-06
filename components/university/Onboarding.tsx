@@ -1,5 +1,5 @@
 // components/university/Onboarding.tsx
-// FIXME The Onboarding with the login for the universities is currently really glitchy
+// FIXME The Onboarding with the login for the universities is currently really glitchy, it closes the browser window in about 2 seconds during the login attempt and assumes that you are already logged in.
 import * as React from "react";
 import {
   ActivityIndicator,
