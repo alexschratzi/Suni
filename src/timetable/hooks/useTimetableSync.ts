@@ -2,7 +2,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 
-import type { EvWithMeta, ICalEventMeta, ICalSubscription } from "@/types/timetable";
+import type {
+  EvWithMeta,
+  ICalEventMeta,
+  ICalSubscription,
+  EntryDisplayType,
+} from "@/types/timetable";
 import { subscribeICalChanged } from "@/src/utils/calendarSyncEvents";
 import { getCalendarById, getICalSubscriptions } from "@/src/server/calendar";
 
@@ -20,6 +25,15 @@ type Params = {
   userId: string;
 };
 
+function normalizeDisplayType(v: any): EntryDisplayType {
+  return v === "none" || v === "course" || v === "event" ? v : "none";
+}
+
+function normalizeDisplayTypeOrNull(v: any): EntryDisplayType | null {
+  if (v === null || v === undefined) return null;
+  return v === "none" || v === "course" || v === "event" ? v : null;
+}
+
 export function useTimetableSync({ userId }: Params) {
   const [events, setEvents] = useState<EvWithMeta[]>([]);
   const [icalMeta, setIcalMeta] = useState<Record<string, ICalEventMeta>>({});
@@ -35,6 +49,7 @@ export function useTimetableSync({ userId }: Params) {
         name: s.name,
         url: s.url,
         color: s.color,
+        defaultDisplayType: normalizeDisplayTypeOrNull(s.default_display_type),
       }));
 
       await saveLocalICalSubscriptions(normalizedSubs);
@@ -60,6 +75,10 @@ export function useTimetableSync({ userId }: Params) {
           const color = meta?.color ?? sub.color ?? "#4dabf7";
           const titleAbbr = meta?.titleAbbr ?? baseAbbr;
 
+          const displayType = normalizeDisplayType(
+            meta?.displayType ?? sub.defaultDisplayType ?? "none",
+          );
+
           return {
             id: metaKey,
             title: titleAbbr,
@@ -71,6 +90,7 @@ export function useTimetableSync({ userId }: Params) {
             note: meta?.note ?? "",
             isTitleAbbrCustom: meta?.isTitleAbbrCustom ?? false,
             source: "ical",
+            displayType,
             icalSubscriptionId: sub.id,
             icalEventUid: raw.uid,
             metaKey,

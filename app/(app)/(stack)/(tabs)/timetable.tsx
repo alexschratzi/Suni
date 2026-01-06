@@ -32,6 +32,17 @@ const DEFAULT_EVENT_DURATION_MIN = 60;
 const MIN_H = 7;
 const MAX_H = 24;
 
+function hexToRgba(hex: string, alpha: number) {
+  const h = (hex || "#4dabf7").replace("#", "").trim();
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = Number.parseInt(full, 16);
+  if (Number.isNaN(n) || full.length !== 6) return `rgba(77,171,247,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default function TimetableScreen() {
   const appPaper = useTheme<MD3Theme>();
   const router = useRouter();
@@ -77,8 +88,18 @@ export default function TimetableScreen() {
   const { events, setEvents, icalMeta, setIcalMeta } = useTimetableSync({ userId });
 
   const visibleEvents = useMemo(() => {
-    // TODO: filter by displayMode
-    return events;
+    if (displayMode === "courses") {
+      // Show "none" + "course", hide "event"
+      return events.filter((e) => e.displayType !== "event");
+    }
+
+    // party mode:
+    // show "event" normally, show "none"+"course" transparently
+    return events.map((e) => {
+      if (e.displayType === "event") return e;
+      const base = e.color ?? "#4dabf7";
+      return { ...e, color: hexToRgba(base, 0.15) };
+    });
   }, [events, displayMode]);
 
   const editor = useTimetableEditor({
@@ -167,6 +188,7 @@ export default function TimetableScreen() {
           onChangeTitleAbbr={editor.onChangeTitleAbbr}
           onChangeNote={(text) => editor.updateForm({ note: text })}
           onSelectColor={(color) => editor.updateForm({ color })}
+          onSelectDisplayType={(displayType) => editor.updateForm({ displayType })}
           onSetActivePicker={editor.setActivePicker}
           onPickerChange={editor.handlePickerChange}
         />

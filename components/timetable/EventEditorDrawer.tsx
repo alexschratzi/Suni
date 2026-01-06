@@ -1,10 +1,19 @@
 // components/timetable/EventEditorDrawer.tsx
-import React from "react";
+import React, { useMemo } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View, KeyboardAvoidingView } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { Button, Divider, IconButton, Surface, Text, TextInput, type MD3Theme } from "react-native-paper";
+import {
+  Button,
+  Divider,
+  IconButton,
+  Surface,
+  Text,
+  TextInput,
+  type MD3Theme,
+  SegmentedButtons,
+} from "react-native-paper";
 
-import type { ActivePicker, EvWithMeta, EventEditorForm } from "@/types/timetable";
+import type { ActivePicker, EntryDisplayType, EvWithMeta, EventEditorForm } from "@/types/timetable";
 import { formatDateTimeIso } from "@/src/timetable/utils/date";
 
 const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
@@ -27,6 +36,7 @@ type Props = {
   onChangeTitleAbbr: (text: string) => void;
   onChangeNote: (text: string) => void;
   onSelectColor: (color: string) => void;
+  onSelectDisplayType: (t: EntryDisplayType) => void;
 
   onSetActivePicker: (p: ActivePicker) => void;
   onPickerChange: (event: DateTimePickerEvent, date?: Date) => void;
@@ -47,9 +57,19 @@ export function EventEditorDrawer(props: Props) {
     onChangeTitleAbbr,
     onChangeNote,
     onSelectColor,
+    onSelectDisplayType,
     onSetActivePicker,
     onPickerChange,
   } = props;
+
+  const typeButtons = useMemo(
+    () => [
+      { value: "none", label: "None" },
+      { value: "course", label: "Course" },
+      { value: "event", label: "Event" },
+    ],
+    [],
+  );
 
   if (!visible || !editingEvent || !form) return null;
 
@@ -84,6 +104,18 @@ export function EventEditorDrawer(props: Props) {
             <Divider style={{ marginVertical: 8 }} />
 
             <Text variant="labelSmall" style={styles.label}>
+              Typ
+            </Text>
+            <SegmentedButtons
+              value={form.displayType}
+              onValueChange={(v) => onSelectDisplayType(v as EntryDisplayType)}
+              buttons={typeButtons}
+              style={{ marginBottom: 4 }}
+            />
+
+            <Divider style={{ marginVertical: 10 }} />
+
+            <Text variant="labelSmall" style={styles.label}>
               Title{isIcalEditing && " (aus iCal, nicht änderbar)"}
             </Text>
             <TextInput
@@ -108,13 +140,7 @@ export function EventEditorDrawer(props: Props) {
                 onSetActivePicker(activePicker === "from" ? null : "from");
               }}
             >
-              <TextInput
-                mode="outlined"
-                value={formatDateTimeIso(form.from)}
-                editable={false}
-                pointerEvents="none"
-                dense
-              />
+              <TextInput mode="outlined" value={formatDateTimeIso(form.from)} editable={false} pointerEvents="none" dense />
             </Pressable>
             {!isIcalEditing && activePicker === "from" && (
               <DateTimePicker
@@ -135,13 +161,7 @@ export function EventEditorDrawer(props: Props) {
                 onSetActivePicker(activePicker === "until" ? null : "until");
               }}
             >
-              <TextInput
-                mode="outlined"
-                value={formatDateTimeIso(form.until)}
-                editable={false}
-                pointerEvents="none"
-                dense
-              />
+              <TextInput mode="outlined" value={formatDateTimeIso(form.until)} editable={false} pointerEvents="none" dense />
             </Pressable>
             {!isIcalEditing && activePicker === "until" && (
               <DateTimePicker
@@ -156,13 +176,7 @@ export function EventEditorDrawer(props: Props) {
             <Text variant="labelSmall" style={styles.label}>
               Note
             </Text>
-            <TextInput
-              mode="outlined"
-              value={form.note}
-              onChangeText={onChangeNote}
-              multiline
-              numberOfLines={3}
-            />
+            <TextInput mode="outlined" value={form.note} onChangeText={onChangeNote} multiline numberOfLines={3} />
 
             <Text variant="labelSmall" style={styles.label}>
               Color

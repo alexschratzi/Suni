@@ -4,7 +4,13 @@ import type { DateTimePickerEvent } from "@react-native-community/datetimepicker
 import * as Haptics from "expo-haptics";
 import type { OnCreateEventResponse, OnEventResponse } from "@howljs/calendar-kit";
 
-import type { ActivePicker, EvWithMeta, EventEditorForm, ICalEventMeta } from "@/types/timetable";
+import type {
+  ActivePicker,
+  EvWithMeta,
+  EventEditorForm,
+  ICalEventMeta,
+  EntryDisplayType,
+} from "@/types/timetable";
 import { saveCalendar } from "@/src/server/calendar";
 
 import { toISO, makeIcalMetaKey } from "@/src/timetable/utils/date";
@@ -22,6 +28,10 @@ type Params = {
 
   makeTitleAbbr: (title: string) => string;
 };
+
+function normalizeDisplayType(v: any): EntryDisplayType {
+  return v === "none" || v === "course" || v === "event" ? v : "none";
+}
 
 export function useTimetableEditor({
   userId,
@@ -58,6 +68,7 @@ export function useTimetableEditor({
         until: toISO(ev.end),
         note: ev.note ?? "",
         color: ev.color ?? "#4dabf7",
+        displayType: normalizeDisplayType(ev.displayType),
       });
 
       setHasCustomTitleAbbr(ev.isTitleAbbrCustom ?? false);
@@ -117,6 +128,8 @@ export function useTimetableEditor({
     if (!editingEvent || !editorForm) return;
     const isIcal = editingEvent.source === "ical";
 
+    const nextDisplayType = normalizeDisplayType(editorForm.displayType);
+
     if (isIcal) {
       const metaKey =
         editingEvent.metaKey ||
@@ -135,6 +148,7 @@ export function useTimetableEditor({
           note: editorForm.note,
           color: editorForm.color,
           isTitleAbbrCustom: hasCustomTitleAbbr,
+          displayType: nextDisplayType,
         },
       };
 
@@ -151,6 +165,7 @@ export function useTimetableEditor({
                 note: editorForm.note,
                 color: editorForm.color || e.color,
                 isTitleAbbrCustom: hasCustomTitleAbbr,
+                displayType: nextDisplayType,
               }
             : e,
         ),
@@ -174,6 +189,7 @@ export function useTimetableEditor({
       note: editorForm.note,
       isTitleAbbrCustom: hasCustomTitleAbbr,
       source: "local",
+      displayType: nextDisplayType,
     };
 
     setEvents((prev) => {
@@ -235,6 +251,7 @@ export function useTimetableEditor({
         titleAbbr,
         isTitleAbbrCustom: false,
         source: "local",
+        displayType: "none",
       };
 
       setEvents((prev) => {

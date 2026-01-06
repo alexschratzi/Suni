@@ -5,6 +5,10 @@ import { makeTitleAbbr, toISO } from "@/src/timetable/utils/date";
 
 const DEFAULT_EVENT_DURATION_MIN = 60;
 
+function normalizeDisplayType(v: any): "none" | "course" | "event" {
+  return v === "course" || v === "event" || v === "none" ? v : "none";
+}
+
 export function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
   const fullTitle = entry.title;
   const titleAbbr = entry.title_short || makeTitleAbbr(fullTitle);
@@ -25,6 +29,7 @@ export function mapDtoToEvent(entry: CalendarEntryDTO): EvWithMeta {
     isTitleAbbrCustom: !!entry.title_short,
     note: entry.note,
     source: "local",
+    displayType: normalizeDisplayType((entry as any).display_type),
   };
 }
 
@@ -47,5 +52,6 @@ export function mapEventToDto(ev: EvWithMeta, userId: string): CalendarEntryDTO 
     end_date: endDate as any,
     note: ev.note,
     color: ev.color,
+    display_type: normalizeDisplayType((ev as any).displayType),
   };
 }

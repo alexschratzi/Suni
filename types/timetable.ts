@@ -1,4 +1,7 @@
 // types/timetable.ts
+
+export type EntryDisplayType = "none" | "course" | "event";
+
 export type Ev = {
   id: string;
   title: string;
@@ -14,6 +17,7 @@ export type EventEditorForm = {
   until: string;
   note: string;
   color: string;
+  displayType: EntryDisplayType;
 };
 
 export type EventSource = "local" | "ical";
@@ -25,6 +29,11 @@ export type EvWithMeta = Ev & {
   note?: string;
 
   source: EventSource;
+
+  /**
+   * New: 3-way display type used for filtering/transparency based on timetable mode.
+   */
+  displayType: EntryDisplayType;
 
   icalSubscriptionId?: string;
   icalEventUid?: string;
@@ -38,6 +47,12 @@ export type ICalSubscription = {
   name: string;
   url: string;
   color: string;
+
+  /**
+   * New: default display type for entries coming from this subscription.
+   * null/undefined means “no selection”.
+   */
+  defaultDisplayType?: EntryDisplayType | null;
 };
 
 export type ICalEventMeta = {
@@ -45,6 +60,11 @@ export type ICalEventMeta = {
   note?: string;
   color?: string;
   isTitleAbbrCustom?: boolean;
+
+  /**
+   * New: per-event override (e.g. user changes type of one iCal entry)
+   */
+  displayType?: EntryDisplayType;
 };
 
 export type RawIcalEvent = {
