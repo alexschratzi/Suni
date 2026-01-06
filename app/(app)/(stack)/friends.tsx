@@ -38,15 +38,22 @@ export default function FriendsScreen() {
 
   const [incoming, setIncoming] = useState<string[]>([]);
   const [outgoing, setOutgoing] = useState<string[]>([]);
+  const [friends, setFriends] = useState<string[]>([]);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<ProfileMap>({});
+  const [threadsByFriend, setThreadsByFriend] = useState<Record<string, string>>({});
   const [loadingLists, setLoadingLists] = useState(true);
+  const [friendsExpanded, setFriendsExpanded] = useState(true);
+  const [requestsExpanded, setRequestsExpanded] = useState(true);
+  const [blockedExpanded, setBlockedExpanded] = useState(false);
 
   useEffect(() => {
     if (!userId) {
       setIncoming([]);
       setOutgoing([]);
+      setFriends([]);
       setBlocked([]);
+      setThreadsByFriend({});
       setLoadingLists(false);
       return;
     }
@@ -55,7 +62,7 @@ export default function FriendsScreen() {
 
     const loadLists = async () => {
       setLoadingLists(true);
-      const [incomingRes, outgoingRes, blockedRes] = await Promise.all([
+      const [incomingRes, outgoingRes, blockedRes, friendsRes] = await Promise.all([
         supabase
           .from(TABLES.friendRequests)
           .select(COLUMNS.friendRequests.fromUser)
@@ -68,16 +75,26 @@ export default function FriendsScreen() {
           .from(TABLES.blocks)
           .select(COLUMNS.blocks.blockedId)
           .eq(COLUMNS.blocks.blockerId, userId),
+        supabase
+          .from(TABLES.friendships)
+          .select(`${COLUMNS.friendships.userId},${COLUMNS.friendships.friendId}`)
+          .or(
+            `${COLUMNS.friendships.userId}.eq.${userId},${COLUMNS.friendships.friendId}.eq.${userId}`
+          ),
       ]);
 
-      if (incomingRes.error || outgoingRes.error || blockedRes.error) {
+      if (incomingRes.error || outgoingRes.error || blockedRes.error || friendsRes.error) {
         console.error(
           "Friends load error:",
-          incomingRes.error?.message || outgoingRes.error?.message || blockedRes.error?.message
+          incomingRes.error?.message ||
+            outgoingRes.error?.message ||
+            blockedRes.error?.message ||
+            friendsRes.error?.message
         );
         if (!cancelled) {
           setIncoming([]);
           setOutgoing([]);
+          setFriends([]);
           setBlocked([]);
           setLoadingLists(false);
         }
@@ -101,6 +118,16 @@ export default function FriendsScreen() {
           .map((row: any) => row?.[COLUMNS.blocks.blockedId])
           .filter(Boolean)
       );
+      const friendList = (friendsRes.data || [])
+        .map((row: any) => {
+          const a = row?.[COLUMNS.friendships.userId];
+          const b = row?.[COLUMNS.friendships.friendId];
+          if (a === userId) return b;
+          if (b === userId) return a;
+          return null;
+        })
+        .filter(Boolean);
+      setFriends(Array.from(new Set(friendList)));
       setLoadingLists(false);
     };
 
@@ -138,6 +165,26 @@ export default function FriendsScreen() {
         },
         loadLists
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendships,
+          filter: `${COLUMNS.friendships.userId}=eq.${userId}`,
+        },
+        loadLists
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendships,
+          filter: `${COLUMNS.friendships.friendId}=eq.${userId}`,
+        },
+        loadLists
+      )
       .subscribe();
 
     return () => {
@@ -147,7 +194,7 @@ export default function FriendsScreen() {
   }, [userId]);
 
   useEffect(() => {
-    const all = [...incoming, ...outgoing, ...blocked];
+    const all = [...incoming, ...outgoing, ...blocked, ...friends];
     const missing = Array.from(new Set(all.filter((uid) => !profiles[uid])));
     if (!missing.length) return;
 
@@ -170,12 +217,93 @@ export default function FriendsScreen() {
         }) || [];
       setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     })();
-  }, [incoming, outgoing, blocked, profiles]);
+  }, [incoming, outgoing, blocked, friends, profiles]);
 
   const displayName = useMemo(
     () => (uid: string) => profiles[uid]?.username || uid,
     [profiles]
   );
+  const requestCount = incoming.length + outgoing.length;
+
+  const ensureDirectThreads = async (friendIds: string[]) => {
+    if (!userId || friendIds.length === 0) return {} as Record<string, string>;
+    const uniqueFriends = Array.from(new Set(friendIds));
+
+    const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
+    const { data, error } = await supabase
+      .from(TABLES.dmThreads)
+      .select(columns)
+      .contains(COLUMNS.dmThreads.userIds, [userId]);
+
+    if (error) {
+      console.error("Direct threads load error:", error.message);
+      return {} as Record<string, string>;
+    }
+
+    const map: Record<string, string> = {};
+    (data || []).forEach((row: any) => {
+      const ids = row?.[COLUMNS.dmThreads.userIds];
+      if (!Array.isArray(ids)) return;
+      const otherUid = ids.find((id: string) => id !== userId);
+      if (otherUid) {
+        map[otherUid] = row?.[COLUMNS.dmThreads.id];
+      }
+    });
+
+    const missing = uniqueFriends.filter((uid) => !map[uid]);
+    if (missing.length === 0) return map;
+
+    const inserts = missing.map((uid) => ({
+      [COLUMNS.dmThreads.userIds]: [userId, uid],
+      [COLUMNS.dmThreads.lastMessage]: "",
+      [COLUMNS.dmThreads.lastTimestamp]: null,
+      [COLUMNS.dmThreads.hiddenBy]: [],
+    }));
+
+    const { data: created, error: createErr } = await supabase
+      .from(TABLES.dmThreads)
+      .insert(inserts)
+      .select(columns);
+
+    if (createErr) {
+      console.error("Direct threads create error:", createErr.message);
+      return map;
+    }
+
+    (created || []).forEach((row: any) => {
+      const ids = row?.[COLUMNS.dmThreads.userIds];
+      if (!Array.isArray(ids)) return;
+      const otherUid = ids.find((id: string) => id !== userId);
+      if (otherUid) {
+        map[otherUid] = row?.[COLUMNS.dmThreads.id];
+      }
+    });
+
+    return map;
+  };
+
+  useEffect(() => {
+    if (!userId) {
+      setThreadsByFriend({});
+      return;
+    }
+
+    if (friends.length === 0) {
+      setThreadsByFriend({});
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const map = await ensureDirectThreads(friends);
+      if (!cancelled) setThreadsByFriend(map);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, friends]);
 
   const searchUser = async () => {
     if (!userId) {
@@ -325,31 +453,8 @@ export default function FriendsScreen() {
         .eq(COLUMNS.friendRequests.toUser, userId);
       if (deleteErr) throw deleteErr;
 
-      const columns = [
-        COLUMNS.dmThreads.id,
-        COLUMNS.dmThreads.userIds,
-      ].join(",");
-
-      const { data, error } = await supabase
-        .from(TABLES.dmThreads)
-        .select(columns)
-        .contains(COLUMNS.dmThreads.userIds, [userId]);
-
-      if (!error) {
-        const exists = (data || []).some((row: any) => {
-          const userIds = row?.[COLUMNS.dmThreads.userIds];
-          return Array.isArray(userIds) && userIds.includes(userId) && userIds.includes(otherUid);
-        });
-
-        if (!exists) {
-          await supabase.from(TABLES.dmThreads).insert({
-            [COLUMNS.dmThreads.userIds]: [userId, otherUid],
-            [COLUMNS.dmThreads.lastMessage]: "",
-            [COLUMNS.dmThreads.lastTimestamp]: null,
-            [COLUMNS.dmThreads.hiddenBy]: [],
-          });
-        }
-      }
+      const map = await ensureDirectThreads([otherUid]);
+      setThreadsByFriend((prev) => ({ ...prev, ...map }));
 
       setSnack(t("friends.snacks.added"));
     } catch (err) {
@@ -538,120 +643,197 @@ export default function FriendsScreen() {
         <>
           <Surface style={styles.card} mode="elevated">
             <List.Section>
-              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-                {t("friends.incomingTitle")}
-              </List.Subheader>
-              {incoming.length === 0 ? (
-                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
-                  {t("friends.incomingEmpty")}
-                </Text>
-              ) : (
-                incoming.map((uid, idx) => (
-                  <View key={uid}>
-                    <List.Item
-                      title={displayName(uid)}
-                      titleStyle={{ color: theme.colors.onSurface }}
-                      left={(props) => (
-                        <Avatar.Text
-                          {...props}
-                          size={40}
-                          label={initials(displayName(uid))}
-                          color={theme.colors.onPrimary}
-                          style={{ backgroundColor: theme.colors.primary }}
+              <List.Accordion
+                title={`${t("friends.listTitle")} (${friends.length})`}
+                titleStyle={{ color: theme.colors.onSurface }}
+                expanded={friendsExpanded}
+                onPress={() => setFriendsExpanded((prev) => !prev)}
+                left={(props) => <List.Icon {...props} icon="account-group" />}
+              >
+                {friends.length === 0 ? (
+                  <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+                    {t("friends.listEmpty")}
+                  </Text>
+                ) : (
+                  friends.map((uid, idx) => {
+                    const threadId = threadsByFriend[uid];
+                    return (
+                      <View key={uid}>
+                        <List.Item
+                          title={displayName(uid)}
+                          titleStyle={{ color: theme.colors.onSurface }}
+                          left={(props) => (
+                            <Avatar.Text
+                              {...props}
+                              size={40}
+                              label={initials(displayName(uid))}
+                              color={theme.colors.onPrimary}
+                              style={{ backgroundColor: theme.colors.primary }}
+                            />
+                          )}
+                          right={() => (
+                            <Button
+                              compact
+                              onPress={() =>
+                                threadId &&
+                                router.push({
+                                  pathname: "/(app)/(stack)/reply",
+                                  params: { dmId: threadId },
+                                })
+                              }
+                              disabled={!threadId}
+                            >
+                              {t("friends.chat")}
+                            </Button>
+                          )}
+                          onPress={() => {
+                            if (!threadId) return;
+                            router.push({
+                              pathname: "/(app)/(stack)/reply",
+                              params: { dmId: threadId },
+                            });
+                          }}
                         />
+                        {idx < friends.length - 1 && (
+                          <Divider style={{ marginLeft: 56 }} />
+                        )}
+                      </View>
+                    );
+                  })
+                )}
+              </List.Accordion>
+            </List.Section>
+          </Surface>
+
+          <Surface style={styles.card} mode="elevated">
+            <List.Section>
+              <List.Accordion
+                title={`${t("friends.requestsTitle")} (${requestCount})`}
+                titleStyle={{ color: theme.colors.onSurface }}
+                expanded={requestsExpanded}
+                onPress={() => setRequestsExpanded((prev) => !prev)}
+                left={(props) => <List.Icon {...props} icon="account-arrow-right-outline" />}
+              >
+                <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+                  {t("friends.incomingTitle")}
+                </List.Subheader>
+                {incoming.length === 0 ? (
+                  <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+                    {t("friends.incomingEmpty")}
+                  </Text>
+                ) : (
+                  incoming.map((uid, idx) => (
+                    <View key={uid}>
+                      <List.Item
+                        title={displayName(uid)}
+                        titleStyle={{ color: theme.colors.onSurface }}
+                        left={(props) => (
+                          <Avatar.Text
+                            {...props}
+                            size={40}
+                            label={initials(displayName(uid))}
+                            color={theme.colors.onPrimary}
+                            style={{ backgroundColor: theme.colors.primary }}
+                          />
+                        )}
+                        right={() => (
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Button onPress={() => accept(uid)}>{t("friends.accept")}</Button>
+                            <Button onPress={() => decline(uid)} textColor="red">
+                              {t("friends.decline")}
+                            </Button>
+                            <Button onPress={() => blockUser(uid)}>{t("friends.block")}</Button>
+                          </View>
+                        )}
+                      />
+                      {idx < incoming.length - 1 && (
+                        <Divider style={{ marginLeft: 56 }} />
                       )}
-                      right={() => (
-                        <View style={{ flexDirection: "row", alignItems: "center" }}>
-                          <Button onPress={() => accept(uid)}>{t("friends.accept")}</Button>
-                          <Button onPress={() => decline(uid)} textColor="red">
-                            {t("friends.decline")}
-                          </Button>
+                    </View>
+                  ))
+                )}
+
+                <Divider style={{ marginVertical: 6 }} />
+
+                <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
+                  {t("friends.outgoingTitle")}
+                </List.Subheader>
+                {outgoing.length === 0 ? (
+                  <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+                    {t("friends.outgoingEmpty")}
+                  </Text>
+                ) : (
+                  outgoing.map((uid, idx) => (
+                    <View key={uid}>
+                      <List.Item
+                        title={displayName(uid)}
+                        description={t("friends.sentLabel")}
+                        titleStyle={{ color: theme.colors.onSurface }}
+                        descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
+                        left={(props) => (
+                          <Avatar.Text
+                            {...props}
+                            size={40}
+                            label={initials(displayName(uid))}
+                            color={theme.colors.onPrimary}
+                            style={{ backgroundColor: theme.colors.primary }}
+                          />
+                        )}
+                        right={() => (
                           <Button onPress={() => blockUser(uid)}>{t("friends.block")}</Button>
-                        </View>
+                        )}
+                      />
+                      {idx < outgoing.length - 1 && (
+                        <Divider style={{ marginLeft: 56 }} />
                       )}
-                    />
-                    {idx < incoming.length - 1 && (
-                      <Divider style={{ marginLeft: 56 }} />
-                    )}
-                  </View>
-                ))
-              )}
+                    </View>
+                  ))
+                )}
+              </List.Accordion>
             </List.Section>
           </Surface>
 
           <Surface style={styles.card} mode="elevated">
             <List.Section>
-              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-                {t("friends.outgoingTitle")}
-              </List.Subheader>
-              {outgoing.length === 0 ? (
-                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
-                  {t("friends.outgoingEmpty")}
-                </Text>
-              ) : (
-                outgoing.map((uid, idx) => (
-                  <View key={uid}>
-                    <List.Item
-                      title={displayName(uid)}
-                      description={t("friends.sentLabel")}
-                      titleStyle={{ color: theme.colors.onSurface }}
-                      descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                      left={(props) => (
-                        <Avatar.Text
-                          {...props}
-                          size={40}
-                          label={initials(displayName(uid))}
-                          color={theme.colors.onPrimary}
-                          style={{ backgroundColor: theme.colors.primary }}
-                        />
+              <List.Accordion
+                title={`${t("friends.blockedTitle")} (${blocked.length})`}
+                titleStyle={{ color: theme.colors.onSurface }}
+                expanded={blockedExpanded}
+                onPress={() => setBlockedExpanded((prev) => !prev)}
+                left={(props) => <List.Icon {...props} icon="account-cancel-outline" />}
+              >
+                {blocked.length === 0 ? (
+                  <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+                    {t("friends.blockedEmpty")}
+                  </Text>
+                ) : (
+                  blocked.map((uid, idx) => (
+                    <View key={uid}>
+                      <List.Item
+                        title={displayName(uid)}
+                        titleStyle={{ color: theme.colors.onSurface }}
+                        left={(props) => (
+                          <Avatar.Text
+                            {...props}
+                            size={40}
+                            label={initials(displayName(uid))}
+                            color={theme.colors.onPrimary}
+                            style={{ backgroundColor: theme.colors.primary }}
+                          />
+                        )}
+                        right={() => (
+                          <Button onPress={() => unblockUser(uid)}>
+                            {t("friends.unblock")}
+                          </Button>
+                        )}
+                      />
+                      {idx < blocked.length - 1 && (
+                        <Divider style={{ marginLeft: 56 }} />
                       )}
-                      right={() => (
-                        <Button onPress={() => blockUser(uid)}>{t("friends.block")}</Button>
-                      )}
-                    />
-                    {idx < outgoing.length - 1 && (
-                      <Divider style={{ marginLeft: 56 }} />
-                    )}
-                  </View>
-                ))
-              )}
-            </List.Section>
-          </Surface>
-
-          <Surface style={styles.card} mode="elevated">
-            <List.Section>
-              <List.Subheader style={{ color: theme.colors.onSurfaceVariant }}>
-                {t("friends.blockedTitle")}
-              </List.Subheader>
-              {blocked.length === 0 ? (
-                <Text style={{ paddingHorizontal: 8, color: theme.colors.onSurfaceVariant }}>
-                  {t("friends.blockedEmpty")}
-                </Text>
-              ) : (
-                blocked.map((uid, idx) => (
-                  <View key={uid}>
-                    <List.Item
-                      title={displayName(uid)}
-                      titleStyle={{ color: theme.colors.onSurface }}
-                      left={(props) => (
-                        <Avatar.Text
-                          {...props}
-                          size={40}
-                          label={initials(displayName(uid))}
-                          color={theme.colors.onPrimary}
-                          style={{ backgroundColor: theme.colors.primary }}
-                        />
-                      )}
-                      right={() => (
-                        <Button onPress={() => unblockUser(uid)}>{t("friends.unblock")}</Button>
-                      )}
-                    />
-                    {idx < blocked.length - 1 && (
-                      <Divider style={{ marginLeft: 56 }} />
-                    )}
-                  </View>
-                ))
-              )}
+                    </View>
+                  ))
+                )}
+              </List.Accordion>
             </List.Section>
           </Surface>
         </>
@@ -687,6 +869,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  emptyText: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   center: {
     flex: 1,

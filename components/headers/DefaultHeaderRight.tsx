@@ -4,11 +4,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "react-native-paper";
 import { useRouter } from "expo-router";
 
-export default function DefaultHeaderRight() {
+type Props = {
+  section?: string;
+};
+
+export default function DefaultHeaderRight({ section }: Props) {
   const theme = useTheme();
   const router = useRouter();
 
   const goToGlobalSettings = () => {
+    if (section) {
+      router.push({
+        pathname: "/(app)/(stack)/global_settings",
+        params: { section },
+      });
+      return;
+    }
     router.push("/(app)/(stack)/global_settings");
   };
 

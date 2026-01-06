@@ -10,7 +10,7 @@ import {
 } from "react-native";
 
 import { Button, Card, Divider, List, ProgressBar, Text } from "react-native-paper";
-import EmbeddedBrowser from "../../screens/EmbeddedBrowser";
+import EmbeddedBrowser from "../../components/EmbeddedBrowser/EmbeddedBrowser";
 import Header from "../ui/Header";
 import {
     fetchCountries,

@@ -234,6 +234,66 @@ export default function ChatScreen() {
 
     let cancelled = false;
 
+    const ensureThreadsForFriends = async () => {
+      const { data: friendRows, error: friendErr } = await supabase
+        .from(TABLES.friendships)
+        .select(`${COLUMNS.friendships.userId},${COLUMNS.friendships.friendId}`)
+        .or(
+          `${COLUMNS.friendships.userId}.eq.${userId},${COLUMNS.friendships.friendId}.eq.${userId}`
+        );
+
+      if (friendErr) {
+        console.error("Friends load error:", friendErr.message);
+        return;
+      }
+
+      const friendIds = (friendRows || [])
+        .map((row: any) => {
+          const a = row?.[COLUMNS.friendships.userId];
+          const b = row?.[COLUMNS.friendships.friendId];
+          if (a === userId) return b;
+          if (b === userId) return a;
+          return null;
+        })
+        .filter(Boolean);
+
+      const uniqueFriends = Array.from(new Set(friendIds));
+      if (uniqueFriends.length === 0) return;
+
+      const { data: threadRows, error: threadErr } = await supabase
+        .from(TABLES.dmThreads)
+        .select(`${COLUMNS.dmThreads.id},${COLUMNS.dmThreads.userIds}`)
+        .contains(COLUMNS.dmThreads.userIds, [userId]);
+
+      if (threadErr) {
+        console.error("Direct threads load error:", threadErr.message);
+        return;
+      }
+
+      const existing = new Set<string>();
+      (threadRows || []).forEach((row: any) => {
+        const ids = row?.[COLUMNS.dmThreads.userIds];
+        if (!Array.isArray(ids)) return;
+        const otherUid = ids.find((id: string) => id !== userId);
+        if (otherUid) existing.add(otherUid);
+      });
+
+      const missing = uniqueFriends.filter((uid) => !existing.has(uid));
+      if (missing.length === 0) return;
+
+      const inserts = missing.map((uid) => ({
+        [COLUMNS.dmThreads.userIds]: [userId, uid],
+        [COLUMNS.dmThreads.lastMessage]: "",
+        [COLUMNS.dmThreads.lastTimestamp]: null,
+        [COLUMNS.dmThreads.hiddenBy]: [],
+      }));
+
+      const { error: insertErr } = await supabase.from(TABLES.dmThreads).insert(inserts);
+      if (insertErr) {
+        console.error("Direct threads create error:", insertErr.message);
+      }
+    };
+
     const loadThreads = async () => {
       const columns = [
         COLUMNS.dmThreads.id,
@@ -247,7 +307,7 @@ export default function ChatScreen() {
         .from(TABLES.dmThreads)
         .select(columns)
         .contains(COLUMNS.dmThreads.userIds, [userId])
-        .order(COLUMNS.dmThreads.lastTimestamp, { ascending: false });
+        .order(COLUMNS.dmThreads.lastTimestamp, { ascending: false, nullsFirst: false });
 
       if (error) {
         console.error("Direct threads load error:", error.message);
@@ -278,10 +338,35 @@ export default function ChatScreen() {
       setRawDirects(arr);
     };
 
-    loadThreads();
+    const syncThreads = async () => {
+      await ensureThreadsForFriends();
+      await loadThreads();
+    };
+
+    syncThreads();
 
     const channel = supabase
       .channel(`dm-threads-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendships,
+          filter: `${COLUMNS.friendships.userId}=eq.${userId}`,
+        },
+        syncThreads
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.friendships,
+          filter: `${COLUMNS.friendships.friendId}=eq.${userId}`,
+        },
+        syncThreads
+      )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: TABLES.dmThreads },
@@ -360,7 +445,7 @@ export default function ChatScreen() {
     const match = (d: Direct) =>
       d.displayName.toLowerCase().includes(q) || (d.last ?? "").toLowerCase().includes(q);
 
-    return directs.filter(match);
+    return directs.filter((d) => !d.hidden && match(d));
   }, [directs, search]);
 
   // Hide blocked senders
