@@ -43,6 +43,7 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "expo-router",
+      "./plugins/withNonModularHeaders",
       [
         "expo-splash-screen",
         {
