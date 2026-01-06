@@ -1,7 +1,7 @@
 // app/(app)/(stack)/_layout.tsx
 import React from "react";
 import { Pressable } from "react-native";
-import { Stack, useSegments } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { Text, useTheme, type MD3Theme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, DrawerActions } from "@react-navigation/native";
@@ -13,26 +13,30 @@ import { TimetableHeaderTitle, TimetableHeaderRight } from "@/components/headers
 import { useTimetableDisplayMode } from "@/src/timetable/utils/mode";
 import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
 
+type TabName = "news" | "uni" | "timetable" | "chat";
+
+function getLastSegment(pathname: string) {
+  // pathname is usually like "/timetable" or "/settings/timetable"
+  const parts = pathname.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+function getCurrentTabFromPath(pathname: string): TabName | null {
+  const last = getLastSegment(pathname);
+  if (last === "news" || last === "uni" || last === "timetable" || last === "chat") return last;
+  return null; // not in tabs
+}
+
 export default function AppStackLayout() {
   const theme = useTheme<MD3Theme>();
   const navigation = useNavigation();
+  const pathname = usePathname();
 
-  const segments = useSegments() as unknown as string[];
-  const lastSegment = segments[segments.length - 1] ?? "";
-
-  const currentTab =
-    (["news", "uni", "timetable", "chat"].includes(lastSegment) ? lastSegment : "news") as
-      | "news"
-      | "uni"
-      | "timetable"
-      | "chat";
-
-  const isTabsRoute = segments[2] === "(tabs)" || segments[segments.length - 2] === "(tabs)";
-  const isTimetableFocused = isTabsRoute && currentTab === "timetable";
+  const currentTab = React.useMemo(() => getCurrentTabFromPath(pathname), [pathname]);
+  const isTimetableFocused = currentTab === "timetable";
 
   const displayMode = useTimetableDisplayMode("courses");
   const { isParty, partyHeaderBg } = useTimetableTheming(theme, displayMode);
-
   const isPartyHeader = isTimetableFocused && isParty;
 
   const openDrawer = () => navigation.dispatch(DrawerActions.toggleDrawer());
@@ -60,7 +64,7 @@ export default function AppStackLayout() {
               </Pressable>
             ),
             headerTitle: () =>
-              currentTab === "timetable" ? (
+              isTimetableFocused ? (
                 <TimetableHeaderTitle />
               ) : (
                 <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
@@ -68,7 +72,7 @@ export default function AppStackLayout() {
                 </Text>
               ),
             headerRight: () => {
-              if (currentTab === "timetable") return <TimetableHeaderRight />;
+              if (isTimetableFocused) return <TimetableHeaderRight />;
 
               const section =
                 currentTab === "news"
