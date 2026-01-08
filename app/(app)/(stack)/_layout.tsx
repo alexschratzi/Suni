@@ -1,7 +1,7 @@
 // app/(app)/(stack)/_layout.tsx
 import React from "react";
 import { Pressable } from "react-native";
-import { Stack, usePathname } from "expo-router";
+import { Stack, useSegments } from "expo-router";
 import { Text, useTheme, type MD3Theme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, DrawerActions } from "@react-navigation/native";
@@ -15,28 +15,30 @@ import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
 
 type TabName = "news" | "uni" | "timetable" | "chat";
 
-function getLastSegment(pathname: string) {
-  // pathname is usually like "/timetable" or "/settings/timetable"
-  const parts = pathname.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? "";
-}
-
-function getCurrentTabFromPath(pathname: string): TabName | null {
-  const last = getLastSegment(pathname);
+function tabFromSegments(segments: string[]): TabName | null {
+  // segments e.g. ["(app)","(stack)","(tabs)","timetable"]
+  const last = segments[segments.length - 1];
   if (last === "news" || last === "uni" || last === "timetable" || last === "chat") return last;
-  return null; // not in tabs
+  return null;
 }
 
 export default function AppStackLayout() {
   const theme = useTheme<MD3Theme>();
   const navigation = useNavigation();
-  const pathname = usePathname();
-
-  const currentTab = React.useMemo(() => getCurrentTabFromPath(pathname), [pathname]);
-  const isTimetableFocused = currentTab === "timetable";
+  const segments = useSegments();
 
   const displayMode = useTimetableDisplayMode("courses");
   const { isParty, partyHeaderBg } = useTimetableTheming(theme, displayMode);
+
+  // 👇 This is the key:
+  // On some transitions (especially pop back to "(tabs)"), the focused child tab
+  // can be "unknown" for one render. We keep the last known tab to prevent header flicker.
+  const currentTabMaybe = React.useMemo(() => tabFromSegments(segments), [segments]);
+  const lastTabRef = React.useRef<TabName>("timetable"); // default doesn't matter much
+  if (currentTabMaybe) lastTabRef.current = currentTabMaybe;
+  const currentTab: TabName = currentTabMaybe ?? lastTabRef.current;
+
+  const isTimetableFocused = currentTab === "timetable";
   const isPartyHeader = isTimetableFocused && isParty;
 
   const openDrawer = () => navigation.dispatch(DrawerActions.toggleDrawer());
@@ -63,6 +65,8 @@ export default function AppStackLayout() {
                 <Ionicons name="menu" size={24} color={theme.colors.onSurface} />
               </Pressable>
             ),
+
+            // IMPORTANT: now this won’t flicker, because currentTab is never "unknown"
             headerTitle: () =>
               isTimetableFocused ? (
                 <TimetableHeaderTitle />
@@ -71,6 +75,7 @@ export default function AppStackLayout() {
                   Amadeus
                 </Text>
               ),
+
             headerRight: () => {
               if (isTimetableFocused) return <TimetableHeaderRight />;
 
