@@ -26,18 +26,41 @@ export default function RootLayout() {
   const inAuthGroup = segments[0] === "(auth)";
 
   const loadProfileReady = async (userId: string) => {
-    const { data: prof, error } = await supabase
-      .from("profiles")
-      .select("id, username")
-      .eq("id", userId)
-      .maybeSingle<ProfileCheck>();
+    try {
+      const { data: prof, error } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .eq("id", userId)
+        .maybeSingle<ProfileCheck>();
 
-    if (error) {
-      console.warn("profiles check error:", error.message);
+      if (error) {
+        console.warn("profiles check error:", error.message);
+        return false;
+      }
+
+      return !!prof?.username && prof.username.trim().length > 0;
+    } catch (err) {
+      console.warn("profiles check error:", err);
       return false;
     }
+  };
 
-    return !!prof?.username && prof.username.trim().length > 0;
+  const loadProfileReadyWithTimeout = async (userId: string, timeoutMs = 6000) => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        console.warn("profiles check timeout");
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    const result = await Promise.race([
+      loadProfileReady(userId),
+      timeoutPromise,
+    ]);
+
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    return result;
   };
 
   // Initial session + subscribe to auth changes
@@ -64,13 +87,13 @@ export default function RootLayout() {
         return;
       }
 
-      // Preload profile readiness once on boot (helps avoid flicker)
-      const ok = await loadProfileReady(userId);
+      setReady(true);
+      setProfileChecked(false);
+      const ok = await loadProfileReadyWithTimeout(userId);
       if (cancelled) return;
 
       setProfileReady(ok);
       setProfileChecked(true);
-      setReady(true);
     };
 
     init();
@@ -89,7 +112,8 @@ export default function RootLayout() {
 
       // Re-check when session changes (login/logout)
       setProfileChecked(false);
-      const ok = await loadProfileReady(userId);
+      const ok = await loadProfileReadyWithTimeout(userId);
+      if (cancelled) return;
       setProfileReady(ok);
       setProfileChecked(true);
     });
