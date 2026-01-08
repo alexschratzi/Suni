@@ -11,18 +11,39 @@ const APP_HOME = "/(app)/(stack)/(tabs)/timetable";
 const AUTH_HOME = "/(auth)";
 
 async function loadProfileReady(userId: string) {
-  const { data: prof, error } = await supabase
-    .from("profiles")
-    .select("id, username")
-    .eq("id", userId)
-    .maybeSingle<ProfileCheck>();
+  try {
+    const { data: prof, error } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("id", userId)
+      .maybeSingle<ProfileCheck>();
 
-  if (error) {
-    console.warn("profiles check error:", error.message);
+    if (error) {
+      console.warn("profiles check error:", error.message);
+      return false;
+    }
+
+    return !!prof?.username && prof.username.trim().length > 0;
+  } catch (err) {
+    console.warn("profiles check error:", err);
     return false;
   }
+}
 
-  return !!prof?.username && prof.username.trim().length > 0;
+async function loadProfileReadyWithTimeout(userId: string, timeoutMs = 6000) {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<boolean>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      console.warn("profiles check timeout");
+      resolve(false);
+    }, timeoutMs);
+  });
+
+  const result = await Promise.race([loadProfileReady(userId), timeoutPromise]);
+
+  if (timeoutHandle) clearTimeout(timeoutHandle);
+  return result;
 }
 
 export default function Index() {
@@ -43,7 +64,8 @@ export default function Index() {
         return;
       }
 
-      const ok = await loadProfileReady(userId);
+      // If profile is ready -> go app. Otherwise -> stay in auth (onboarding/username)
+      const ok = await loadProfileReadyWithTimeout(userId);
       if (cancelled) return;
 
       setHref(ok ? APP_HOME : AUTH_HOME);
@@ -57,7 +79,7 @@ export default function Index() {
   }, []);
 
   // Keep splash until we know the destination.
-  // Then hide it AFTER navigation has a chance to commit (2 RAFs avoids a blank frame on some devices).
+  // Hide after navigation can commit (2 RAFs avoids a blank frame on some devices).
   useEffect(() => {
     if (!href) return;
 

@@ -1,18 +1,15 @@
 // app/_layout.tsx
-import React, { useEffect } from "react";
+import React from "react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 
 import { AppThemeProvider } from "../components/theme/AppThemeProvider";
 import "../i18n/i18n";
 
-// Keep splash up until OUR gate screen decides.
+// Keep splash up until app/index.tsx decides where to go.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  // (Optional) nothing else here; splash is controlled in app/index.tsx
-  useEffect(() => {}, []);
-
   return (
     <AppThemeProvider>
       <Stack
