@@ -8,6 +8,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+
 function AppDrawerContent(props: any) {
   const router = useRouter();
   const theme = useTheme();
@@ -70,16 +73,20 @@ export default function AppDrawerLayout() {
   const theme = useTheme();
 
   return (
-    <Drawer
-      drawerContent={(props) => <AppDrawerContent {...props} />}
-      screenOptions={{
-        headerShown: false,
-        drawerStyle: { backgroundColor: theme.colors.surface },
-        drawerActiveTintColor: theme.colors.primary,
-        drawerInactiveTintColor: theme.colors.onSurfaceVariant,
-      }}
-    >
-      <Drawer.Screen name="(stack)" options={{ title: "App" }} />
-    </Drawer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <BottomSheetModalProvider>
+        <Drawer
+          drawerContent={(props) => <AppDrawerContent {...props} />}
+          screenOptions={{
+            headerShown: false,
+            drawerStyle: { backgroundColor: theme.colors.surface },
+            drawerActiveTintColor: theme.colors.primary,
+            drawerInactiveTintColor: theme.colors.onSurfaceVariant,
+          }}
+        >
+          <Drawer.Screen name="(stack)" options={{ title: "App" }} />
+        </Drawer>
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }

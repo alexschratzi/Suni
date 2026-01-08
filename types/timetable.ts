@@ -10,7 +10,7 @@ export type Ev = {
   color?: string;
 };
 
-export type EventEditorForm = {
+export type EventEditorFormBase = {
   fullTitle: string;
   titleAbbr: string;
   from: string;
@@ -20,7 +20,41 @@ export type EventEditorForm = {
   displayType: EntryDisplayType;
 };
 
+export type CourseEditorForm = EventEditorFormBase & {
+  // For now these are editable fields in the Course edit window (even if derived later).
+  courseName: string;
+  courseType: string;
+  lecturer: string;
+  room: string;
+};
+
+export type PartyEditorForm = EventEditorFormBase & {
+  eventName: string;
+  location: string;
+  createdBy: string;
+  entryFee: string;
+  invitedGroups: string; // comma separated for now
+};
+
+export type EventEditorForm = EventEditorFormBase | CourseEditorForm | PartyEditorForm;
+
 export type EventSource = "local" | "ical";
+
+export type CourseInfo = {
+  courseName: string;
+  courseType: string;
+  lecturer: string;
+  room: string;
+};
+
+export type PartyInfo = {
+  eventName: string;
+  location: string;
+  createdBy: string;
+  entryFee: string;
+  invitedGroups: string[];
+  friendsAttending: string[];
+};
 
 export type EvWithMeta = Ev & {
   fullTitle?: string;
@@ -31,9 +65,23 @@ export type EvWithMeta = Ev & {
   source: EventSource;
 
   /**
-   * New: 3-way display type used for filtering/transparency based on timetable mode.
+   * Display type drives overview + edit windows and calendar filtering/transparency.
    */
   displayType: EntryDisplayType;
+
+  /**
+   * Hide flag (new)
+   * - local: persisted in local events storage / server sync
+   * - ical: persisted via ICalEventMeta override
+   */
+  hidden?: boolean;
+
+  /**
+   * Optional structured fields used by the type-specific UI.
+   * (For iCal, you’ll later derive these from raw ics summary/location/etc.)
+   */
+  course?: Partial<CourseInfo>;
+  party?: Partial<PartyInfo>;
 
   icalSubscriptionId?: string;
   icalEventUid?: string;
@@ -47,11 +95,6 @@ export type ICalSubscription = {
   name: string;
   url: string;
   color: string;
-
-  /**
-   * New: default display type for entries coming from this subscription.
-   * null/undefined means “no selection”.
-   */
   defaultDisplayType?: EntryDisplayType | null;
 };
 
@@ -61,10 +104,12 @@ export type ICalEventMeta = {
   color?: string;
   isTitleAbbrCustom?: boolean;
 
-  /**
-   * New: per-event override (e.g. user changes type of one iCal entry)
-   */
   displayType?: EntryDisplayType;
+
+  /**
+   * New: allow hiding iCal items via meta override
+   */
+  hidden?: boolean;
 };
 
 export type RawIcalEvent = {

@@ -6,10 +6,12 @@ import type { OnCreateEventResponse, OnEventResponse } from "@howljs/calendar-ki
 
 import type {
   ActivePicker,
+  CourseEditorForm,
+  EntryDisplayType,
   EvWithMeta,
   EventEditorForm,
   ICalEventMeta,
-  EntryDisplayType,
+  PartyEditorForm,
 } from "@/types/timetable";
 import { saveCalendar } from "@/src/server/calendar";
 
@@ -33,6 +35,31 @@ function normalizeDisplayType(v: any): EntryDisplayType {
   return v === "none" || v === "course" || v === "event" ? v : "none";
 }
 
+function toCourseForm(base: EventEditorForm): CourseEditorForm {
+  const b = base as any;
+  return {
+    ...base,
+    displayType: "course",
+    courseName: b.courseName ?? base.fullTitle ?? "",
+    courseType: b.courseType ?? base.fullTitle ?? "",
+    lecturer: b.lecturer ?? base.fullTitle ?? "",
+    room: b.room ?? base.fullTitle ?? "",
+  };
+}
+
+function toPartyForm(base: EventEditorForm): PartyEditorForm {
+  const b = base as any;
+  return {
+    ...base,
+    displayType: "event",
+    eventName: b.eventName ?? base.fullTitle ?? "",
+    location: b.location ?? "",
+    createdBy: b.createdBy ?? "",
+    entryFee: b.entryFee ?? "",
+    invitedGroups: b.invitedGroups ?? "",
+  };
+}
+
 export function useTimetableEditor({
   userId,
   events,
@@ -41,6 +68,10 @@ export function useTimetableEditor({
   setIcalMeta,
   makeTitleAbbr,
 }: Params) {
+  // NEW: overview state
+  const [viewingEvent, setViewingEvent] = useState<EvWithMeta | null>(null);
+
+  // edit state (existing)
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
@@ -54,14 +85,19 @@ export function useTimetableEditor({
     await saveCalendar({ entries } as any);
   }, []);
 
+  const openOverviewForEvent = useCallback((ev: EvWithMeta) => {
+    setViewingEvent(ev);
+  }, []);
+
+  const closeOverview = useCallback(() => setViewingEvent(null), []);
+
   const openEditorForEvent = useCallback(
     (ev: EvWithMeta) => {
       const fullTitle = ev.fullTitle ?? ev.title ?? "";
       const autoAbbr = makeTitleAbbr(fullTitle);
       const titleAbbr = ev.titleAbbr ?? autoAbbr;
 
-      setEditingEvent(ev);
-      setEditorForm({
+      const base: EventEditorForm = {
         fullTitle,
         titleAbbr,
         from: toISO(ev.start),
@@ -69,13 +105,27 @@ export function useTimetableEditor({
         note: ev.note ?? "",
         color: ev.color ?? "#4dabf7",
         displayType: normalizeDisplayType(ev.displayType),
-      });
+      };
+
+      // Type-specific default edit forms
+      let finalForm: EventEditorForm = base;
+      if (base.displayType === "course") finalForm = toCourseForm(base);
+      if (base.displayType === "event") finalForm = toPartyForm(base);
+
+      setEditingEvent(ev);
+      setEditorForm(finalForm);
 
       setHasCustomTitleAbbr(ev.isTitleAbbrCustom ?? false);
       setActivePicker(null);
     },
     [makeTitleAbbr],
   );
+
+  const openEditFromOverview = useCallback(() => {
+    if (!viewingEvent) return;
+    setViewingEvent(null);
+    openEditorForEvent(viewingEvent);
+  }, [openEditorForEvent, viewingEvent]);
 
   const closeEditor = useCallback(() => {
     setEditingEvent(null);
@@ -85,7 +135,7 @@ export function useTimetableEditor({
   }, []);
 
   const updateForm = useCallback((patch: Partial<EventEditorForm>) => {
-    setEditorForm((prev) => (prev ? { ...prev, ...patch } : prev));
+    setEditorForm((prev) => (prev ? { ...(prev as any), ...(patch as any) } : prev));
   }, []);
 
   const onChangeFullTitle = useCallback(
@@ -94,10 +144,8 @@ export function useTimetableEditor({
 
       setEditorForm((prev) => {
         if (!prev) return prev;
-        const next: EventEditorForm = { ...prev, fullTitle: text };
-        if (!hasCustomTitleAbbr) {
-          next.titleAbbr = makeTitleAbbr(text);
-        }
+        const next: any = { ...prev, fullTitle: text };
+        if (!hasCustomTitleAbbr) next.titleAbbr = makeTitleAbbr(text);
         return next;
       });
     },
@@ -124,6 +172,47 @@ export function useTimetableEditor({
     [activePicker, editingEvent?.source, editorForm, updateForm],
   );
 
+  // NEW: hide (works from overview)
+  const hideViewedEvent = useCallback(() => {
+    if (!viewingEvent) return;
+
+    const ev = viewingEvent;
+
+    // iCal: store hidden in meta
+    if (ev.source === "ical") {
+      const metaKey =
+        ev.metaKey ||
+        makeIcalMetaKey(ev.icalSubscriptionId || "unknown", ev.icalEventUid || ev.id);
+
+      const nextMeta: Record<string, ICalEventMeta> = {
+        ...icalMeta,
+        [metaKey]: {
+          ...(icalMeta[metaKey] ?? {}),
+          hidden: true,
+          // also keep type override if present
+          displayType: normalizeDisplayType(ev.displayType),
+        },
+      };
+
+      setIcalMeta(nextMeta);
+      void saveIcalMeta(nextMeta);
+
+      setEvents((prev) => prev.map((e) => (e.id === ev.id ? { ...e, hidden: true } : e)));
+      setViewingEvent(null);
+      return;
+    }
+
+    // local: persist hidden via saveLocalEvents + server sync
+    setEvents((prev) => {
+      const updated = prev.map((e) => (e.id === ev.id ? { ...e, hidden: true } : e));
+      void saveLocalEvents(updated);
+      void syncLocalEventsToServer(updated, userId);
+      return updated;
+    });
+
+    setViewingEvent(null);
+  }, [icalMeta, setEvents, setIcalMeta, syncLocalEventsToServer, userId, viewingEvent]);
+
   const saveEditor = useCallback(() => {
     if (!editingEvent || !editorForm) return;
     const isIcal = editingEvent.source === "ical";
@@ -149,6 +238,7 @@ export function useTimetableEditor({
           color: editorForm.color,
           isTitleAbbrCustom: hasCustomTitleAbbr,
           displayType: nextDisplayType,
+          hidden: !!editingEvent.hidden,
         },
       };
 
@@ -178,6 +268,33 @@ export function useTimetableEditor({
     const fullTitle = editorForm.fullTitle || "Untitled";
     const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
 
+    // persist type-specific fields into event (optional)
+    const nextCourse =
+      nextDisplayType === "course"
+        ? {
+            courseName: (editorForm as any).courseName ?? "",
+            courseType: (editorForm as any).courseType ?? "",
+            lecturer: (editorForm as any).lecturer ?? "",
+            room: (editorForm as any).room ?? "",
+          }
+        : undefined;
+
+    const invitedGroupsRaw = String((editorForm as any).invitedGroups ?? "");
+    const nextParty =
+      nextDisplayType === "event"
+        ? {
+            eventName: (editorForm as any).eventName ?? "",
+            location: (editorForm as any).location ?? "",
+            createdBy: (editorForm as any).createdBy ?? "",
+            entryFee: (editorForm as any).entryFee ?? "",
+            invitedGroups: invitedGroupsRaw
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            friendsAttending: [],
+          }
+        : undefined;
+
     const updated: EvWithMeta = {
       ...editingEvent,
       title: titleAbbr,
@@ -190,6 +307,8 @@ export function useTimetableEditor({
       isTitleAbbrCustom: hasCustomTitleAbbr,
       source: "local",
       displayType: nextDisplayType,
+      course: nextCourse,
+      party: nextParty,
     };
 
     setEvents((prev) => {
@@ -252,6 +371,7 @@ export function useTimetableEditor({
         isTitleAbbrCustom: false,
         source: "local",
         displayType: "none",
+        hidden: false,
       };
 
       setEvents((prev) => {
@@ -261,6 +381,7 @@ export function useTimetableEditor({
         return updated;
       });
 
+      // Creation should open EDIT directly (as before), not overview
       openEditorForEvent(newEvent);
     },
     [makeTitleAbbr, openEditorForEvent, setEvents, syncLocalEventsToServer, userId],
@@ -271,12 +392,20 @@ export function useTimetableEditor({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       const ev = events.find((e) => e.id === event.id);
       if (!ev) return;
-      openEditorForEvent(ev);
+      openOverviewForEvent(ev);
     },
-    [events, openEditorForEvent],
+    [events, openOverviewForEvent],
   );
 
   return {
+    // overview
+    viewingEvent,
+    openOverviewForEvent,
+    closeOverview,
+    openEditFromOverview,
+    hideViewedEvent,
+
+    // edit
     editingEvent,
     editorForm,
     activePicker,

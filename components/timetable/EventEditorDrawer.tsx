@@ -1,7 +1,12 @@
 // components/timetable/EventEditorDrawer.tsx
-import React, { useMemo } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, View, KeyboardAvoidingView } from "react-native";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { KeyboardAvoidingView, Platform, StyleSheet, View } from "react-native";
+import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
 import {
   Button,
   Divider,
@@ -10,11 +15,20 @@ import {
   Text,
   TextInput,
   type MD3Theme,
-  SegmentedButtons,
 } from "react-native-paper";
+import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
-import type { ActivePicker, EntryDisplayType, EvWithMeta, EventEditorForm } from "@/types/timetable";
-import { formatDateTimeIso } from "@/src/timetable/utils/date";
+import type {
+  ActivePicker,
+  CourseEditorForm,
+  EntryDisplayType,
+  EvWithMeta,
+  EventEditorForm,
+  PartyEditorForm,
+} from "@/types/timetable";
+
+import { ColorRow, SectionLabel } from "./editor/EditorCommon";
+import { CourseFields, DateTimeFields, PartyFields, TypeSelector } from "./editor/EditorFields";
 
 const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
 
@@ -35,8 +49,12 @@ type Props = {
   onChangeFullTitle: (text: string) => void;
   onChangeTitleAbbr: (text: string) => void;
   onChangeNote: (text: string) => void;
+
   onSelectColor: (color: string) => void;
   onSelectDisplayType: (t: EntryDisplayType) => void;
+
+  onChangeCourseField: (patch: Partial<CourseEditorForm>) => void;
+  onChangePartyField: (patch: Partial<PartyEditorForm>) => void;
 
   onSetActivePicker: (p: ActivePicker) => void;
   onPickerChange: (event: DateTimePickerEvent, date?: Date) => void;
@@ -58,191 +76,222 @@ export function EventEditorDrawer(props: Props) {
     onChangeNote,
     onSelectColor,
     onSelectDisplayType,
+    onChangeCourseField,
+    onChangePartyField,
     onSetActivePicker,
     onPickerChange,
   } = props;
 
-  const typeButtons = useMemo(
-    () => [
-      { value: "none", label: "None" },
-      { value: "course", label: "Course" },
-      { value: "event", label: "Event" },
-    ],
+  const modalRef = useRef<BottomSheetModal>(null);
+
+  // ✅ Inline “sync visible -> present/dismiss”
+  useEffect(() => {
+    const m = modalRef.current;
+    if (!m) return;
+
+    if (visible) {
+      m.present();
+    } else {
+      m.dismiss();
+    }
+  }, [visible]);
+
+  const snapPoints = useMemo(() => ["90%"], []);
+  const ready = !!editingEvent && !!form;
+  const t = (form?.displayType ?? "none") as EntryDisplayType;
+
+  const headerTitle = useMemo(() => {
+    const base =
+      t === "course"
+        ? "Course bearbeiten"
+        : t === "event"
+          ? "Event (Party) bearbeiten"
+          : "Eintrag bearbeiten";
+    return isIcalEditing ? `${base} (iCal)` : base;
+  }, [isIcalEditing, t]);
+
+  const renderBackdrop = useCallback(
+    (backdropProps: any) => (
+      <BottomSheetBackdrop
+        {...backdropProps}
+        // ✅ outside-tap should NOT close
+        pressBehavior="none"
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+      />
+    ),
     [],
   );
 
-  if (!visible || !editingEvent || !form) return null;
+  const dismiss = useCallback(() => {
+    modalRef.current?.dismiss();
+  }, []);
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-      <Pressable style={[styles.scrim, { backgroundColor: paper.colors.backdrop }]} onPress={onClose} />
-
-      <KeyboardAvoidingView
-        style={styles.drawerAvoider}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={64}
-      >
-        <Surface
-          elevation={3}
-          mode="elevated"
-          style={[
-            styles.drawer,
-            {
-              backgroundColor: paper.colors.surface,
-              borderLeftColor: paper.colors.outlineVariant,
-            },
-          ]}
-        >
-          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text variant="titleMedium" style={{ flex: 1 }}>
-                {isIcalEditing ? "iCal-Event anzeigen" : "Event bearbeiten"}
-              </Text>
-              <IconButton icon="close" onPress={onClose} />
-            </View>
-
-            <Divider style={{ marginVertical: 8 }} />
-
-            <Text variant="labelSmall" style={styles.label}>
-              Typ
+    <BottomSheetModal
+      ref={modalRef}
+      snapPoints={snapPoints}
+      backdropComponent={renderBackdrop}
+      enablePanDownToClose
+      onDismiss={onClose}
+      handleIndicatorStyle={{ backgroundColor: paper.colors.outlineVariant }}
+      backgroundStyle={{ backgroundColor: paper.colors.surface }}
+    >
+      <BottomSheetView style={styles.container}>
+        {!ready ? (
+          <View style={{ padding: 16 }}>
+            <Text variant="bodyMedium" style={{ color: paper.colors.onSurfaceVariant }}>
+              Loading…
             </Text>
-            <SegmentedButtons
-              value={form.displayType}
-              onValueChange={(v) => onSelectDisplayType(v as EntryDisplayType)}
-              buttons={typeButtons}
-              style={{ marginBottom: 4 }}
-            />
+          </View>
+        ) : (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+            style={{ flex: 1 }}
+          >
+            <Surface mode="flat" elevation={0} style={[styles.sheet, { backgroundColor: paper.colors.surface }]}>
+              <BottomSheetScrollView
+                contentContainerStyle={{ paddingBottom: 24 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Header */}
+                <View style={styles.headerRow}>
+                  <Text variant="titleMedium" style={{ flex: 1 }}>
+                    {headerTitle}
+                  </Text>
+                  <IconButton icon="close" onPress={dismiss} />
+                </View>
 
-            <Divider style={{ marginVertical: 10 }} />
+                <Divider style={{ marginVertical: 8 }} />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Title{isIcalEditing && " (aus iCal, nicht änderbar)"}
-            </Text>
-            <TextInput
-              mode="outlined"
-              value={form.fullTitle}
-              onChangeText={onChangeFullTitle}
-              dense
-              editable={!isIcalEditing}
-            />
+                {/* Type selector */}
+                <TypeSelector value={t} onChange={onSelectDisplayType} />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Title abbr.
-            </Text>
-            <TextInput mode="outlined" value={form.titleAbbr} onChangeText={onChangeTitleAbbr} dense />
+                <Divider style={{ marginVertical: 10 }} />
 
-            <Text variant="labelSmall" style={styles.label}>
-              From {isIcalEditing && "(aus iCal, nicht änderbar)"}
-            </Text>
-            <Pressable
-              onPress={() => {
-                if (isIcalEditing) return;
-                onSetActivePicker(activePicker === "from" ? null : "from");
-              }}
-            >
-              <TextInput mode="outlined" value={formatDateTimeIso(form.from)} editable={false} pointerEvents="none" dense />
-            </Pressable>
-            {!isIcalEditing && activePicker === "from" && (
-              <DateTimePicker
-                value={new Date(form.from)}
-                mode="datetime"
-                display="spinner"
-                onChange={onPickerChange}
-                style={{ alignSelf: "stretch" }}
-              />
-            )}
+                {/* NONE */}
+                {t === "none" && (
+                  <>
+                    <SectionLabel>
+                      Title{isIcalEditing ? " (aus iCal, nicht änderbar)" : ""}
+                    </SectionLabel>
+                    <TextInput
+                      mode="outlined"
+                      value={form.fullTitle}
+                      onChangeText={onChangeFullTitle}
+                      dense
+                      editable={!isIcalEditing}
+                    />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Until {isIcalEditing && "(aus iCal, nicht änderbar)"}
-            </Text>
-            <Pressable
-              onPress={() => {
-                if (isIcalEditing) return;
-                onSetActivePicker(activePicker === "until" ? null : "until");
-              }}
-            >
-              <TextInput mode="outlined" value={formatDateTimeIso(form.until)} editable={false} pointerEvents="none" dense />
-            </Pressable>
-            {!isIcalEditing && activePicker === "until" && (
-              <DateTimePicker
-                value={new Date(form.until)}
-                mode="datetime"
-                display="spinner"
-                onChange={onPickerChange}
-                style={{ alignSelf: "stretch" }}
-              />
-            )}
+                    <SectionLabel>Title abbr.</SectionLabel>
+                    <TextInput mode="outlined" value={form.titleAbbr} onChangeText={onChangeTitleAbbr} dense />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Note
-            </Text>
-            <TextInput mode="outlined" value={form.note} onChangeText={onChangeNote} multiline numberOfLines={3} />
+                    <DateTimeFields
+                      form={form}
+                      isIcalEditing={isIcalEditing}
+                      activePicker={activePicker}
+                      onSetActivePicker={onSetActivePicker}
+                      onPickerChange={onPickerChange}
+                    />
 
-            <Text variant="labelSmall" style={styles.label}>
-              Color
-            </Text>
-            <View style={styles.colorRow}>
-              {COLOR_OPTIONS.map((c) => {
-                const selected = form.color === c;
-                return (
-                  <Pressable
-                    key={c}
-                    onPress={() => onSelectColor(c)}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: c, borderColor: paper.colors.outlineVariant },
-                      selected && { borderWidth: 2, borderColor: paper.colors.primary },
-                    ]}
-                  />
-                );
-              })}
-            </View>
+                    <SectionLabel>Note</SectionLabel>
+                    <TextInput
+                      mode="outlined"
+                      value={form.note}
+                      onChangeText={onChangeNote}
+                      multiline
+                      numberOfLines={3}
+                    />
 
-            <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 16, columnGap: 8 }}>
-              {editingEvent?.source === "local" && (
-                <Button onPress={onDelete} textColor={paper.colors.error}>
-                  Löschen
-                </Button>
-              )}
+                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+                  </>
+                )}
 
-              <Button mode="contained" onPress={onSave}>
-                Speichern
-              </Button>
-            </View>
-          </ScrollView>
-        </Surface>
-      </KeyboardAvoidingView>
-    </View>
+                {/* COURSE */}
+                {t === "course" && (
+                  <>
+                    <CourseFields form={form as CourseEditorForm} onChangeCourseField={onChangeCourseField} />
+
+                    <Divider style={{ marginVertical: 10 }} />
+
+                    <DateTimeFields
+                      form={form}
+                      isIcalEditing={isIcalEditing}
+                      activePicker={activePicker}
+                      onSetActivePicker={onSetActivePicker}
+                      onPickerChange={onPickerChange}
+                    />
+
+                    <SectionLabel>Note</SectionLabel>
+                    <TextInput
+                      mode="outlined"
+                      value={form.note}
+                      onChangeText={onChangeNote}
+                      multiline
+                      numberOfLines={3}
+                    />
+
+                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+                  </>
+                )}
+
+                {/* EVENT (PARTY) */}
+                {t === "event" && (
+                  <>
+                    <PartyFields form={form as PartyEditorForm} onChangePartyField={onChangePartyField} />
+
+                    <Divider style={{ marginVertical: 10 }} />
+
+                    <DateTimeFields
+                      form={form}
+                      isIcalEditing={isIcalEditing}
+                      activePicker={activePicker}
+                      onSetActivePicker={onSetActivePicker}
+                      onPickerChange={onPickerChange}
+                    />
+
+                    <SectionLabel>Note</SectionLabel>
+                    <TextInput
+                      mode="outlined"
+                      value={form.note}
+                      onChangeText={onChangeNote}
+                      multiline
+                      numberOfLines={3}
+                    />
+
+                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+                  </>
+                )}
+
+                {/* Actions */}
+                <View style={styles.actionsRow}>
+                  {editingEvent?.source === "local" && (
+                    <Button onPress={onDelete} textColor={paper.colors.error}>
+                      Löschen
+                    </Button>
+                  )}
+                  <Button mode="contained" onPress={onSave}>
+                    Speichern
+                  </Button>
+                </View>
+              </BottomSheetScrollView>
+            </Surface>
+          </KeyboardAvoidingView>
+        )}
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  label: { marginTop: 8, marginBottom: 2 },
-  scrim: { ...StyleSheet.absoluteFillObject },
-  drawerAvoider: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    right: 0,
-    width: "80%",
-  },
-  drawer: {
-    flex: 1,
-    padding: 16,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    justifyContent: "flex-start",
-  },
-  colorRow: {
+  container: { flex: 1 },
+  sheet: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
+  headerRow: { flexDirection: "row", alignItems: "center" },
+  actionsRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  colorDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
+    justifyContent: "flex-end",
+    marginTop: 16,
+    columnGap: 8,
   },
 });

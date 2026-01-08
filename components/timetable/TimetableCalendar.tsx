@@ -1,12 +1,7 @@
-// components/timetable/TimetableCalendar.tsx
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { Divider, Surface } from "react-native-paper";
-import {
-  CalendarBody,
-  CalendarContainer,
-  CalendarHeader,
-} from "@howljs/calendar-kit";
+import { CalendarBody, CalendarContainer, CalendarHeader } from "@howljs/calendar-kit";
 import type {
   CalendarKitHandle,
   DeepPartial,
@@ -41,14 +36,17 @@ type Props = {
   onCreate: (ev: OnCreateEventResponse) => void;
   onPressEvent: (event: OnEventResponse) => void;
 
-  // ✅ NEW: fast callback during scrolling/swiping
+  // fires during swipe/scroll
   onChange: (iso: string) => void;
 
-  // existing: callback when date “settles”
+  // fires when date “settles”
   onDateChanged: (iso: string) => void;
 
   renderDayItem: (args: { dateUnix: number }) => React.ReactNode;
   onHeaderLayout: (height: number) => void;
+
+  // ✅ NEW: CalendarKit lifecycle callback
+  onLoad?: () => void;
 };
 
 export function TimetableCalendar(props: Props) {
@@ -73,9 +71,11 @@ export function TimetableCalendar(props: Props) {
     onDateChanged,
     renderDayItem,
     onHeaderLayout,
+    onLoad,
   } = props;
 
   useEffect(() => {
+    // Keep the calendar "fitted" once we know the correct interval height
     if (desiredIntervalHeight && calendarRef.current?.zoom) {
       calendarRef.current.zoom({ height: desiredIntervalHeight });
     }
@@ -114,10 +114,9 @@ export function TimetableCalendar(props: Props) {
       theme={theme}
       pagesPerSide={4}
       onPressEvent={onPressEvent}
-      // ✅ NEW: fires during swipe/scroll
       onChange={onChange}
-      // still keep settled callback
       onDateChanged={onDateChanged}
+      onLoad={onLoad} // ✅ important
     >
       <Surface
         mode="flat"

@@ -1,4 +1,3 @@
-// app/(app)/(stack)/(tabs)/timetable.tsx
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { DeviceEventEmitter, PixelRatio, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -24,6 +23,9 @@ import { useTimetableJumpToToday } from "@/src/timetable/hooks/useTimetableJumpT
 import { addWeeks, fmtYMD, getMonday, makeTitleAbbr } from "@/src/timetable/utils/date";
 import { TIMETABLE_HEADER_EVENT, useTimetableDisplayMode } from "@/src/timetable/utils/mode";
 import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
+
+import type { OnEventResponse } from "@howljs/calendar-kit";
+import { putNavEvent } from "@/src/timetable/utils/eventNavCache";
 
 dayjs.locale("de");
 
@@ -55,10 +57,7 @@ export default function TimetableScreen() {
 
   const calendarRef = useRef<CalendarKitHandle>(null!) as React.RefObject<CalendarKitHandle>;
 
-  // ✅ mode comes from shared hook
   const displayMode = useTimetableDisplayMode("courses");
-
-  // ✅ theming comes from shared hook
   const { screenPaperTheme, calendarTheme } = useTimetableTheming(appPaper, displayMode);
 
   const emitCurrentMonday = useCallback((mondayIso: string) => {
@@ -87,21 +86,6 @@ export default function TimetableScreen() {
 
   const { events, setEvents, icalMeta, setIcalMeta } = useTimetableSync({ userId });
 
-  const visibleEvents = useMemo(() => {
-    if (displayMode === "courses") {
-      // Show "none" + "course", hide "event"
-      return events.filter((e) => e.displayType !== "event");
-    }
-
-    // party mode:
-    // show "event" normally, show "none"+"course" transparently
-    return events.map((e) => {
-      if (e.displayType === "event") return e;
-      const base = e.color ?? "#4dabf7";
-      return { ...e, color: hexToRgba(base, 0.15) };
-    });
-  }, [events, displayMode]);
-
   const editor = useTimetableEditor({
     userId,
     events,
@@ -110,6 +94,22 @@ export default function TimetableScreen() {
     setIcalMeta,
     makeTitleAbbr,
   });
+
+  const visibleEvents = useMemo(() => {
+    const notHidden = events.filter((e) => !e.hidden);
+
+    if (displayMode === "courses") {
+      // Event entries invisible in "courses"
+      return notHidden.filter((e) => e.displayType !== "event");
+    }
+
+    // party mode: events normal; none/course transparent
+    return notHidden.map((e) => {
+      if (e.displayType === "event") return e;
+      const base = e.color ?? "#4dabf7";
+      return { ...e, color: hexToRgba(base, 0.15) };
+    });
+  }, [events, displayMode]);
 
   const { onChange, onDateChanged } = useTimetableJumpToToday({
     jumpToToday,
@@ -127,10 +127,7 @@ export default function TimetableScreen() {
 
       return (
         <Surface mode="flat" elevation={0} style={{ alignItems: "center", backgroundColor: "transparent" }}>
-          <Text
-            variant="labelSmall"
-            style={{ fontSize: 12, fontWeight: "700", color: screenPaperTheme.colors.onSurface }}
-          >
+          <Text variant="labelSmall" style={{ fontSize: 12, fontWeight: "700", color: screenPaperTheme.colors.onSurface }}>
             {`${dayLabel} ${dayNum}`}
           </Text>
         </Surface>
@@ -140,6 +137,23 @@ export default function TimetableScreen() {
   );
 
   const onHeaderLayout = useCallback((h: number) => setHeaderBlockH(h), []);
+
+const onPressEvent = useCallback(
+  (event: OnEventResponse) => {
+    const ev = events.find((e) => e.id === event.id);
+    if (!ev) return;
+
+    // ✅ cache the full event snapshot so overview can render instantly
+    putNavEvent(ev);
+
+    router.push({
+      pathname: "/(app)/(stack)/event-overview",
+      params: { id: ev.id },
+    });
+  },
+  [events, router],
+);
+
 
   return (
     <PaperProvider theme={screenPaperTheme}>
@@ -165,8 +179,8 @@ export default function TimetableScreen() {
             desiredIntervalHeight={desiredIntervalHeight}
             defaultDurationMin={DEFAULT_EVENT_DURATION_MIN}
             dragStepMin={SNAP_TO_MINUTE}
-            onCreate={editor.onCreate}
-            onPressEvent={editor.onPressEvent}
+            onCreate={editor.onCreate} // still opens edit drawer directly (creation)
+            onPressEvent={onPressEvent} // now pushes stack window
             onChange={onChange}
             onDateChanged={onDateChanged}
             renderDayItem={renderDayItem}
@@ -174,6 +188,7 @@ export default function TimetableScreen() {
           />
         </View>
 
+        {/* EDITOR SIDEBAR (over calendar) — used for creation OR if you later want direct edit */}
         <EventEditorDrawer
           visible={!!editor.editingEvent && !!editor.editorForm}
           paper={screenPaperTheme}
@@ -187,8 +202,10 @@ export default function TimetableScreen() {
           onChangeFullTitle={editor.onChangeFullTitle}
           onChangeTitleAbbr={editor.onChangeTitleAbbr}
           onChangeNote={(text) => editor.updateForm({ note: text })}
-          onSelectColor={(color) => editor.updateForm({ color })}
-          onSelectDisplayType={(displayType) => editor.updateForm({ displayType })}
+          onSelectColor={(c) => editor.updateForm({ color: c })}
+          onSelectDisplayType={(t) => editor.updateForm({ displayType: t })}
+          onChangeCourseField={(patch) => editor.updateForm(patch as any)}
+          onChangePartyField={(patch) => editor.updateForm(patch as any)}
           onSetActivePicker={editor.setActivePicker}
           onPickerChange={editor.handlePickerChange}
         />
