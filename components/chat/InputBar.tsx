@@ -26,7 +26,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Button, useTheme } from "react-native-paper";
+import { useTheme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 
 type Props = {
@@ -37,6 +37,7 @@ type Props = {
   sendMessage: () => void;
   uploadAttachment?: () => void;
   placeholder: string;
+  accentColor?: string;
 };
 
 export default function InputBar({
@@ -47,52 +48,72 @@ export default function InputBar({
   sendMessage,
   uploadAttachment,
   placeholder,
+  accentColor,
 }: Props) {
   const theme = useTheme();
+  const canSend = input.trim().length > 0;
+  const sendColor = accentColor || theme.colors.primary;
+  const attachmentEnabled = typeof uploadAttachment === "function";
 
   return (
     <View
       style={[
         styles.inputRow,
-        { borderTopColor: theme.colors.outlineVariant },
+        {
+          borderTopColor: theme.colors.outlineVariant,
+          backgroundColor: theme.colors.background,
+        },
       ]}
     >
-      <TouchableOpacity
-        onPress={uploadAttachment}
-        style={styles.attachBtn}
-      >
-        <Ionicons name="attach" size={22} color={theme.colors.primary} />
-      </TouchableOpacity>
-
-      <TextInput
+      <View
         style={[
-          styles.input,
+          styles.inputWrap,
           {
-            height: inputHeight,
-            borderColor: theme.colors.outline,
-            color: theme.colors.onSurface,
+            borderColor: theme.colors.outlineVariant,
             backgroundColor: theme.colors.surface,
           },
         ]}
-        placeholder={placeholder}
-        placeholderTextColor={theme.colors.onSurfaceVariant}
-        value={input}
-        onChangeText={setInput}
-        multiline
-        onContentSizeChange={(e) =>
-          setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
-        }
-      />
-
-      <Button
-        mode="contained"
-        onPress={sendMessage}
-        disabled={!input.trim()}
-        style={{ marginLeft: 6 }}
-        contentStyle={{ paddingHorizontal: 14, height: 40 }}
       >
-        Senden
-      </Button>
+        <TouchableOpacity
+          onPress={uploadAttachment}
+          disabled={!attachmentEnabled}
+          style={[styles.attachBtn, !attachmentEnabled && styles.attachDisabled]}
+        >
+          <Ionicons name="attach" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
+
+        <TextInput
+          style={[
+            styles.input,
+            {
+              height: Math.min(120, Math.max(40, inputHeight)),
+              color: theme.colors.onSurface,
+            },
+          ]}
+          placeholder={placeholder}
+          placeholderTextColor={theme.colors.onSurfaceVariant}
+          value={input}
+          onChangeText={setInput}
+          multiline
+          onContentSizeChange={(e) =>
+            setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
+          }
+        />
+      </View>
+
+      <TouchableOpacity
+        onPress={sendMessage}
+        disabled={!canSend}
+        style={[
+          styles.sendButton,
+          {
+            backgroundColor: sendColor,
+            opacity: canSend ? 1 : 0.5,
+          },
+        ]}
+      >
+        <Ionicons name="send" size={18} color={theme.colors.onPrimary} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -102,17 +123,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  attachBtn: { marginRight: 8, padding: 4 },
+  inputWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  attachBtn: { padding: 6 },
+  attachDisabled: { opacity: 0.4 },
   input: {
     flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 12 : 8,
-    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: Platform.OS === "ios" ? 10 : 6,
     textAlignVertical: "top",
+  },
+  sendButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
   },
 });

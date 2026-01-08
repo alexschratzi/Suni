@@ -1,35 +1,6 @@
 /**
  * RoomMessages.tsx
- * -----------------------------------------------
- * Zeigt alle Nachrichten eines Chat-Raums (Salzburg, Österreich, Wirtschaft).
- *
- * Enthält:
- *  - Back-Button
- *  - Nachrichtenliste (live aus Firestore)
- *  - Reply-Thread-Öffnen via router.push()
- *  - Eingabezeile (TextInput + Send)
- *
- * Props:
- *  - room                → aktueller Raum
- *  - locale              → Datumsformat abhängig von der Sprache
- *  - messages            → Nachrichtenliste
- *  - loading             → ob die Nachrichten geladen werden
- *  - input, setInput     → Textinput State
- *  - inputHeight         → dynamische Höhe
- *  - sendMessage()       → Funktion aus ChatScreen
- *  - onBack()            → Zurück zu den Räumen
- *  - t                   → Übersetzer aus i18n
- *  - theme               → Farben aus Paper
- *  - router              → expo-router Instanz
- *
- * Wird verwendet in:
- *  - ChatScreen.tsx
- *
- * Änderungen / Erweiterungen:
- *  - Nachrichten-Layout ändern → HIER
- *  - Verhalten beim Reply → HIER (openThread)
- *  - Neue Features wie Bilder/Dateien anhängen → im unteren Input-Bereich
- *  - Sende-Logik bleibt in ChatScreen.tsx
+ * Shows messages for a public thread and the input bar.
  */
 
 import React from "react";
@@ -39,22 +10,18 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
 } from "react-native";
-import {
-  ActivityIndicator,
-  Button,
-  Text,
-  useTheme,
-} from "react-native-paper";
+import { ActivityIndicator, Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
+import InputBar from "./InputBar";
 
 type RoomKey = "salzburg" | "oesterreich" | "wirtschaft";
 
 type Message = {
   id: string;
+  sender?: string;
   username?: string;
   text: string;
   timestamp?: any;
@@ -113,6 +80,18 @@ export default function RoomMessages(props: Props) {
     return null;
   };
 
+  const formatTimestamp = (value: any) => {
+    const dateValue = toDate(value);
+    if (!dateValue) return t("chat.justNow");
+    return dateValue.toLocaleString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const openThread = (message: Message) => {
     router.push({
       pathname: "/(app)/(stack)/reply",
@@ -131,7 +110,6 @@ export default function RoomMessages(props: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={110}
     >
-      {/* Raum-Header */}
       <View
         style={[
           styles.roomHeader,
@@ -146,7 +124,6 @@ export default function RoomMessages(props: Props) {
         </Text>
       </View>
 
-      {/* Nachrichtenliste */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
@@ -165,42 +142,35 @@ export default function RoomMessages(props: Props) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{
             paddingHorizontal: 12,
-            paddingTop: 8,
-            paddingBottom: 8,
+            paddingTop: 12,
+            paddingBottom: 12,
           }}
           renderItem={({ item }) => {
-            const dateValue = toDate(item.timestamp);
-            const date = dateValue
-              ? dateValue.toLocaleString(locale, {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : t("chat.justNow");
+            const timeLabel = formatTimestamp(item.timestamp);
+            const meta = `${item.username || "???"} - ${timeLabel}`;
+
             return (
-              <TouchableOpacity onPress={() => openThread(item)}>
+              <TouchableOpacity
+                onPress={() => openThread(item)}
+                activeOpacity={0.7}
+                style={styles.messageRow}
+              >
                 <View
                   style={[
-                    styles.msgCard,
+                    styles.threadCard,
                     {
+                      backgroundColor: theme.colors.surfaceVariant,
                       borderColor: theme.colors.outlineVariant,
-                      backgroundColor: theme.colors.elevation.level1,
                     },
                   ]}
                 >
                   <Text
-                    style={[
-                      styles.msgMeta,
-                      { color: theme.colors.onSurfaceVariant },
-                    ]}
+                    style={[styles.meta, { color: theme.colors.onSurfaceVariant }]}
+                    numberOfLines={1}
                   >
-                    {item.username || "???"} • {date}
+                    {meta}
                   </Text>
-                  <Text
-                    style={[styles.msgText, { color: theme.colors.onSurface }]}
-                  >
+                  <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
                     {item.text}
                   </Text>
                 </View>
@@ -210,49 +180,15 @@ export default function RoomMessages(props: Props) {
         />
       )}
 
-      {/* Eingabezeile */}
-      <View
-        style={[
-          styles.inputRow,
-          { borderTopColor: theme.colors.outlineVariant },
-        ]}
-      >
-        <TouchableOpacity
-          onPress={() => console.log("📎 Attachment upload…")}
-          style={styles.attachBtn}
-        >
-          <Ionicons name="attach" size={22} color={theme.colors.primary} />
-        </TouchableOpacity>
-
-        <TextInput
-          style={[
-            styles.input,
-            {
-              height: inputHeight,
-              borderColor: theme.colors.outline,
-              color: theme.colors.onSurface,
-              backgroundColor: theme.colors.surface,
-            },
-          ]}
-          placeholder={t("chat.inputPlaceholder")}
-          placeholderTextColor={theme.colors.onSurfaceVariant}
-          value={input}
-          onChangeText={setInput}
-          multiline
-          onContentSizeChange={(e) =>
-            setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
-          }
-        />
-        <Button
-          mode="contained" buttonColor={accentColor}
-          onPress={sendMessage}
-          disabled={!input.trim()}
-          style={{ marginLeft: 6 }}
-          contentStyle={{ paddingHorizontal: 14, height: 40 }}
-        >
-          {t("chat.send")}
-        </Button>
-      </View>
+      <InputBar
+        input={input}
+        setInput={setInput}
+        inputHeight={inputHeight}
+        setInputHeight={setInputHeight}
+        sendMessage={sendMessage}
+        placeholder={t("chat.inputPlaceholder")}
+        accentColor={accentColor}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -273,31 +209,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  msgCard: {
+  messageRow: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  threadCard: {
+    width: "100%",
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
   },
-  msgMeta: { fontSize: 12, marginBottom: 2 },
-  msgText: { fontSize: 16 },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  meta: {
+    fontSize: 12,
+    marginBottom: 6,
   },
-  attachBtn: { marginRight: 8, padding: 4 },
-  input: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    textAlignVertical: "top",
+  msgText: {
+    fontSize: 16,
+    lineHeight: 20,
   },
   center: { alignItems: "center", justifyContent: "center", paddingTop: 24 },
 });

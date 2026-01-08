@@ -1,9 +1,18 @@
 // app/(app)/(stack)/reply.tsx
 import { useEffect, useState } from "react";
 import React from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Alert } from "react-native";
-import { Text, TextInput, Button, Surface, useTheme, IconButton } from "react-native-paper";
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  View,
+  StyleSheet,
+} from "react-native";
+import { Text, Surface, useTheme, IconButton } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
+import InputBar from "@/components/chat/InputBar";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
@@ -11,6 +20,7 @@ import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 export default function ReplyScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const { room, messageId, messageText, messageUser, dmId } = useLocalSearchParams();
   const userId = useSupabaseUserId();
   const toSingle = (value: string | string[] | undefined) =>
@@ -23,6 +33,7 @@ export default function ReplyScreen() {
   const roomValue = toSingle(room);
   const messageIdValue = toSingle(messageId);
   const dmIdValue = toSingle(dmId);
+  const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
@@ -65,9 +76,7 @@ export default function ReplyScreen() {
         return;
       }
       if (cancelled) return;
-      const ids = (data || []).map(
-        (row: any) => row?.[COLUMNS.blocks.blockedId]
-      );
+      const ids = (data || []).map((row: any) => row?.[COLUMNS.blocks.blockedId]);
       setBlocked(ids.filter(Boolean));
     };
 
@@ -396,79 +405,235 @@ export default function ReplyScreen() {
     return null;
   };
 
+  const formatTime = (value: any) => {
+    const dateValue = toDate(value);
+    if (!dateValue) return t("chat.justNow");
+    return dateValue.toLocaleTimeString(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+  const formatTimestamp = (value: any) => {
+    const dateValue = toDate(value);
+    if (!dateValue) return t("chat.justNow");
+    return dateValue.toLocaleString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={110}
     >
-      <Surface style={{ flex: 1, padding: 20, backgroundColor: theme.colors.background }}>
-        {/* Header */}
-        <Surface style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.header}>
           <IconButton icon="arrow-left" onPress={() => router.back()} />
           <Text variant="titleMedium">Antworten</Text>
-        </Surface>
+        </View>
 
-        {/* Original message (only group chats) */}
         {!dmIdValue && (
           <Surface
-            style={{
-              padding: 12,
-              borderRadius: 8,
-              marginBottom: 15,
-              backgroundColor: theme.colors.elevation.level1,
-            }}
+            style={[
+              styles.originalCard,
+              { backgroundColor: theme.colors.elevation.level1 },
+            ]}
           >
-            <Text variant="labelSmall">{String(messageUser ?? "")}</Text>
-            <Text variant="bodyMedium">{String(messageText ?? "")}</Text>
+            <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              {String(messageUser ?? "")}
+            </Text>
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
+              {String(messageText ?? "")}
+            </Text>
           </Surface>
         )}
 
-        {/* Replies */}
         <FlatList
           data={replies}
           keyExtractor={(i) => i.id}
+          contentContainerStyle={{
+            paddingHorizontal: 12,
+            paddingBottom: 12,
+          }}
           renderItem={({ item }) => {
-            const dateValue = toDate(item.timestamp);
-            const date = dateValue
-              ? dateValue.toLocaleString("de-DE", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "Gerade eben";
+            const isDirect = !!dmIdValue;
+
+            if (!isDirect) {
+              const timeLabel = formatTimestamp(item.timestamp);
+              const meta = `${item.username || "???"} - ${timeLabel}`;
+              return (
+                <View style={styles.threadRow}>
+                  <Surface
+                    style={[
+                      styles.threadCard,
+                      {
+                        backgroundColor: theme.colors.surfaceVariant,
+                        borderColor: theme.colors.outlineVariant,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.meta, { color: theme.colors.onSurfaceVariant }]}
+                      numberOfLines={1}
+                    >
+                      {meta}
+                    </Text>
+                    <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
+                      {item.text}
+                    </Text>
+                  </Surface>
+                </View>
+              );
+            }
+
+            const isMine = !!userId && item.sender === userId;
+            const timeLabel = formatTime(item.timestamp);
 
             return (
-              <Surface style={{ paddingVertical: 8, borderBottomWidth: 0.5 }}>
-                <Text variant="labelSmall">
-                  {item.username || "???"} • {date}
-                </Text>
-                <Text variant="bodyMedium">{item.text}</Text>
-              </Surface>
+              <View
+                style={[
+                  styles.messageRow,
+                  isMine ? styles.rowMine : styles.rowOther,
+                ]}
+              >
+                <Surface
+                  style={[
+                    styles.bubble,
+                    isMine ? styles.bubbleMine : styles.bubbleOther,
+                    {
+                      backgroundColor: isMine
+                        ? theme.colors.primary
+                        : theme.colors.surfaceVariant,
+                      borderColor: theme.colors.outlineVariant,
+                    },
+                  ]}
+                >
+                  {!isMine && (
+                    <Text
+                      style={[
+                        styles.sender,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.username || "???"}
+                    </Text>
+                  )}
+                  <Text
+                    style={[
+                      styles.msgText,
+                      {
+                        color: isMine
+                          ? theme.colors.onPrimary
+                          : theme.colors.onSurface,
+                      },
+                    ]}
+                  >
+                    {item.text}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.time,
+                      {
+                        color: isMine
+                          ? theme.colors.onPrimary
+                          : theme.colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    {timeLabel}
+                  </Text>
+                </Surface>
+              </View>
             );
           }}
         />
 
-        {/* Input */}
-        <Surface style={{ flexDirection: "row", marginTop: 10 }}>
-          <TextInput
-            mode="outlined"
-            label="Antwort"
-            value={input}
-            onChangeText={setInput}
-            multiline
-            style={{ flex: 1, marginRight: 10, height: inputHeight }}
-            onContentSizeChange={(e) =>
-              setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
-            }
-          />
-          <Button mode="contained" onPress={sendReply}>
-            Senden
-          </Button>
-        </Surface>
-      </Surface>
+        <InputBar
+          input={input}
+          setInput={setInput}
+          inputHeight={inputHeight}
+          setInputHeight={setInputHeight}
+          sendMessage={sendReply}
+          placeholder={t("chat.inputPlaceholder")}
+          accentColor={theme.colors.primary}
+        />
+      </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  originalCard: {
+    padding: 12,
+    borderRadius: 12,
+    marginHorizontal: 12,
+    marginBottom: 12,
+  },
+  messageRow: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  threadRow: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  rowMine: {
+    alignItems: "flex-end",
+  },
+  rowOther: {
+    alignItems: "flex-start",
+  },
+  threadCard: {
+    width: "100%",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  meta: {
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  bubble: {
+    maxWidth: "82%",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  bubbleMine: {
+    borderTopRightRadius: 6,
+  },
+  bubbleOther: {
+    borderTopLeftRadius: 6,
+  },
+  sender: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  msgText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  time: {
+    fontSize: 11,
+    marginTop: 6,
+    alignSelf: "flex-end",
+  },
+});

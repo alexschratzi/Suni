@@ -24,6 +24,7 @@ type RawDirect = {
   id: string;
   otherUid: string;
   last?: string;
+  lastTimestamp?: string | null;
   hidden?: boolean;
 };
 
@@ -332,6 +333,7 @@ export default function ChatScreen() {
           id: row?.[COLUMNS.dmThreads.id],
           otherUid,
           last: row?.[COLUMNS.dmThreads.lastMessage] ?? "",
+          lastTimestamp: row?.[COLUMNS.dmThreads.lastTimestamp] ?? null,
           hidden: hiddenBy.includes(userId),
         };
       });
@@ -416,6 +418,7 @@ export default function ChatScreen() {
         id: d.id,
         displayName: userProfiles[d.otherUid]?.username || d.otherUid,
         last: d.last ?? "",
+        lastTimestamp: d.lastTimestamp ?? null,
         hidden: d.hidden ?? false,
       })),
     [rawDirects, userProfiles]
