@@ -3,15 +3,11 @@ import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Card, Divider, List, Modal, Portal, Text } from "react-native-paper";
 import { BarChart } from "react-native-chart-kit";
 
-import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
 import { getCachedStudentProfile } from "../../src/server/uniScraper";
 import type { StudentProfile, StudyProgram, UniCourse } from "../../src/dto/uniScraperDTO";
+import { useRouter } from "expo-router";
 
-
-type Props = {
-    onBack?: () => void;
-};
 
 function toNumberGrade(grade?: string): number | null {
     if (!grade) return null;
@@ -28,7 +24,8 @@ function sortSemesters(a: string, b: string): number {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-export default function Grades({ onBack }: Props) {
+export default function Grades() {
+  const router = useRouter();
     const { university, shouldShowLinks } = useUniversity();
 
     const [loading, setLoading] = React.useState(false);
@@ -175,8 +172,6 @@ export default function Grades({ onBack }: Props) {
 
     return (
         <View style={styles.root}>
-            <Header title="Noten" canGoBack={true} onBack={onBack} />
-
             <ScrollView contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 24 }}>
                 <View style={{ height: 12 }} />
 

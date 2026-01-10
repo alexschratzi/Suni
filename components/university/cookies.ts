@@ -19,16 +19,9 @@ export function buildCookieOrigins(opts: {
 }): string[] {
   const base: string[] = [];
 
-  if (opts.includeMicrosoftDefaults !== false) {
-    base.push(
-      "https://login.microsoftonline.com",
-      "https://login.microsoft.com",
-      "https://sts.windows.net"
-    );
-  }
-
   for (const u of opts.cookieLinks ?? []) {
-    const origin = toOrigin(u);
+    //const origin = toOrigin(u);
+    const origin = u;
     if (origin) base.push(origin);
   }
 
@@ -82,7 +75,7 @@ export function countCookies(cookiesByOrigin: CookiesByOrigin): number {
 export async function collectCookiesByOrigin(origins: string[]): Promise<CookiesByOrigin> {
   const out: CookiesByOrigin = {};
 
-  for (const origin of origins) {
+  for (let origin of origins) {
     try {
       const got = await CookieManager.get(origin);
       if (!got) continue;

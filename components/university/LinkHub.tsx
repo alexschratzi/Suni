@@ -25,6 +25,7 @@ import {
   clearAllCookies,
 } from "@/components/university/cookies";
 
+import HubTile from "./HubTile";
 type Props = {
   onOpenGrades?: () => void;
 };
@@ -143,29 +144,35 @@ export default function LinkHub({ onOpenGrades }: Props) {
     [router, browserResetToken]
   );
 
-  const handleStartScraping = React.useCallback(async () => {
-    if (!university && !uniCfg?.uniId) return;
+  const ensureProfile = React.useCallback(async () => {
+    const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
+    if (!university_id) return;
+
+    const cached = await getCachedStudentProfile();
+    if (cached) return cached;
+
+    const byOrigin = await collectCookiesByOrigin(cookieDomains);
+    const cookiesJson = flattenToCookiesJson(byOrigin);
+
+    return await scrapeStudentProfile({
+      university_id,
+      cookies: cookiesJson,
+    });
+  }, [university?.id, uniCfg?.uniId, cookieDomains]);
+
+  const handleOpenGrades = React.useCallback(async () => {
+    if (scraping) return;
 
     setScraping(true);
-
     try {
-      const byOrigin = await collectCookiesByOrigin(cookieDomains);
-      const cookiesJson = flattenToCookiesJson(byOrigin);
-
-      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
-
-      const profile = await scrapeStudentProfile({
-        university_id,
-        cookies: cookiesJson,
-      });
-
+      await ensureProfile(); // keeps your current behavior: scrape if missing
+      router.push("/(app)/(stack)/grades");
     } catch (e: any) {
-      const msg = e?.message || String(e);
-      console.warn("Scraping error:", msg);
+      console.warn("Open grades failed:", e?.message || String(e));
     } finally {
       setScraping(false);
     }
-  }, [cookieDomains, university, uniCfg]);
+  }, [ensureProfile, router, scraping]);
 
   const handleDebugCookies = React.useCallback(async () => {
     try {
@@ -179,14 +186,44 @@ export default function LinkHub({ onOpenGrades }: Props) {
 
   const handleHardResetBrowserSession = React.useCallback(async () => {
     await clearAllCookies();
-    setBrowserResetToken((x) => x + 1);
+    setBrowserResetToken((x) => x + 1); // keep if you still use it
   }, []);
+
+  const handleStartScraping = React.useCallback(async () => {
+    if (!university && !uniCfg?.uniId) return;
+    setScraping(true);
+    try {
+      const byOrigin = await collectCookiesByOrigin(cookieDomains);
+      const cookiesJson = flattenToCookiesJson(byOrigin);
+
+      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
+      await scrapeStudentProfile({ university_id, cookies: cookiesJson });
+    } catch (e: any) {
+      console.warn("Scraping error:", e?.message || String(e));
+    } finally {
+      setScraping(false);
+    }
+  }, [cookieDomains, university, uniCfg]);
 
   const screenBg = theme.colors.background;
 
+  // Optional: hide debug behind DEV only
+  const devHardReset = React.useCallback(async () => {
+    await clearAllCookies();
+  }, []);
+
+  const data = React.useMemo(() => {
+    // Put “Grades” tile first, then the linkhub links
+    const items: Array<{ kind: "grades" } | { kind: "link"; link: LinkHubLink }> = [
+      { kind: "grades" },
+      ...links.map((l) => ({ kind: "link" as const, link: l })),
+    ];
+    return items;
+  }, [links]);
+
   return (
-    <View style={{ flex: 1, backgroundColor: screenBg }}>
-      <Header title={`${university?.name ?? "Uni"}:`} />
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Header title={`${university?.name ?? "Uni"}`} />
 
       {loading ? (
         <View style={styles.section}>
@@ -202,121 +239,99 @@ export default function LinkHub({ onOpenGrades }: Props) {
         </Card>
       ) : (
         <FlatList
-          style={{ backgroundColor: "transparent" }}
-          contentContainerStyle={{ gap: 12, paddingVertical: 10 }}
-          data={links}
-          keyExtractor={(item) => item.link}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 12, paddingHorizontal: 10 }}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => openEmbeddedBrowser(item.link, item.title)}
-              style={styles.tilePressable}
-            >
-              {/* Use View instead of Surface for deterministic bg */}
-              <View style={styles.tile}>
-                <Text>{item.title}</Text>
+          data={data}
+          keyExtractor={(item, idx) =>
+            item.kind === "grades" ? "grades" : `link:${item.link.link}:${idx}`
+          }
+          numColumns={1}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => {
+            if (item.kind === "grades") {
+              return (
+                <View>
+                  <HubTile
+                    title={scraping ? "Noten werden geladen…" : "Noten / Leistungen"}
+                    subtitle="Aktuelle Kurse & Bewertungen abrufen"
+                    icon="school"
+                    onPress={handleOpenGrades}
+                    disabled={!university || scraping}
+                  />
+                </View>
+              );
+            }
+
+            return (
+              <View>
+                <HubTile
+                  title={item.link.title}
+                  icon="open-in-new"
+                  onPress={() => openEmbeddedBrowser(item.link.link, item.link.title)}
+                  disabled={!item.link.link}
+                />
               </View>
-            </Pressable>
-          )}
+            );
+          }}
           ListEmptyComponent={
             <Card style={[styles.card, { margin: 12, padding: 16 }]}>
               <Text>Keine Links hinterlegt.</Text>
             </Card>
           }
           ListFooterComponent={
-            <View style={styles.section}>
-              <Button
-                mode="contained"
-                style={{ marginBottom: 10 }}
-                onPress={onOpenGrades}
-                disabled={!university}
-              >
-                Noten
-              </Button>
+            __DEV__ ? (
+              <View style={styles.devSection}>
+                <HubTile
+                  title="DEV: Cookies anzeigen"
+                  subtitle="console.log"
+                  icon="bug"
+                  onPress={handleDebugCookies}
+                />
 
-              <Button
-                mode="outlined"
-                style={{ marginTop: 6, marginBottom: 10 }}
-                onPress={handleDebugCookies}
-                disabled={scraping}
-              >
-                Debug: Cookies anzeigen
-              </Button>
+                <HubTile
+                  title="DEV: Cookies löschen"
+                  subtitle="Hard Reset"
+                  icon="delete"
+                  onPress={handleHardResetBrowserSession}
+                />
 
-              <Button
-                mode="outlined"
-                style={{ marginTop: 6, marginBottom: 10 }}
-                onPress={handleHardResetBrowserSession}
-                disabled={scraping}
-              >
-                Debug: Browser Hard Reset
-              </Button>
+                <HubTile
+                  title={scraping ? "DEV: Scraping…" : "DEV: Scraping starten"}
+                  subtitle="Profil neu abrufen"
+                  icon="cloud-download"
+                  onPress={handleStartScraping}
+                  disabled={scraping}
+                />
 
-              <Button
-                mode="contained"
-                style={{ marginTop: 6, marginBottom: 10 }}
-                onPress={handleStartScraping}
-                disabled={scraping || !university}
-              >
-                {scraping ? "Debug: Scraping läuft…" : "Debug: Scraping starten"}
-              </Button>
-              <Button
-                mode="outlined"
-                style={{ marginTop: 6, marginBottom: 10 }}
-                compact
-                textColor={theme.colors.error}
-                onPress={async () => {
-                  setLinks([]);
-                  setUniCfg(null);
-                  autoRefreshRef.current = false;
-                  await resetOnboarding({ clearCookies: true });
-                }}
-                accessibilityLabel="Logout"
-              >
-                Debug: Logout
-              </Button>
-            </View>
+                <HubTile
+                  title="DEV: Logout"
+                  subtitle="Reset onboarding"
+                  icon="logout"
+                  onPress={async () => {
+                    setLinks([]);
+                    setUniCfg(null);
+                    autoRefreshRef.current = false;
+                    await resetOnboarding({ clearCookies: true });
+                  }}
+                />
+              </View>
+            ) : null
           }
         />
       )}
-
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-
   section: { paddingHorizontal: 12, paddingVertical: 8 },
-
-  tilePressable: { flex: 1 },
-  tile: {
-    flex: 1,
-    minHeight: 80,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 12,
-    backgroundColor: "transparent",
+  card: { backgroundColor: "transparent", elevation: 0, shadowColor: "transparent" },
+  listContent: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 24,
+    gap: 12,
   },
-
-  scrapeBox: {
+  devSection: {
     marginTop: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.12)",
-    maxHeight: 220,
-    padding: 8,
-    backgroundColor: "transparent",
-  },
-
-  card: {
-    backgroundColor: "transparent",
-    elevation: 0,
-    shadowColor: "transparent",
+    gap: 12,
   },
 });
