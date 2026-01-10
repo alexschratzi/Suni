@@ -52,6 +52,7 @@ export default function AppStackLayout() {
             backgroundColor: isPartyHeader ? partyHeaderBg : theme.colors.surface,
           },
           headerTintColor: theme.colors.onSurface,
+            headerTitleAlign: "center",
           headerTitleStyle: { color: theme.colors.onSurface },
           contentStyle: { backgroundColor: theme.colors.surface },
           headerBackTitle: "Zurück",

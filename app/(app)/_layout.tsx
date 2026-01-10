@@ -82,6 +82,7 @@ export default function AppDrawerLayout() {
             drawerStyle: { backgroundColor: theme.colors.surface },
             drawerActiveTintColor: theme.colors.primary,
             drawerInactiveTintColor: theme.colors.onSurfaceVariant,
+              swipeEnabled: false,
           }}
         >
           <Drawer.Screen name="(stack)" options={{ title: "App" }} />
