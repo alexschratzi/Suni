@@ -178,10 +178,17 @@
     "inputPlaceholder": "Nachricht eingeben…",
     "send": "Senden",
     "direct": {
-      "addFriend": "Freund hinzufügen",
+      "addFriend": "Freund hinzufÇ¬gen",
       "showRequests": "Anfragen anzeigen",
       "hide": "Ausblenden",
       "unhide": "Einblenden"
+    },
+    "sort": {
+      "label": "Sortieren",
+      "newest": "Neueste",
+      "oldest": "Älteste",
+      "popular": "Beliebteste",
+      "unpopular": "Unbeliebteste"
     }
   },
 
@@ -265,3 +272,4 @@
     "cancel": "Abbrechen"
   }
 }
+

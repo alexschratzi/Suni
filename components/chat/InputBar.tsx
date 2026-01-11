@@ -21,6 +21,7 @@
 import React from "react";
 import {
   View,
+  Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -28,6 +29,7 @@ import {
 } from "react-native";
 import { useTheme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 
 type Props = {
   input: string;
@@ -38,6 +40,8 @@ type Props = {
   uploadAttachment?: () => void;
   placeholder: string;
   accentColor?: string;
+  attachment?: AttachmentDraft | null;
+  clearAttachment?: () => void;
 };
 
 export default function InputBar({
@@ -49,82 +53,131 @@ export default function InputBar({
   uploadAttachment,
   placeholder,
   accentColor,
+  attachment,
+  clearAttachment,
 }: Props) {
   const theme = useTheme();
-  const canSend = input.trim().length > 0;
+  const canSend = input.trim().length > 0 || !!attachment;
   const sendColor = accentColor || theme.colors.primary;
   const attachmentEnabled = typeof uploadAttachment === "function";
 
   return (
-    <View
-      style={[
-        styles.inputRow,
-        {
-          borderTopColor: theme.colors.outlineVariant,
-          backgroundColor: theme.colors.background,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.inputWrap,
-          {
-            borderColor: theme.colors.outlineVariant,
-            backgroundColor: theme.colors.surface,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          onPress={uploadAttachment}
-          disabled={!attachmentEnabled}
-          style={[styles.attachBtn, !attachmentEnabled && styles.attachDisabled]}
-        >
-          <Ionicons name="attach" size={20} color={theme.colors.primary} />
-        </TouchableOpacity>
-
-        <TextInput
+    <View style={styles.container}>
+      {!!attachment && (
+        <View
           style={[
-            styles.input,
+            styles.attachmentRow,
             {
-              height: Math.min(120, Math.max(40, inputHeight)),
-              color: theme.colors.onSurface,
+              borderTopColor: theme.colors.outlineVariant,
+              borderBottomColor: theme.colors.outlineVariant,
+              backgroundColor: theme.colors.background,
             },
           ]}
-          placeholder={placeholder}
-          placeholderTextColor={theme.colors.onSurfaceVariant}
-          value={input}
-          onChangeText={setInput}
-          multiline
-          onContentSizeChange={(e) =>
-            setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
-          }
-        />
-      </View>
+        >
+          <Ionicons name="attach" size={16} color={theme.colors.primary} />
+          <Text
+            numberOfLines={1}
+            style={[styles.attachmentText, { color: theme.colors.onSurface }]}
+          >
+            {attachment.name}
+          </Text>
+          {!!clearAttachment && (
+            <TouchableOpacity onPress={clearAttachment} style={styles.removeBtn}>
+              <Ionicons
+                name="close"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
-      <TouchableOpacity
-        onPress={sendMessage}
-        disabled={!canSend}
+      <View
         style={[
-          styles.sendButton,
+          styles.inputRow,
           {
-            backgroundColor: sendColor,
-            opacity: canSend ? 1 : 0.5,
+            borderTopColor: theme.colors.outlineVariant,
+            borderTopWidth: attachment ? 0 : StyleSheet.hairlineWidth,
+            backgroundColor: theme.colors.background,
           },
         ]}
       >
-        <Ionicons name="send" size={18} color={theme.colors.onPrimary} />
-      </TouchableOpacity>
+        <View
+          style={[
+            styles.inputWrap,
+            {
+              borderColor: theme.colors.outlineVariant,
+              backgroundColor: theme.colors.surface,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={uploadAttachment}
+            disabled={!attachmentEnabled}
+            style={[styles.attachBtn, !attachmentEnabled && styles.attachDisabled]}
+          >
+            <Ionicons name="attach" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                height: Math.min(120, Math.max(40, inputHeight)),
+                color: theme.colors.onSurface,
+              },
+            ]}
+            placeholder={placeholder}
+            placeholderTextColor={theme.colors.onSurfaceVariant}
+            value={input}
+            onChangeText={setInput}
+            multiline
+            onContentSizeChange={(e) =>
+              setInputHeight(Math.max(40, e.nativeEvent.contentSize.height))
+            }
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={sendMessage}
+          disabled={!canSend}
+          style={[
+            styles.sendButton,
+            {
+              backgroundColor: sendColor,
+              opacity: canSend ? 1 : 0.5,
+            },
+          ]}
+        >
+          <Ionicons name="send" size={18} color={theme.colors.onPrimary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {},
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  attachmentText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  removeBtn: { padding: 4 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   inputWrap: {
     flex: 1,

@@ -182,6 +182,13 @@
       "showRequests": "Show requests",
       "hide": "Hide",
       "unhide": "Unhide"
+    },
+    "sort": {
+      "label": "Sort",
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "popular": "Top",
+      "unpopular": "Bottom"
     }
   },
 
@@ -265,3 +272,4 @@
     "cancel": "Cancel"
   }
 }
+

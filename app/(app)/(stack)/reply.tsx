@@ -8,20 +8,39 @@ import {
   Alert,
   View,
   StyleSheet,
+  Linking,
+  TouchableOpacity,
 } from "react-native";
-import { Text, Surface, useTheme, IconButton } from "react-native-paper";
+import { Text, Surface, useTheme, IconButton, Menu } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
+import { Ionicons } from "@expo/vector-icons";
 import InputBar from "@/components/chat/InputBar";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import {
+  createAttachmentUrl,
+  pickAttachment,
+  uploadAttachment,
+} from "@/src/lib/chatAttachments";
+import type { AttachmentDraft } from "@/src/lib/chatAttachments";
+
+type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
 
 export default function ReplyScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const { room, messageId, messageText, messageUser, dmId } = useLocalSearchParams();
+  const {
+    room,
+    messageId,
+    messageText,
+    messageUser,
+    dmId,
+    messageAttachmentPath,
+    messageAttachmentName,
+  } = useLocalSearchParams();
   const userId = useSupabaseUserId();
   const toSingle = (value: string | string[] | undefined) =>
     Array.isArray(value) ? value[0] : value;
@@ -33,6 +52,8 @@ export default function ReplyScreen() {
   const roomValue = toSingle(room);
   const messageIdValue = toSingle(messageId);
   const dmIdValue = toSingle(dmId);
+  const messageAttachmentPathValue = toSingle(messageAttachmentPath);
+  const messageAttachmentNameValue = toSingle(messageAttachmentName);
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
   const [replies, setReplies] = useState<any[]>([]);
@@ -40,6 +61,12 @@ export default function ReplyScreen() {
   const [username, setUsername] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
+  const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [voteStats, setVoteStats] = useState<
+    Record<string, { score: number; myVote: number }>
+  >({});
 
   useEffect(() => {
     if (!userId) {
@@ -132,6 +159,10 @@ export default function ReplyScreen() {
               COLUMNS.dmMessages.username,
               COLUMNS.dmMessages.text,
               COLUMNS.dmMessages.createdAt,
+              COLUMNS.dmMessages.attachmentPath,
+              COLUMNS.dmMessages.attachmentName,
+              COLUMNS.dmMessages.attachmentMime,
+              COLUMNS.dmMessages.attachmentSize,
             ].join(",")
           )
           .eq(COLUMNS.dmMessages.threadId, dmIdValue)
@@ -149,8 +180,12 @@ export default function ReplyScreen() {
             id: row?.[COLUMNS.dmMessages.id],
             sender: row?.[COLUMNS.dmMessages.senderId],
             username: row?.[COLUMNS.dmMessages.username],
-            text: row?.[COLUMNS.dmMessages.text],
+            text: row?.[COLUMNS.dmMessages.text] ?? "",
             timestamp: row?.[COLUMNS.dmMessages.createdAt],
+            attachmentPath: row?.[COLUMNS.dmMessages.attachmentPath] ?? null,
+            attachmentName: row?.[COLUMNS.dmMessages.attachmentName] ?? null,
+            attachmentMime: row?.[COLUMNS.dmMessages.attachmentMime] ?? null,
+            attachmentSize: row?.[COLUMNS.dmMessages.attachmentSize] ?? null,
           })) || [];
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -158,6 +193,7 @@ export default function ReplyScreen() {
           return !blocked.includes(sender);
         });
         setReplies(filtered);
+        setVoteStats({});
       };
 
       loadDmReplies();
@@ -201,6 +237,10 @@ export default function ReplyScreen() {
               COLUMNS.roomReplies.username,
               COLUMNS.roomReplies.text,
               COLUMNS.roomReplies.createdAt,
+              COLUMNS.roomReplies.attachmentPath,
+              COLUMNS.roomReplies.attachmentName,
+              COLUMNS.roomReplies.attachmentMime,
+              COLUMNS.roomReplies.attachmentSize,
             ].join(",")
           )
           .eq(COLUMNS.roomReplies.roomMessageId, messageIdValue)
@@ -218,8 +258,12 @@ export default function ReplyScreen() {
             id: row?.[COLUMNS.roomReplies.id],
             sender: row?.[COLUMNS.roomReplies.senderId],
             username: row?.[COLUMNS.roomReplies.username],
-            text: row?.[COLUMNS.roomReplies.text],
+            text: row?.[COLUMNS.roomReplies.text] ?? "",
             timestamp: row?.[COLUMNS.roomReplies.createdAt],
+            attachmentPath: row?.[COLUMNS.roomReplies.attachmentPath] ?? null,
+            attachmentName: row?.[COLUMNS.roomReplies.attachmentName] ?? null,
+            attachmentMime: row?.[COLUMNS.roomReplies.attachmentMime] ?? null,
+            attachmentSize: row?.[COLUMNS.roomReplies.attachmentSize] ?? null,
           })) || [];
         const filtered = all.filter((r) => {
           const sender = (r as any).sender as string | undefined;
@@ -227,6 +271,9 @@ export default function ReplyScreen() {
           return !blocked.includes(sender);
         });
         setReplies(filtered);
+        if (!cancelled) {
+          await loadReplyVotes(filtered.map((item) => item.id));
+        }
       };
 
       loadRoomReplies();
@@ -252,13 +299,173 @@ export default function ReplyScreen() {
     }
   }, [roomValue, messageIdValue, dmIdValue, blocked]);
 
+  useEffect(() => {
+    if (!dmIdValue || !userId) return;
+    const now = new Date().toISOString();
+    supabase
+      .from(TABLES.dmReads)
+      .upsert(
+        {
+          [COLUMNS.dmReads.threadId]: dmIdValue,
+          [COLUMNS.dmReads.userId]: userId,
+          [COLUMNS.dmReads.lastReadAt]: now,
+        },
+        { onConflict: `${COLUMNS.dmReads.threadId},${COLUMNS.dmReads.userId}` }
+      )
+      .then(({ error }) => {
+        if (error) {
+          console.error("DM read update error:", error.message);
+        }
+      });
+  }, [dmIdValue, replies.length, userId]);
+
+  const loadReplyVotes = async (replyIds: string[]) => {
+    if (!userId || replyIds.length === 0) {
+      setVoteStats({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(TABLES.roomReplyVotes)
+      .select(
+        [
+          COLUMNS.roomReplyVotes.replyId,
+          COLUMNS.roomReplyVotes.userId,
+          COLUMNS.roomReplyVotes.value,
+        ].join(",")
+      )
+      .in(COLUMNS.roomReplyVotes.replyId, replyIds);
+
+    if (error) {
+      console.error("Reply votes load error:", error.message);
+      return;
+    }
+
+    const next: Record<string, { score: number; myVote: number }> = {};
+    replyIds.forEach((id) => {
+      next[id] = { score: 0, myVote: 0 };
+    });
+
+    (data || []).forEach((row: any) => {
+      const replyId = row?.[COLUMNS.roomReplyVotes.replyId];
+      if (!replyId) return;
+      const value = Number(row?.[COLUMNS.roomReplyVotes.value]) || 0;
+      if (!next[replyId]) next[replyId] = { score: 0, myVote: 0 };
+      next[replyId].score += value;
+      if (row?.[COLUMNS.roomReplyVotes.userId] === userId) {
+        next[replyId].myVote = value;
+      }
+    });
+
+    setVoteStats(next);
+  };
+
+  const handleVote = async (replyId: string, value: 1 | -1) => {
+    if (!userId) return;
+    const current = voteStats[replyId]?.myVote ?? 0;
+
+    if (current === value) {
+      const { error } = await supabase
+        .from(TABLES.roomReplyVotes)
+        .delete()
+        .eq(COLUMNS.roomReplyVotes.replyId, replyId)
+        .eq(COLUMNS.roomReplyVotes.userId, userId);
+
+      if (error) {
+        console.error("Vote remove failed:", error.message);
+        return;
+      }
+
+      setVoteStats((prev) => ({
+        ...prev,
+        [replyId]: {
+          score: (prev[replyId]?.score ?? 0) - value,
+          myVote: 0,
+        },
+      }));
+      return;
+    }
+
+    const { error } = await supabase
+      .from(TABLES.roomReplyVotes)
+      .upsert(
+        {
+          [COLUMNS.roomReplyVotes.replyId]: replyId,
+          [COLUMNS.roomReplyVotes.userId]: userId,
+          [COLUMNS.roomReplyVotes.value]: value,
+        },
+        {
+          onConflict: `${COLUMNS.roomReplyVotes.replyId},${COLUMNS.roomReplyVotes.userId}`,
+        }
+      );
+
+    if (error) {
+      console.error("Vote update failed:", error.message);
+      return;
+    }
+
+    setVoteStats((prev) => {
+      const prevScore = prev[replyId]?.score ?? 0;
+      const nextScore = prevScore - current + value;
+      return {
+        ...prev,
+        [replyId]: { score: nextScore, myVote: value },
+      };
+    });
+  };
+
+  const sortLabel =
+    sortOrder === "popular"
+      ? t("chat.sort.popular")
+      : sortOrder === "unpopular"
+      ? t("chat.sort.unpopular")
+      : sortOrder === "oldest"
+      ? t("chat.sort.oldest")
+      : t("chat.sort.newest");
+
+  const handlePickAttachment = async () => {
+    const next = await pickAttachment();
+    if (next) setAttachment(next);
+  };
+
+  const clearAttachment = () => {
+    setAttachment(null);
+  };
+
+  const openAttachment = async (path?: string | null) => {
+    if (!path) return;
+    try {
+      const url = await createAttachmentUrl(path);
+      if (!url) {
+        console.warn("Attachment URL unavailable");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (err) {
+      console.error("Attachment open failed:", err);
+    }
+  };
+
   // Send message
   const sendReply = async () => {
-    if (!input.trim() || !username || !userId) return;
+    const messageText = input.trim();
+    if ((!messageText && !attachment) || !username || !userId) return;
 
     try {
-      const messageText = input.trim();
+      const isDirect = !!dmIdValue;
+      const isRoomReply = !!roomValue && !!messageIdValue;
+      if (!isDirect && !isRoomReply) return;
+
       const now = new Date().toISOString();
+      let uploaded = null;
+
+      if (attachment) {
+        const prefix = isDirect
+          ? `dm/${dmIdValue}`
+          : `rooms/${roomValue}/replies/${messageIdValue}`;
+        uploaded = await uploadAttachment(attachment, prefix);
+      }
+
       // === DM ===
       if (dmIdValue) {
         const { data: thread, error: threadErr } = await supabase
@@ -310,6 +517,10 @@ export default function ReplyScreen() {
             [COLUMNS.dmMessages.username]: username,
             [COLUMNS.dmMessages.text]: messageText,
             [COLUMNS.dmMessages.createdAt]: now,
+            [COLUMNS.dmMessages.attachmentPath]: uploaded?.path,
+            [COLUMNS.dmMessages.attachmentName]: uploaded?.name,
+            [COLUMNS.dmMessages.attachmentMime]: uploaded?.mimeType,
+            [COLUMNS.dmMessages.attachmentSize]: uploaded?.size,
           })
           .select(
             [
@@ -318,6 +529,10 @@ export default function ReplyScreen() {
               COLUMNS.dmMessages.username,
               COLUMNS.dmMessages.text,
               COLUMNS.dmMessages.createdAt,
+              COLUMNS.dmMessages.attachmentPath,
+              COLUMNS.dmMessages.attachmentName,
+              COLUMNS.dmMessages.attachmentMime,
+              COLUMNS.dmMessages.attachmentSize,
             ].join(",")
           )
           .single();
@@ -326,7 +541,7 @@ export default function ReplyScreen() {
         await supabase
           .from(TABLES.dmThreads)
           .update({
-            [COLUMNS.dmThreads.lastMessage]: messageText,
+            [COLUMNS.dmThreads.lastMessage]: messageText || uploaded?.name || "",
             [COLUMNS.dmThreads.lastTimestamp]: now,
           })
           .eq(COLUMNS.dmThreads.id, dmIdValue);
@@ -336,8 +551,12 @@ export default function ReplyScreen() {
             id: (data as any)?.[COLUMNS.dmMessages.id],
             sender: (data as any)?.[COLUMNS.dmMessages.senderId],
             username: (data as any)?.[COLUMNS.dmMessages.username],
-            text: (data as any)?.[COLUMNS.dmMessages.text],
+            text: (data as any)?.[COLUMNS.dmMessages.text] ?? "",
             timestamp: (data as any)?.[COLUMNS.dmMessages.createdAt],
+            attachmentPath: (data as any)?.[COLUMNS.dmMessages.attachmentPath] ?? null,
+            attachmentName: (data as any)?.[COLUMNS.dmMessages.attachmentName] ?? null,
+            attachmentMime: (data as any)?.[COLUMNS.dmMessages.attachmentMime] ?? null,
+            attachmentSize: (data as any)?.[COLUMNS.dmMessages.attachmentSize] ?? null,
           };
           setReplies((prev) => {
             if (prev.some((item) => item.id === entry.id)) return prev;
@@ -346,6 +565,7 @@ export default function ReplyScreen() {
         }
         setInput("");
         setInputHeight(40);
+        setAttachment(null);
         return;
       }
 
@@ -360,6 +580,10 @@ export default function ReplyScreen() {
             [COLUMNS.roomReplies.username]: username,
             [COLUMNS.roomReplies.text]: messageText,
             [COLUMNS.roomReplies.createdAt]: now,
+            [COLUMNS.roomReplies.attachmentPath]: uploaded?.path,
+            [COLUMNS.roomReplies.attachmentName]: uploaded?.name,
+            [COLUMNS.roomReplies.attachmentMime]: uploaded?.mimeType,
+            [COLUMNS.roomReplies.attachmentSize]: uploaded?.size,
           })
           .select(
             [
@@ -368,6 +592,10 @@ export default function ReplyScreen() {
               COLUMNS.roomReplies.username,
               COLUMNS.roomReplies.text,
               COLUMNS.roomReplies.createdAt,
+              COLUMNS.roomReplies.attachmentPath,
+              COLUMNS.roomReplies.attachmentName,
+              COLUMNS.roomReplies.attachmentMime,
+              COLUMNS.roomReplies.attachmentSize,
             ].join(",")
           )
           .single();
@@ -378,8 +606,12 @@ export default function ReplyScreen() {
             id: (data as any)?.[COLUMNS.roomReplies.id],
             sender: (data as any)?.[COLUMNS.roomReplies.senderId],
             username: (data as any)?.[COLUMNS.roomReplies.username],
-            text: (data as any)?.[COLUMNS.roomReplies.text],
+            text: (data as any)?.[COLUMNS.roomReplies.text] ?? "",
             timestamp: (data as any)?.[COLUMNS.roomReplies.createdAt],
+            attachmentPath: (data as any)?.[COLUMNS.roomReplies.attachmentPath] ?? null,
+            attachmentName: (data as any)?.[COLUMNS.roomReplies.attachmentName] ?? null,
+            attachmentMime: (data as any)?.[COLUMNS.roomReplies.attachmentMime] ?? null,
+            attachmentSize: (data as any)?.[COLUMNS.roomReplies.attachmentSize] ?? null,
           };
           setReplies((prev) => {
             if (prev.some((item) => item.id === entry.id)) return prev;
@@ -388,6 +620,7 @@ export default function ReplyScreen() {
         }
         setInput("");
         setInputHeight(40);
+        setAttachment(null);
       }
     } catch (err) {
       console.error("Send reply failed:", err);
@@ -425,6 +658,31 @@ export default function ReplyScreen() {
     });
   };
 
+  const sortedReplies = React.useMemo(() => {
+    if (dmIdValue) return replies;
+    const list = [...replies];
+
+    if (sortOrder === "oldest") return list;
+
+    const getTime = (value: any) => {
+      const dateValue = toDate(value);
+      return dateValue ? dateValue.getTime() : 0;
+    };
+
+    if (sortOrder === "newest") {
+      return list.sort((a, b) => getTime(b.timestamp) - getTime(a.timestamp));
+    }
+
+    return list.sort((a, b) => {
+      const scoreA = voteStats[a.id]?.score ?? 0;
+      const scoreB = voteStats[b.id]?.score ?? 0;
+      if (scoreA !== scoreB) {
+        return sortOrder === "popular" ? scoreB - scoreA : scoreA - scoreB;
+      }
+      return getTime(b.timestamp) - getTime(a.timestamp);
+    });
+  }, [dmIdValue, replies, sortOrder, voteStats]);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -447,14 +705,91 @@ export default function ReplyScreen() {
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
               {String(messageUser ?? "")}
             </Text>
-            <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
-              {String(messageText ?? "")}
-            </Text>
+            {!!String(messageText ?? "").trim() && (
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
+                {String(messageText ?? "")}
+              </Text>
+            )}
+            {!!messageAttachmentPathValue && (
+              <TouchableOpacity
+                style={styles.attachmentRow}
+                onPress={() => openAttachment(messageAttachmentPathValue)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="attach" size={16} color={theme.colors.primary} />
+                <Text
+                  numberOfLines={1}
+                  style={[styles.attachmentText, { color: theme.colors.onSurface }]}
+                >
+                  {messageAttachmentNameValue || "file"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </Surface>
         )}
 
+        {!dmIdValue && (
+          <View style={styles.sortRow}>
+            <Menu
+              visible={sortMenuVisible}
+              onDismiss={() => setSortMenuVisible(false)}
+              anchor={
+                <TouchableOpacity
+                  onPress={() => setSortMenuVisible(true)}
+                  style={[
+                    styles.sortAnchor,
+                    {
+                      backgroundColor: theme.colors.surfaceVariant,
+                      borderColor: theme.colors.outlineVariant,
+                    },
+                  ]}
+                >
+                  <Ionicons name="swap-vertical" size={16} color={theme.colors.primary} />
+                  <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
+                    {t("chat.sort.label")}: {sortLabel}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={16}
+                    color={theme.colors.onSurfaceVariant}
+                  />
+                </TouchableOpacity>
+              }
+            >
+              <Menu.Item
+                onPress={() => {
+                  setSortOrder("newest");
+                  setSortMenuVisible(false);
+                }}
+                title={t("chat.sort.newest")}
+              />
+              <Menu.Item
+                onPress={() => {
+                  setSortOrder("oldest");
+                  setSortMenuVisible(false);
+                }}
+                title={t("chat.sort.oldest")}
+              />
+              <Menu.Item
+                onPress={() => {
+                  setSortOrder("popular");
+                  setSortMenuVisible(false);
+                }}
+                title={t("chat.sort.popular")}
+              />
+              <Menu.Item
+                onPress={() => {
+                  setSortOrder("unpopular");
+                  setSortMenuVisible(false);
+                }}
+                title={t("chat.sort.unpopular")}
+              />
+            </Menu>
+          </View>
+        )}
+
         <FlatList
-          data={replies}
+          data={sortedReplies}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{
             paddingHorizontal: 12,
@@ -466,8 +801,57 @@ export default function ReplyScreen() {
             if (!isDirect) {
               const timeLabel = formatTimestamp(item.timestamp);
               const meta = `${item.username || "???"} - ${timeLabel}`;
+              const hasText = !!item.text;
+              const hasAttachment = !!item.attachmentPath;
+              const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
+              const upActive = vote.myVote === 1;
+              const downActive = vote.myVote === -1;
               return (
                 <View style={styles.threadRow}>
+                  <View style={styles.voteColumn}>
+                    <TouchableOpacity
+                      onPress={() => handleVote(item.id, 1)}
+                      style={styles.voteButton}
+                    >
+                      <Ionicons
+                        name="chevron-up"
+                        size={20}
+                        color={
+                          upActive
+                            ? theme.colors.primary
+                            : theme.colors.onSurfaceVariant
+                        }
+                      />
+                    </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.voteScore,
+                        {
+                          color: upActive
+                            ? theme.colors.primary
+                            : downActive
+                            ? theme.colors.error
+                            : theme.colors.onSurfaceVariant,
+                        },
+                      ]}
+                    >
+                      {vote.score}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleVote(item.id, -1)}
+                      style={styles.voteButton}
+                    >
+                      <Ionicons
+                        name="chevron-down"
+                        size={20}
+                        color={
+                          downActive
+                            ? theme.colors.error
+                            : theme.colors.onSurfaceVariant
+                        }
+                      />
+                    </TouchableOpacity>
+                  </View>
                   <Surface
                     style={[
                       styles.threadCard,
@@ -483,9 +867,29 @@ export default function ReplyScreen() {
                     >
                       {meta}
                     </Text>
-                    <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
-                      {item.text}
-                    </Text>
+                    {hasText && (
+                      <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
+                        {item.text}
+                      </Text>
+                    )}
+                    {hasAttachment && (
+                      <TouchableOpacity
+                        style={styles.attachmentRow}
+                        onPress={() => openAttachment(item.attachmentPath)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="attach" size={16} color={theme.colors.primary} />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.attachmentText,
+                            { color: theme.colors.onSurface },
+                          ]}
+                        >
+                          {item.attachmentName || "file"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </Surface>
                 </View>
               );
@@ -493,6 +897,8 @@ export default function ReplyScreen() {
 
             const isMine = !!userId && item.sender === userId;
             const timeLabel = formatTime(item.timestamp);
+            const hasText = !!item.text;
+            const hasAttachment = !!item.attachmentPath;
 
             return (
               <View
@@ -524,18 +930,46 @@ export default function ReplyScreen() {
                       {item.username || "???"}
                     </Text>
                   )}
-                  <Text
-                    style={[
-                      styles.msgText,
-                      {
-                        color: isMine
-                          ? theme.colors.onPrimary
-                          : theme.colors.onSurface,
-                      },
-                    ]}
-                  >
-                    {item.text}
-                  </Text>
+                  {hasText && (
+                    <Text
+                      style={[
+                        styles.msgText,
+                        {
+                          color: isMine
+                            ? theme.colors.onPrimary
+                            : theme.colors.onSurface,
+                        },
+                      ]}
+                    >
+                      {item.text}
+                    </Text>
+                  )}
+                  {hasAttachment && (
+                    <TouchableOpacity
+                      style={styles.attachmentRow}
+                      onPress={() => openAttachment(item.attachmentPath)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="attach"
+                        size={16}
+                        color={isMine ? theme.colors.onPrimary : theme.colors.primary}
+                      />
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.attachmentText,
+                          {
+                            color: isMine
+                              ? theme.colors.onPrimary
+                              : theme.colors.onSurface,
+                          },
+                        ]}
+                      >
+                        {item.attachmentName || "file"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                   <Text
                     style={[
                       styles.time,
@@ -562,6 +996,9 @@ export default function ReplyScreen() {
           sendMessage={sendReply}
           placeholder={t("chat.inputPlaceholder")}
           accentColor={theme.colors.primary}
+          uploadAttachment={handlePickAttachment}
+          attachment={attachment}
+          clearAttachment={clearAttachment}
         />
       </View>
     </KeyboardAvoidingView>
@@ -585,6 +1022,24 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 12,
   },
+  sortRow: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  sortAnchor: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  sortText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
   messageRow: {
     marginBottom: 10,
     paddingHorizontal: 4,
@@ -592,6 +1047,22 @@ const styles = StyleSheet.create({
   threadRow: {
     marginBottom: 10,
     paddingHorizontal: 4,
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  voteColumn: {
+    width: 34,
+    alignItems: "center",
+    marginRight: 6,
+    paddingTop: 6,
+  },
+  voteButton: {
+    paddingVertical: 2,
+  },
+  voteScore: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginVertical: 2,
   },
   rowMine: {
     alignItems: "flex-end",
@@ -600,7 +1071,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   threadCard: {
-    width: "100%",
+    flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
@@ -630,6 +1101,16 @@ const styles = StyleSheet.create({
   msgText: {
     fontSize: 16,
     lineHeight: 20,
+  },
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  attachmentText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13,
   },
   time: {
     fontSize: 11,

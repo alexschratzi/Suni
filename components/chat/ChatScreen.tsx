@@ -1,13 +1,19 @@
 import * as React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "react-native-paper";
 import { useTranslation } from "react-i18next";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import {
+  pickAttachment,
+  uploadAttachment,
+} from "@/src/lib/chatAttachments";
+import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
@@ -49,10 +55,12 @@ export default function ChatScreen() {
 
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
+  const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
 
   const [rawDirects, setRawDirects] = useState<RawDirect[]>([]);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadByThread, setUnreadByThread] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!userId) {
@@ -178,6 +186,10 @@ export default function ChatScreen() {
             COLUMNS.roomMessages.username,
             COLUMNS.roomMessages.text,
             COLUMNS.roomMessages.createdAt,
+            COLUMNS.roomMessages.attachmentPath,
+            COLUMNS.roomMessages.attachmentName,
+            COLUMNS.roomMessages.attachmentMime,
+            COLUMNS.roomMessages.attachmentSize,
           ].join(",")
         )
         .eq(COLUMNS.roomMessages.roomKey, room)
@@ -198,8 +210,12 @@ export default function ChatScreen() {
           id: row?.[COLUMNS.roomMessages.id],
           sender: row?.[COLUMNS.roomMessages.senderId],
           username: row?.[COLUMNS.roomMessages.username],
-          text: row?.[COLUMNS.roomMessages.text],
+          text: row?.[COLUMNS.roomMessages.text] ?? "",
           timestamp: row?.[COLUMNS.roomMessages.createdAt],
+          attachmentPath: row?.[COLUMNS.roomMessages.attachmentPath] ?? null,
+          attachmentName: row?.[COLUMNS.roomMessages.attachmentName] ?? null,
+          attachmentMime: row?.[COLUMNS.roomMessages.attachmentMime] ?? null,
+          attachmentSize: row?.[COLUMNS.roomMessages.attachmentSize] ?? null,
         })) || [];
       setMessages(msgs);
       setLoadingMsgs(false);
@@ -412,6 +428,88 @@ export default function ChatScreen() {
     })();
   }, [rawDirects, userProfiles]);
 
+  const refreshUnreadCounts = useCallback(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!userId) {
+        setUnreadByThread({});
+        return;
+      }
+
+      const threadIds = rawDirects.map((d) => d.id).filter(Boolean);
+      if (threadIds.length === 0) {
+        setUnreadByThread({});
+        return;
+      }
+
+      const { data: readRows, error: readErr } = await supabase
+        .from(TABLES.dmReads)
+        .select(`${COLUMNS.dmReads.threadId},${COLUMNS.dmReads.lastReadAt}`)
+        .eq(COLUMNS.dmReads.userId, userId)
+        .in(COLUMNS.dmReads.threadId, threadIds);
+
+      if (readErr) {
+        console.error("DM read state load error:", readErr.message);
+        return;
+      }
+
+      const lastReadByThread: Record<string, string | null> = {};
+      (readRows || []).forEach((row: any) => {
+        const threadId = row?.[COLUMNS.dmReads.threadId];
+        const lastRead = row?.[COLUMNS.dmReads.lastReadAt] ?? null;
+        if (threadId) lastReadByThread[threadId] = lastRead;
+      });
+
+      const counts = await Promise.all(
+        threadIds.map(async (threadId) => {
+          let query = supabase
+            .from(TABLES.dmMessages)
+            .select(COLUMNS.dmMessages.id, { count: "exact", head: true })
+            .eq(COLUMNS.dmMessages.threadId, threadId)
+            .neq(COLUMNS.dmMessages.senderId, userId);
+
+          const lastReadAt = lastReadByThread[threadId];
+          if (lastReadAt) {
+            query = query.gt(COLUMNS.dmMessages.createdAt, lastReadAt);
+          }
+
+          const { count, error } = await query;
+          if (error) {
+            console.error("DM unread count error:", error.message);
+            return { threadId, count: 0 };
+          }
+          return { threadId, count: count ?? 0 };
+        })
+      );
+
+      if (cancelled) return;
+      const map: Record<string, number> = {};
+      counts.forEach((entry) => {
+        map[entry.threadId] = entry.count ?? 0;
+      });
+      setUnreadByThread(map);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawDirects, userId]);
+
+  useEffect(() => {
+    const cleanup = refreshUnreadCounts();
+    return () => cleanup?.();
+  }, [refreshUnreadCounts]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const cleanup = refreshUnreadCounts();
+      return () => cleanup?.();
+    }, [refreshUnreadCounts])
+  );
+
   const directs: Direct[] = useMemo(
     () =>
       rawDirects.map((d) => ({
@@ -420,8 +518,17 @@ export default function ChatScreen() {
         last: d.last ?? "",
         lastTimestamp: d.lastTimestamp ?? null,
         hidden: d.hidden ?? false,
+        unreadCount: unreadByThread[d.id] ?? 0,
       })),
-    [rawDirects, userProfiles]
+    [rawDirects, unreadByThread, userProfiles]
+  );
+
+  const unreadDirectCount = useMemo(
+    () =>
+      rawDirects.filter(
+        (d) => !(d.hidden ?? false) && (unreadByThread[d.id] ?? 0) > 0
+      ).length,
+    [rawDirects, unreadByThread]
   );
 
   // Rooms filter
@@ -462,22 +569,46 @@ export default function ChatScreen() {
     [messages, blocked]
   );
 
+  const handlePickAttachment = async () => {
+    const next = await pickAttachment();
+    if (next) setAttachment(next);
+  };
+
+  const clearAttachment = () => {
+    setAttachment(null);
+  };
+
   // Send message
   const sendMessage = async () => {
-    if (!input.trim() || !room || !username || !userId) return;
+    const messageText = input.trim();
+    if ((!messageText && !attachment) || !room || !username || !userId) return;
 
     try {
-      const messageText = input.trim();
       const now = new Date().toISOString();
+      let uploaded = null;
+
+      if (attachment) {
+        uploaded = await uploadAttachment(attachment, `rooms/${room}`);
+      }
+
+      const payload: Record<string, any> = {
+        [COLUMNS.roomMessages.roomKey]: room,
+        [COLUMNS.roomMessages.senderId]: userId,
+        [COLUMNS.roomMessages.username]: username,
+        [COLUMNS.roomMessages.text]: messageText,
+        [COLUMNS.roomMessages.createdAt]: now,
+      };
+
+      if (uploaded) {
+        payload[COLUMNS.roomMessages.attachmentPath] = uploaded.path;
+        payload[COLUMNS.roomMessages.attachmentName] = uploaded.name;
+        payload[COLUMNS.roomMessages.attachmentMime] = uploaded.mimeType;
+        payload[COLUMNS.roomMessages.attachmentSize] = uploaded.size;
+      }
+
       const { data, error } = await supabase
         .from(TABLES.roomMessages)
-        .insert({
-          [COLUMNS.roomMessages.roomKey]: room,
-          [COLUMNS.roomMessages.senderId]: userId,
-          [COLUMNS.roomMessages.username]: username,
-          [COLUMNS.roomMessages.text]: messageText,
-          [COLUMNS.roomMessages.createdAt]: now,
-        })
+        .insert(payload)
         .select(
           [
             COLUMNS.roomMessages.id,
@@ -485,6 +616,10 @@ export default function ChatScreen() {
             COLUMNS.roomMessages.username,
             COLUMNS.roomMessages.text,
             COLUMNS.roomMessages.createdAt,
+            COLUMNS.roomMessages.attachmentPath,
+            COLUMNS.roomMessages.attachmentName,
+            COLUMNS.roomMessages.attachmentMime,
+            COLUMNS.roomMessages.attachmentSize,
           ].join(",")
         )
         .single();
@@ -495,8 +630,12 @@ export default function ChatScreen() {
           id: (data as any)?.[COLUMNS.roomMessages.id],
           sender: (data as any)?.[COLUMNS.roomMessages.senderId],
           username: (data as any)?.[COLUMNS.roomMessages.username],
-          text: (data as any)?.[COLUMNS.roomMessages.text],
+          text: (data as any)?.[COLUMNS.roomMessages.text] ?? "",
           timestamp: (data as any)?.[COLUMNS.roomMessages.createdAt],
+          attachmentPath: (data as any)?.[COLUMNS.roomMessages.attachmentPath] ?? null,
+          attachmentName: (data as any)?.[COLUMNS.roomMessages.attachmentName] ?? null,
+          attachmentMime: (data as any)?.[COLUMNS.roomMessages.attachmentMime] ?? null,
+          attachmentSize: (data as any)?.[COLUMNS.roomMessages.attachmentSize] ?? null,
         };
         setMessages((prev) => {
           if (prev.some((m) => m.id === entry.id)) return prev;
@@ -506,6 +645,7 @@ export default function ChatScreen() {
 
       setInput("");
       setInputHeight(40);
+      setAttachment(null);
     } catch (err) {
       console.error("Room message send failed:", err);
     }
@@ -518,7 +658,7 @@ export default function ChatScreen() {
         setTab={setTab}
         search={search}
         setSearch={setSearch}
-        pendingCount={pendingCount}
+        unreadDirectCount={unreadDirectCount}
       />
 
       {tab === "rooms" && !room && <RoomsList rooms={filteredRooms} onSelect={setRoom} />}
@@ -527,6 +667,7 @@ export default function ChatScreen() {
         <DirectList
           directs={filteredDirects}
           router={router}
+          pendingCount={pendingCount}
           onToggleHidden={async (id, makeHidden) => {
             if (!userId) return;
             try {
@@ -575,6 +716,9 @@ export default function ChatScreen() {
           theme={theme}
           accentColor={chatColor || theme.colors.primary}
           router={router}
+          uploadAttachment={handlePickAttachment}
+          attachment={attachment}
+          clearAttachment={clearAttachment}
         />
       )}
     </View>

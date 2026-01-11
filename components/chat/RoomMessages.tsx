@@ -11,11 +11,17 @@ import {
   Platform,
   StyleSheet,
   TouchableOpacity,
+  Linking,
 } from "react-native";
-import { ActivityIndicator, Text } from "react-native-paper";
+import { ActivityIndicator, Text, Menu, Surface } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import InputBar from "./InputBar";
+import { createAttachmentUrl } from "@/src/lib/chatAttachments";
+import { supabase } from "@/src/lib/supabase";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 
 type RoomKey = "salzburg" | "oesterreich" | "wirtschaft";
 
@@ -25,6 +31,10 @@ type Message = {
   username?: string;
   text: string;
   timestamp?: any;
+  attachmentPath?: string | null;
+  attachmentName?: string | null;
+  attachmentMime?: string | null;
+  attachmentSize?: number | null;
 };
 
 type Props = {
@@ -42,7 +52,12 @@ type Props = {
   theme: any;
   router: Router;
   accentColor: string;
+  uploadAttachment?: () => void;
+  attachment?: AttachmentDraft | null;
+  clearAttachment?: () => void;
 };
+
+type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
 
 export default function RoomMessages(props: Props) {
   const {
@@ -60,7 +75,16 @@ export default function RoomMessages(props: Props) {
     theme,
     router,
     accentColor,
+    uploadAttachment,
+    attachment,
+    clearAttachment,
   } = props;
+  const userId = useSupabaseUserId();
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>("newest");
+  const [sortMenuVisible, setSortMenuVisible] = React.useState(false);
+  const [voteStats, setVoteStats] = React.useState<
+    Record<string, { score: number; myVote: number }>
+  >({});
 
   const roomTitle =
     room === "salzburg"
@@ -100,7 +124,167 @@ export default function RoomMessages(props: Props) {
         messageId: message.id,
         messageText: message.text,
         messageUser: message.username ?? "???",
+        messageAttachmentPath: message.attachmentPath ?? "",
+        messageAttachmentName: message.attachmentName ?? "",
       },
+    });
+  };
+
+  const openAttachment = async (message: Message) => {
+    if (!message.attachmentPath) return;
+    try {
+      const url = await createAttachmentUrl(message.attachmentPath);
+      if (!url) {
+        console.warn("Attachment URL unavailable");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (err) {
+      console.error("Attachment open failed:", err);
+    }
+  };
+
+  const sortedMessages = React.useMemo(() => {
+    if (sortOrder === "newest") return messages;
+    const list = [...messages];
+
+    if (sortOrder === "oldest") return list.reverse();
+
+    const getTime = (value: any) => {
+      const dateValue = toDate(value);
+      return dateValue ? dateValue.getTime() : 0;
+    };
+
+    if (sortOrder === "popular") {
+      return list.sort((a, b) => {
+        const scoreA = voteStats[a.id]?.score ?? 0;
+        const scoreB = voteStats[b.id]?.score ?? 0;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        return getTime(b.timestamp) - getTime(a.timestamp);
+      });
+    }
+
+    return list.sort((a, b) => {
+      const scoreA = voteStats[a.id]?.score ?? 0;
+      const scoreB = voteStats[b.id]?.score ?? 0;
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return getTime(b.timestamp) - getTime(a.timestamp);
+    });
+  }, [messages, sortOrder, voteStats]);
+
+  const sortLabel =
+    sortOrder === "popular"
+      ? t("chat.sort.popular")
+      : sortOrder === "unpopular"
+      ? t("chat.sort.unpopular")
+      : sortOrder === "oldest"
+      ? t("chat.sort.oldest")
+      : t("chat.sort.newest");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const messageIds = messages.map((msg) => msg.id).filter(Boolean);
+
+    const loadVotes = async () => {
+      if (!userId || messageIds.length === 0) {
+        setVoteStats({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(TABLES.roomMessageVotes)
+        .select(
+          [
+            COLUMNS.roomMessageVotes.messageId,
+            COLUMNS.roomMessageVotes.userId,
+            COLUMNS.roomMessageVotes.value,
+          ].join(",")
+        )
+        .in(COLUMNS.roomMessageVotes.messageId, messageIds);
+
+      if (error) {
+        console.error("Room message votes load error:", error.message);
+        return;
+      }
+      if (cancelled) return;
+
+      const next: Record<string, { score: number; myVote: number }> = {};
+      messageIds.forEach((id) => {
+        next[id] = { score: 0, myVote: 0 };
+      });
+
+      (data || []).forEach((row: any) => {
+        const messageId = row?.[COLUMNS.roomMessageVotes.messageId];
+        if (!messageId) return;
+        const value = Number(row?.[COLUMNS.roomMessageVotes.value]) || 0;
+        if (!next[messageId]) next[messageId] = { score: 0, myVote: 0 };
+        next[messageId].score += value;
+        if (row?.[COLUMNS.roomMessageVotes.userId] === userId) {
+          next[messageId].myVote = value;
+        }
+      });
+
+      setVoteStats(next);
+    };
+
+    loadVotes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, userId]);
+
+  const handleVote = async (messageId: string, value: 1 | -1) => {
+    if (!userId) return;
+    const current = voteStats[messageId]?.myVote ?? 0;
+
+    if (current === value) {
+      const { error } = await supabase
+        .from(TABLES.roomMessageVotes)
+        .delete()
+        .eq(COLUMNS.roomMessageVotes.messageId, messageId)
+        .eq(COLUMNS.roomMessageVotes.userId, userId);
+
+      if (error) {
+        console.error("Room message vote remove failed:", error.message);
+        return;
+      }
+
+      setVoteStats((prev) => ({
+        ...prev,
+        [messageId]: {
+          score: (prev[messageId]?.score ?? 0) - value,
+          myVote: 0,
+        },
+      }));
+      return;
+    }
+
+    const { error } = await supabase
+      .from(TABLES.roomMessageVotes)
+      .upsert(
+        {
+          [COLUMNS.roomMessageVotes.messageId]: messageId,
+          [COLUMNS.roomMessageVotes.userId]: userId,
+          [COLUMNS.roomMessageVotes.value]: value,
+        },
+        {
+          onConflict: `${COLUMNS.roomMessageVotes.messageId},${COLUMNS.roomMessageVotes.userId}`,
+        }
+      );
+
+    if (error) {
+      console.error("Room message vote update failed:", error.message);
+      return;
+    }
+
+    setVoteStats((prev) => {
+      const prevScore = prev[messageId]?.score ?? 0;
+      const nextScore = prevScore - current + value;
+      return {
+        ...prev,
+        [messageId]: { score: nextScore, myVote: value },
+      };
     });
   };
 
@@ -116,13 +300,73 @@ export default function RoomMessages(props: Props) {
           { borderBottomColor: theme.colors.outlineVariant },
         ]}
       >
-        <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={24} color={accentColor} />
-        </TouchableOpacity>
-        <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
-          {roomTitle}
-        </Text>
+        <View style={styles.roomHeaderLeft}>
+          <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
+            <Ionicons name="arrow-back" size={24} color={accentColor} />
+          </TouchableOpacity>
+          <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
+            {roomTitle}
+          </Text>
+        </View>
       </View>
+
+      <View style={styles.sortRow}>
+        <Menu
+          visible={sortMenuVisible}
+          onDismiss={() => setSortMenuVisible(false)}
+          anchor={
+            <TouchableOpacity
+              onPress={() => setSortMenuVisible(true)}
+              style={[
+                styles.sortAnchor,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+            >
+              <Ionicons name="swap-vertical" size={16} color={accentColor} />
+              <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
+                {t("chat.sort.label")}: {sortLabel}
+              </Text>
+              <Ionicons
+                name="chevron-down"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+            </TouchableOpacity>
+          }
+        >
+        <Menu.Item
+          onPress={() => {
+            setSortOrder("newest");
+            setSortMenuVisible(false);
+          }}
+          title={t("chat.sort.newest")}
+        />
+        <Menu.Item
+          onPress={() => {
+            setSortOrder("oldest");
+            setSortMenuVisible(false);
+          }}
+          title={t("chat.sort.oldest")}
+        />
+        <Menu.Item
+          onPress={() => {
+            setSortOrder("popular");
+            setSortMenuVisible(false);
+          }}
+          title={t("chat.sort.popular")}
+        />
+        <Menu.Item
+          onPress={() => {
+            setSortOrder("unpopular");
+            setSortMenuVisible(false);
+          }}
+          title={t("chat.sort.unpopular")}
+        />
+      </Menu>
+    </View>
 
       {loading ? (
         <View style={styles.center}>
@@ -138,7 +382,7 @@ export default function RoomMessages(props: Props) {
         </View>
       ) : (
         <FlatList
-          data={messages}
+          data={sortedMessages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{
             paddingHorizontal: 12,
@@ -147,34 +391,111 @@ export default function RoomMessages(props: Props) {
           }}
           renderItem={({ item }) => {
             const timeLabel = formatTimestamp(item.timestamp);
-            const meta = `${item.username || "???"} - ${timeLabel}`;
+            const nameLabel = item.username || "???";
+            const hasText = !!item.text;
+            const hasAttachment = !!item.attachmentPath;
+            const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
+            const upActive = vote.myVote === 1;
+            const downActive = vote.myVote === -1;
 
             return (
-              <TouchableOpacity
-                onPress={() => openThread(item)}
-                activeOpacity={0.7}
-                style={styles.messageRow}
-              >
-                <View
-                  style={[
-                    styles.threadCard,
-                    {
-                      backgroundColor: theme.colors.surfaceVariant,
-                      borderColor: theme.colors.outlineVariant,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[styles.meta, { color: theme.colors.onSurfaceVariant }]}
-                    numberOfLines={1}
+              <View style={styles.messageRow}>
+                <View style={styles.voteColumn}>
+                  <TouchableOpacity
+                    onPress={() => handleVote(item.id, 1)}
+                    style={styles.voteButton}
                   >
-                    {meta}
+                    <Ionicons
+                      name="chevron-up"
+                      size={20}
+                      color={
+                        upActive ? theme.colors.primary : theme.colors.onSurfaceVariant
+                      }
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.voteScore,
+                      {
+                        color: upActive
+                          ? theme.colors.primary
+                          : downActive
+                          ? theme.colors.error
+                          : theme.colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    {vote.score}
                   </Text>
-                  <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
-                    {item.text}
-                  </Text>
+                  <TouchableOpacity
+                    onPress={() => handleVote(item.id, -1)}
+                    style={styles.voteButton}
+                  >
+                    <Ionicons
+                      name="chevron-down"
+                      size={20}
+                      color={
+                        downActive ? theme.colors.error : theme.colors.onSurfaceVariant
+                      }
+                    />
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => openThread(item)}
+                  activeOpacity={0.7}
+                  style={styles.messageTap}
+                >
+                  <Surface
+                    style={[
+                      styles.threadCard,
+                      {
+                        backgroundColor: theme.colors.surfaceVariant,
+                        borderColor: theme.colors.outlineVariant,
+                        borderLeftColor: accentColor,
+                      },
+                    ]}
+                    mode="elevated"
+                  >
+                    <View style={styles.metaRow}>
+                      <Text
+                        style={[styles.metaUser, { color: theme.colors.onSurfaceVariant }]}
+                        numberOfLines={1}
+                      >
+                        {nameLabel}
+                      </Text>
+                      <Text
+                        style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}
+                        numberOfLines={1}
+                      >
+                        {timeLabel}
+                      </Text>
+                    </View>
+                    {hasText && (
+                      <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
+                        {item.text}
+                      </Text>
+                    )}
+                    {hasAttachment && (
+                      <TouchableOpacity
+                        onPress={() => openAttachment(item)}
+                        activeOpacity={0.7}
+                        style={styles.attachmentRow}
+                      >
+                        <Ionicons name="attach" size={16} color={accentColor} />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.attachmentText,
+                            { color: theme.colors.onSurface },
+                          ]}
+                        >
+                          {item.attachmentName || "file"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </Surface>
+                </TouchableOpacity>
+              </View>
             );
           }}
         />
@@ -188,6 +509,9 @@ export default function RoomMessages(props: Props) {
         sendMessage={sendMessage}
         placeholder={t("chat.inputPlaceholder")}
         accentColor={accentColor}
+        uploadAttachment={uploadAttachment}
+        attachment={attachment}
+        clearAttachment={clearAttachment}
       />
     </KeyboardAvoidingView>
   );
@@ -202,6 +526,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  roomHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
   roomTitle: { fontSize: 18, fontWeight: "600", marginLeft: 6 },
   iconBtn: {
     padding: 6,
@@ -209,24 +538,84 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  sortRow: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  sortAnchor: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  sortText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
   messageRow: {
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 4,
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  messageTap: {
+    flex: 1,
+  },
+  voteColumn: {
+    width: 34,
+    alignItems: "center",
+    marginRight: 6,
+    paddingTop: 8,
+  },
+  voteButton: {
+    paddingVertical: 2,
+  },
+  voteScore: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginVertical: 2,
   },
   threadCard: {
-    width: "100%",
+    flex: 1,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 3,
   },
-  meta: {
-    fontSize: 12,
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 6,
+  },
+  metaUser: {
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+    marginRight: 8,
+  },
+  metaTime: {
+    fontSize: 12,
   },
   msgText: {
     fontSize: 16,
     lineHeight: 20,
+  },
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  attachmentText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13,
   },
   center: { alignItems: "center", justifyContent: "center", paddingTop: 24 },
 });

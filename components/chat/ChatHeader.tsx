@@ -32,7 +32,7 @@ type Props = {
   setTab: (t: TabKey) => void;
   search: string;
   setSearch: (v: string) => void;
-  pendingCount?: number;
+  unreadDirectCount?: number;
 };
 
 export default function ChatHeader({
@@ -40,14 +40,14 @@ export default function ChatHeader({
   setTab,
   search,
   setSearch,
-  pendingCount = 0,
+  unreadDirectCount = 0,
 }: Props) {
   const theme = useTheme();
   const { t } = useTranslation();
 
   const directLabel =
-    pendingCount > 0
-      ? `${t("chat.tabs.direct")} (${pendingCount})`
+    unreadDirectCount > 0
+      ? `${t("chat.tabs.direct")} (${unreadDirectCount})`
       : t("chat.tabs.direct");
 
   return (

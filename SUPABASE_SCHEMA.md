@@ -42,6 +42,16 @@ dm_messages
 - username (text)
 - text (text)
 - timestamp (timestamptz)
+- attachment_path (text)
+- attachment_name (text)
+- attachment_mime (text)
+- attachment_size (bigint)
+
+dm_reads
+- thread_id (uuid, FK -> dm_threads.id)
+- user_id (uuid, FK -> profiles.id)
+- last_read_at (timestamptz)
+- PK: (thread_id, user_id)
 
 room_messages
 - id (uuid, PK)
@@ -50,6 +60,10 @@ room_messages
 - username (text)
 - text (text)
 - timestamp (timestamptz)
+- attachment_path (text)
+- attachment_name (text)
+- attachment_mime (text)
+- attachment_size (bigint)
 
 room_replies
 - id (uuid, PK)
@@ -58,8 +72,29 @@ room_replies
 - username (text)
 - text (text)
 - timestamp (timestamptz)
+- attachment_path (text)
+- attachment_name (text)
+- attachment_mime (text)
+- attachment_size (bigint)
+
+room_reply_votes
+- reply_id (uuid, FK -> room_replies.id)
+- user_id (uuid, FK -> profiles.id)
+- value (smallint, +1/-1)
+- PK: (reply_id, user_id)
+
+room_message_votes
+- message_id (uuid, FK -> room_messages.id)
+- user_id (uuid, FK -> profiles.id)
+- value (smallint, +1/-1)
+- PK: (message_id, user_id)
 
 RLS
 - Allow authenticated users to read `profiles.username`.
 - Allow users to read/write their own friend requests, friendships, blocks,
   DM threads/messages, and room messages/replies as needed.
+- Allow users to read/write their own dm_reads rows (thread_id + user_id).
+- Allow authenticated users to read room_reply_votes; allow users to insert/update/delete their own vote.
+- Allow authenticated users to read room_message_votes; allow users to insert/update/delete their own vote.
+Storage
+- Bucket: chat_attachments (private; use signed URLs).

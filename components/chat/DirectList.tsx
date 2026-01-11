@@ -24,6 +24,7 @@ export type Direct = {
   last?: string;
   lastTimestamp?: string | null;
   hidden?: boolean;
+  unreadCount?: number;
 };
 
 type Props = {
@@ -31,9 +32,16 @@ type Props = {
   router: Router;
   onToggleHidden: (id: string, makeHidden: boolean) => void;
   accentColor: string;
+  pendingCount?: number;
 };
 
-export default function DirectList({ directs, router, onToggleHidden, accentColor }: Props) {
+export default function DirectList({
+  directs,
+  router,
+  onToggleHidden,
+  accentColor,
+  pendingCount = 0,
+}: Props) {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
@@ -58,7 +66,9 @@ export default function DirectList({ directs, router, onToggleHidden, accentColo
         style={{ alignSelf: "flex-start", marginHorizontal: 12, marginVertical: 10 }}
         onPress={() => router.push("/(app)/(stack)/friends")}
       >
-        {t("chat.direct.showRequests")}
+        {pendingCount > 0
+          ? `${t("chat.direct.showRequests")} (${pendingCount})`
+          : t("chat.direct.showRequests")}
       </Button>
 
       <FlatList
@@ -76,6 +86,7 @@ export default function DirectList({ directs, router, onToggleHidden, accentColo
           const previewText = preview || t("settings.friendsSection.hiddenNoMessage");
           const hideLabel = item.hidden ? t("chat.direct.unhide") : t("chat.direct.hide");
           const hideIcon = item.hidden ? "eye-outline" : "eye-off-outline";
+          const unreadCount = item.unreadCount ?? 0;
 
           return (
             <Surface
@@ -115,6 +126,13 @@ export default function DirectList({ directs, router, onToggleHidden, accentColo
                   </Text>
                 </View>
                 <View style={styles.meta}>
+                  {unreadCount > 0 && (
+                    <View style={[styles.badge, { backgroundColor: accentColor }]}>
+                      <Text style={[styles.badgeText, { color: theme.colors.onPrimary }]}>
+                        {unreadCount}
+                      </Text>
+                    </View>
+                  )}
                   {!!timeLabel && (
                     <Text style={[styles.time, { color: theme.colors.onSurfaceVariant }]}>
                       {timeLabel}
@@ -178,6 +196,19 @@ const styles = StyleSheet.create({
   meta: {
     alignItems: "flex-end",
     justifyContent: "center",
+  },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   time: {
     fontSize: 12,

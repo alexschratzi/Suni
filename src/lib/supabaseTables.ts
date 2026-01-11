@@ -6,8 +6,11 @@ export const TABLES = {
   blocks: "blocks",
   dmThreads: "dm_threads",
   dmMessages: "dm_messages",
+  dmReads: "dm_reads",
   roomMessages: "room_messages",
   roomReplies: "room_replies",
+  roomReplyVotes: "room_reply_votes",
+  roomMessageVotes: "room_message_votes",
 } as const;
 
 export const COLUMNS = {
@@ -50,6 +53,15 @@ export const COLUMNS = {
     username: "username",
     text: "text",
     createdAt: "timestamp",
+    attachmentPath: "attachment_path",
+    attachmentName: "attachment_name",
+    attachmentMime: "attachment_mime",
+    attachmentSize: "attachment_size",
+  },
+  dmReads: {
+    threadId: "thread_id",
+    userId: "user_id",
+    lastReadAt: "last_read_at",
   },
   roomMessages: {
     id: "id",
@@ -58,6 +70,10 @@ export const COLUMNS = {
     username: "username",
     text: "text",
     createdAt: "timestamp",
+    attachmentPath: "attachment_path",
+    attachmentName: "attachment_name",
+    attachmentMime: "attachment_mime",
+    attachmentSize: "attachment_size",
   },
   roomReplies: {
     id: "id",
@@ -66,5 +82,19 @@ export const COLUMNS = {
     username: "username",
     text: "text",
     createdAt: "timestamp",
+    attachmentPath: "attachment_path",
+    attachmentName: "attachment_name",
+    attachmentMime: "attachment_mime",
+    attachmentSize: "attachment_size",
+  },
+  roomReplyVotes: {
+    replyId: "reply_id",
+    userId: "user_id",
+    value: "value",
+  },
+  roomMessageVotes: {
+    messageId: "message_id",
+    userId: "user_id",
+    value: "value",
   },
 } as const;
