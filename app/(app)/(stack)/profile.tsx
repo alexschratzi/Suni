@@ -202,6 +202,8 @@ export default function ProfileScreen() {
       if (error) throw error;
 
       setProfile(mapProfileRow(data));
+      const nextUrl = await createAvatarUrl(uploaded.path);
+      if (nextUrl) setAvatarUrl(nextUrl);
 
       if (previousPath && previousPath !== uploaded.path) {
         const { error: removeErr } = await supabase.storage

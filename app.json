@@ -13,6 +13,8 @@
       "deploymentTarget": "15.1",
       "infoPlist": {
         "NSCalendarsUsageDescription": "This app shows your timetable using your calendars.",
+        "NSPhotoLibraryUsageDescription": "This app lets you choose a profile photo.",
+        "NSPhotoLibraryAddUsageDescription": "This app lets you save a profile photo.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.alexschratzi.suni",

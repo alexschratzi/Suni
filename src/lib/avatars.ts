@@ -1,4 +1,4 @@
-import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 
 import { supabase } from "@/src/lib/supabase";
 
@@ -7,6 +7,7 @@ export type AvatarDraft = {
   name: string;
   mimeType?: string | null;
   size?: number | null;
+  base64?: string | null;
 };
 
 export type AvatarMeta = {
@@ -23,12 +24,42 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24;
 const sanitizeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, "_");
 const normalizePrefix = (prefix: string) => prefix.replace(/\/+$/g, "");
 
+const guessFileName = (asset: ImagePicker.ImagePickerAsset) => {
+  if (asset.fileName) return asset.fileName;
+  const uri = asset.uri || "";
+  const last = uri.split("/").pop();
+  if (last) return last;
+  return `avatar-${Date.now()}.jpg`;
+};
+
+const base64ToUint8Array = (value: string) => {
+  const atobFn = (globalThis as any).atob;
+  if (typeof atobFn !== "function") {
+    throw new Error("Base64 decode not available on this platform.");
+  }
+  const binary = atobFn(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
 export async function pickAvatar(): Promise<AvatarDraft | null> {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: "image/*",
-    copyToCacheDirectory: true,
-    multiple: false,
-  });
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) return null;
+
+  const mediaTypes = (ImagePicker as any).MediaType?.Images;
+  const options: ImagePicker.ImagePickerOptions = {
+    allowsEditing: false,
+    base64: true,
+    quality: 0.85,
+  };
+  if (mediaTypes) {
+    options.mediaTypes = mediaTypes;
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync(options);
 
   if (result.canceled) return null;
   const asset = result.assets?.[0];
@@ -36,9 +67,10 @@ export async function pickAvatar(): Promise<AvatarDraft | null> {
 
   return {
     uri: asset.uri,
-    name: asset.name || "avatar",
-    mimeType: asset.mimeType || null,
-    size: typeof asset.size === "number" ? asset.size : null,
+    name: guessFileName(asset),
+    mimeType: asset.mimeType || "image/jpeg",
+    size: typeof asset.fileSize === "number" ? asset.fileSize : null,
+    base64: asset.base64 || null,
   };
 }
 
@@ -51,13 +83,18 @@ export async function uploadAvatar(
   const fileName = `${Date.now()}-${randomSuffix}-${safeName}`;
   const path = `${normalizePrefix(userId)}/${fileName}`;
 
-  const response = await fetch(avatar.uri);
-  if (!response.ok) {
-    throw new Error(`Avatar read failed (${response.status})`);
+  let body: Uint8Array | Blob;
+  if (avatar.base64) {
+    body = base64ToUint8Array(avatar.base64);
+  } else {
+    const response = await fetch(avatar.uri);
+    if (!response.ok) {
+      throw new Error(`Avatar read failed (${response.status})`);
+    }
+    body = await response.blob();
   }
-  const blob = await response.blob();
 
-  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, blob, {
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, body, {
     contentType: avatar.mimeType || "image/jpeg",
     upsert: true,
   });
@@ -80,6 +117,10 @@ export async function createAvatarUrl(
     .from(AVATAR_BUCKET)
     .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
-  if (error || !data?.signedUrl) return null;
+  if (error || !data?.signedUrl) {
+    console.warn("Avatar signed URL failed:", error?.message ?? error);
+    const fallback = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+    return fallback?.data?.publicUrl ?? null;
+  }
   return data.signedUrl;
 }
