@@ -19,6 +19,7 @@ export const COLUMNS = {
     username: "username",
     role: "role",
     settings: "settings",
+    avatarPath: "avatar_path",
   },
   usernames: {
     username: "username",

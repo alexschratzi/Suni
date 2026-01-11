@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Alert, StyleSheet } from "react-native";
+import { Alert, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
+  Avatar,
   Button,
   Card,
   Dialog,
@@ -15,11 +16,19 @@ import {
 } from "react-native-paper";
 
 import { supabase } from "../../../src/lib/supabase";
+import { initials } from "@/utils/utils";
+import {
+  AVATAR_BUCKET,
+  createAvatarUrl,
+  pickAvatar,
+  uploadAvatar,
+} from "@/src/lib/avatars";
 
 type ProfileRow = {
   id: string;
   username: string | null;
   role: string | null;
+  avatarPath: string | null;
 };
 
 export default function ProfileScreen() {
@@ -27,11 +36,20 @@ export default function ProfileScreen() {
 
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [editVisible, setEditVisible] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+
+  const mapProfileRow = (row: any): ProfileRow => ({
+    id: row?.id,
+    username: row?.username ?? null,
+    role: row?.role ?? null,
+    avatarPath: row?.avatar_path ?? null,
+  });
 
   const loadProfile = async () => {
     setLoading(true);
@@ -51,7 +69,7 @@ export default function ProfileScreen() {
       // Load profile from DB
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
-        .select("id, username, role")
+        .select("id, username, role, avatar_path")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -63,13 +81,14 @@ export default function ProfileScreen() {
           id: user.id,
           username: null,
           role: "student",
+          avatar_path: null,
         });
 
         if (insErr) throw insErr;
 
-        setProfile({ id: user.id, username: null, role: "student" });
+        setProfile({ id: user.id, username: null, role: "student", avatarPath: null });
       } else {
-        setProfile(prof as ProfileRow);
+        setProfile(mapProfileRow(prof));
       }
     } catch (err: any) {
       console.log("Profil laden fehlgeschlagen:", err);
@@ -95,6 +114,27 @@ export default function ProfileScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const path = profile?.avatarPath;
+    if (!path) {
+      setAvatarUrl(null);
+      return;
+    }
+
+    const run = async () => {
+      const url = await createAvatarUrl(path);
+      if (!active) return;
+      setAvatarUrl(url);
+    };
+
+    run();
+
+    return () => {
+      active = false;
+    };
+  }, [profile?.avatarPath]);
+
   const handleUpdateUsername = async () => {
     try {
       const clean = newUsername.trim();
@@ -115,7 +155,7 @@ export default function ProfileScreen() {
         .from("profiles")
         .update({ username: clean })
         .eq("id", profile.id)
-        .select("id, username, role")
+        .select("id, username, role, avatar_path")
         .single();
 
       if (error) {
@@ -129,12 +169,52 @@ export default function ProfileScreen() {
         throw error;
       }
 
-      setProfile(data as ProfileRow);
+      setProfile(mapProfileRow(data));
       setEditVisible(false);
       setNewUsername("");
       Alert.alert("✅ Erfolg", "Benutzername erfolgreich geändert!");
     } catch (err: any) {
       Alert.alert("Fehler", err?.message ?? String(err));
+    }
+  };
+
+  const handlePickAvatar = async () => {
+    if (!profile) {
+      Alert.alert("Fehler", "Nicht eingeloggt.");
+      return;
+    }
+
+    const picked = await pickAvatar();
+    if (!picked) return;
+
+    setAvatarBusy(true);
+    try {
+      const uploaded = await uploadAvatar(picked, profile.id);
+      const previousPath = profile.avatarPath;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ avatar_path: uploaded.path })
+        .eq("id", profile.id)
+        .select("id, username, role, avatar_path")
+        .single();
+
+      if (error) throw error;
+
+      setProfile(mapProfileRow(data));
+
+      if (previousPath && previousPath !== uploaded.path) {
+        const { error: removeErr } = await supabase.storage
+          .from(AVATAR_BUCKET)
+          .remove([previousPath]);
+        if (removeErr) {
+          console.warn("Avatar cleanup failed:", removeErr.message);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Fehler", err?.message ?? String(err));
+    } finally {
+      setAvatarBusy(false);
     }
   };
 
@@ -162,10 +242,47 @@ export default function ProfileScreen() {
     <Surface style={styles.container}>
       {/* Profilkopf */}
       <Surface style={styles.header}>
-        <Ionicons name="person-circle-outline" size={120} color={theme.colors.primary} />
+        <TouchableOpacity
+          onPress={handlePickAvatar}
+          disabled={avatarBusy}
+          activeOpacity={0.8}
+          style={styles.avatarButton}
+        >
+          {avatarUrl ? (
+            <Avatar.Image size={120} source={{ uri: avatarUrl }} />
+          ) : (
+            <Avatar.Text
+              size={120}
+              label={initials(profile.username ?? "") || "?"}
+              color={theme.colors.onPrimary}
+              style={{ backgroundColor: theme.colors.primary }}
+            />
+          )}
+          <View
+            style={[
+              styles.avatarBadge,
+              {
+                backgroundColor: theme.colors.primary,
+                borderColor: theme.colors.background,
+              },
+            ]}
+          >
+            <Ionicons name="camera" size={16} color={theme.colors.onPrimary} />
+          </View>
+        </TouchableOpacity>
         <Text variant="headlineSmall" style={{ marginTop: 12 }}>
           Mein Profil
         </Text>
+        {avatarBusy && <ActivityIndicator style={{ marginTop: 8 }} />}
+        <Button
+          mode="outlined"
+          compact
+          style={{ marginTop: 8 }}
+          onPress={handlePickAvatar}
+          disabled={avatarBusy}
+        >
+          Profilbild andern
+        </Button>
       </Surface>
 
       {/* E-Mail (replaces phone) */}
@@ -262,5 +379,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: { alignItems: "center", marginBottom: 8 },
+  avatarButton: { alignItems: "center", justifyContent: "center" },
+  avatarBadge: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+  },
   card: { width: "100%" },
 });

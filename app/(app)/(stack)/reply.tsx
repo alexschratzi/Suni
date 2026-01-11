@@ -11,7 +11,7 @@ import {
   Linking,
   TouchableOpacity,
 } from "react-native";
-import { Text, Surface, useTheme, IconButton, Menu } from "react-native-paper";
+import { Text, Surface, useTheme, IconButton, Menu, Avatar } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,12 +19,14 @@ import InputBar from "@/components/chat/InputBar";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { createAvatarUrl } from "@/src/lib/avatars";
 import {
   createAttachmentUrl,
   pickAttachment,
   uploadAttachment,
 } from "@/src/lib/chatAttachments";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
+import { initials } from "@/utils/utils";
 
 type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
 
@@ -67,6 +69,9 @@ export default function ReplyScreen() {
   const [voteStats, setVoteStats] = useState<
     Record<string, { score: number; myVote: number }>
   >({});
+  const [avatarUrls, setAvatarUrls] = useState<Record<string, string | null>>(
+    {}
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -318,6 +323,53 @@ export default function ReplyScreen() {
         }
       });
   }, [dmIdValue, replies.length, userId]);
+
+  useEffect(() => {
+    const senderIds = Array.from(
+      new Set(replies.map((reply) => reply.sender).filter(Boolean))
+    ) as string[];
+    const missing = senderIds.filter((id) => !(id in avatarUrls));
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+
+    const loadAvatars = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.avatarPath}`)
+        .in(COLUMNS.profiles.id, missing);
+
+      if (error) {
+        console.error("Reply avatar load error:", error.message);
+        return;
+      }
+
+      const base = Object.fromEntries(missing.map((id) => [id, null]));
+      const entries = await Promise.all(
+        (data || []).map(async (row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          if (!id) return null;
+          const path = row?.[COLUMNS.profiles.avatarPath] ?? null;
+          const url = await createAvatarUrl(path);
+          return [id, url] as const;
+        })
+      );
+      const resolved = entries.filter(Boolean) as Array<readonly [string, string | null]>;
+
+      if (cancelled) return;
+      setAvatarUrls((prev) => ({
+        ...prev,
+        ...base,
+        ...Object.fromEntries(resolved),
+      }));
+    };
+
+    loadAvatars();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [replies, avatarUrls]);
 
   const loadReplyVotes = async (replyIds: string[]) => {
     if (!userId || replyIds.length === 0) {
@@ -797,10 +849,10 @@ export default function ReplyScreen() {
           }}
           renderItem={({ item }) => {
             const isDirect = !!dmIdValue;
+            const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
 
             if (!isDirect) {
               const timeLabel = formatTimestamp(item.timestamp);
-              const meta = `${item.username || "???"} - ${timeLabel}`;
               const hasText = !!item.text;
               const hasAttachment = !!item.attachmentPath;
               const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
@@ -861,12 +913,39 @@ export default function ReplyScreen() {
                       },
                     ]}
                   >
-                    <Text
-                      style={[styles.meta, { color: theme.colors.onSurfaceVariant }]}
-                      numberOfLines={1}
-                    >
-                      {meta}
-                    </Text>
+                    <View style={styles.metaRow}>
+                      <View style={styles.metaLeft}>
+                        {avatarUrl ? (
+                          <Avatar.Image
+                            size={22}
+                            source={{ uri: avatarUrl }}
+                            style={{ backgroundColor: theme.colors.surfaceVariant }}
+                          />
+                        ) : (
+                          <Avatar.Text
+                            size={22}
+                            label={initials(item.username || "??")}
+                            color={theme.colors.onPrimary}
+                            style={{ backgroundColor: theme.colors.primary }}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.metaUser,
+                            { color: theme.colors.onSurfaceVariant },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.username || "???"}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}
+                        numberOfLines={1}
+                      >
+                        {timeLabel}
+                      </Text>
+                    </View>
                     {hasText && (
                       <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
                         {item.text}
@@ -907,6 +986,21 @@ export default function ReplyScreen() {
                   isMine ? styles.rowMine : styles.rowOther,
                 ]}
               >
+                {!isMine &&
+                  (avatarUrl ? (
+                    <Avatar.Image
+                      size={28}
+                      source={{ uri: avatarUrl }}
+                      style={[styles.dmAvatar, { backgroundColor: theme.colors.surface }]}
+                    />
+                  ) : (
+                    <Avatar.Text
+                      size={28}
+                      label={initials(item.username || "??")}
+                      color={theme.colors.onPrimary}
+                      style={[styles.dmAvatar, { backgroundColor: theme.colors.primary }]}
+                    />
+                  ))}
                 <Surface
                   style={[
                     styles.bubble,
@@ -1043,6 +1137,8 @@ const styles = StyleSheet.create({
   messageRow: {
     marginBottom: 10,
     paddingHorizontal: 4,
+    flexDirection: "row",
+    alignItems: "flex-end",
   },
   threadRow: {
     marginBottom: 10,
@@ -1065,10 +1161,10 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   rowMine: {
-    alignItems: "flex-end",
+    justifyContent: "flex-end",
   },
   rowOther: {
-    alignItems: "flex-start",
+    justifyContent: "flex-start",
   },
   threadCard: {
     flex: 1,
@@ -1077,9 +1173,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  meta: {
-    fontSize: 12,
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 6,
+  },
+  metaLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 8,
+  },
+  metaUser: {
+    fontSize: 12,
+    marginLeft: 6,
+    flexShrink: 1,
+  },
+  metaTime: {
+    fontSize: 12,
+  },
+  dmAvatar: {
+    marginRight: 8,
   },
   bubble: {
     maxWidth: "82%",

@@ -13,15 +13,17 @@ import {
   TouchableOpacity,
   Linking,
 } from "react-native";
-import { ActivityIndicator, Text, Menu, Surface } from "react-native-paper";
+import { ActivityIndicator, Text, Menu, Surface, Avatar } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import InputBar from "./InputBar";
 import { createAttachmentUrl } from "@/src/lib/chatAttachments";
+import { createAvatarUrl } from "@/src/lib/avatars";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
+import { initials } from "@/utils/utils";
 
 type RoomKey = "salzburg" | "oesterreich" | "wirtschaft";
 
@@ -85,6 +87,9 @@ export default function RoomMessages(props: Props) {
   const [voteStats, setVoteStats] = React.useState<
     Record<string, { score: number; myVote: number }>
   >({});
+  const [avatarUrls, setAvatarUrls] = React.useState<Record<string, string | null>>(
+    {}
+  );
 
   const roomTitle =
     room === "salzburg"
@@ -233,6 +238,53 @@ export default function RoomMessages(props: Props) {
       cancelled = true;
     };
   }, [messages, userId]);
+
+  React.useEffect(() => {
+    const senderIds = Array.from(
+      new Set(messages.map((msg) => msg.sender).filter(Boolean))
+    ) as string[];
+    const missing = senderIds.filter((id) => !(id in avatarUrls));
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+
+    const loadAvatars = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.profiles)
+        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.avatarPath}`)
+        .in(COLUMNS.profiles.id, missing);
+
+      if (error) {
+        console.error("Room avatar load error:", error.message);
+        return;
+      }
+
+      const base = Object.fromEntries(missing.map((id) => [id, null]));
+      const entries = await Promise.all(
+        (data || []).map(async (row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          if (!id) return null;
+          const path = row?.[COLUMNS.profiles.avatarPath] ?? null;
+          const url = await createAvatarUrl(path);
+          return [id, url] as const;
+        })
+      );
+      const resolved = entries.filter(Boolean) as Array<readonly [string, string | null]>;
+
+      if (cancelled) return;
+      setAvatarUrls((prev) => ({
+        ...prev,
+        ...base,
+        ...Object.fromEntries(resolved),
+      }));
+    };
+
+    loadAvatars();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, avatarUrls]);
 
   const handleVote = async (messageId: string, value: 1 | -1) => {
     if (!userId) return;
@@ -397,6 +449,7 @@ export default function RoomMessages(props: Props) {
             const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
             const upActive = vote.myVote === 1;
             const downActive = vote.myVote === -1;
+            const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
 
             return (
               <View style={styles.messageRow}>
@@ -457,12 +510,31 @@ export default function RoomMessages(props: Props) {
                     mode="elevated"
                   >
                     <View style={styles.metaRow}>
-                      <Text
-                        style={[styles.metaUser, { color: theme.colors.onSurfaceVariant }]}
-                        numberOfLines={1}
-                      >
-                        {nameLabel}
-                      </Text>
+                      <View style={styles.metaLeft}>
+                        {avatarUrl ? (
+                          <Avatar.Image
+                            size={22}
+                            source={{ uri: avatarUrl }}
+                            style={{ backgroundColor: theme.colors.surfaceVariant }}
+                          />
+                        ) : (
+                          <Avatar.Text
+                            size={22}
+                            label={initials(nameLabel)}
+                            color={theme.colors.onPrimary}
+                            style={{ backgroundColor: accentColor }}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.metaUser,
+                            { color: theme.colors.onSurfaceVariant },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {nameLabel}
+                        </Text>
+                      </View>
                       <Text
                         style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}
                         numberOfLines={1}
@@ -597,11 +669,17 @@ const styles = StyleSheet.create({
   metaUser: {
     fontSize: 12,
     fontWeight: "600",
-    flex: 1,
-    marginRight: 8,
+    marginLeft: 6,
+    flexShrink: 1,
   },
   metaTime: {
     fontSize: 12,
+  },
+  metaLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 8,
   },
   msgText: {
     fontSize: 16,

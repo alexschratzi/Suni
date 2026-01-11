@@ -25,6 +25,7 @@ export type Direct = {
   lastTimestamp?: string | null;
   hidden?: boolean;
   unreadCount?: number;
+  avatarUrl?: string | null;
 };
 
 type Props = {
@@ -108,12 +109,20 @@ export default function DirectList({
                 activeOpacity={0.8}
                 style={styles.row}
               >
-                <Avatar.Text
-                  size={44}
-                  label={initials(item.displayName)}
-                  color={theme.colors.onPrimary}
-                  style={{ backgroundColor: accentColor }}
-                />
+                {item.avatarUrl ? (
+                  <Avatar.Image
+                    size={44}
+                    source={{ uri: item.avatarUrl }}
+                    style={{ backgroundColor: theme.colors.surfaceVariant }}
+                  />
+                ) : (
+                  <Avatar.Text
+                    size={44}
+                    label={initials(item.displayName)}
+                    color={theme.colors.onPrimary}
+                    style={{ backgroundColor: accentColor }}
+                  />
+                )}
                 <View style={styles.main}>
                   <Text style={[styles.name, { color: theme.colors.onSurface }]}>
                     {item.displayName}

@@ -8,6 +8,13 @@ profiles
 - username (text)
 - role (text)
 - settings (jsonb)
+- avatar_path (text, storage path)
+
+SQL helpers
+```
+alter table profiles
+  add column if not exists avatar_path text;
+```
 
 usernames
 - username (text)
@@ -90,7 +97,8 @@ room_message_votes
 - PK: (message_id, user_id)
 
 RLS
-- Allow authenticated users to read `profiles.username`.
+- Allow authenticated users to read `profiles.username` and `profiles.avatar_path`.
+- Allow users to update their own `profiles` row (username/avatar_path).
 - Allow users to read/write their own friend requests, friendships, blocks,
   DM threads/messages, and room messages/replies as needed.
 - Allow users to read/write their own dm_reads rows (thread_id + user_id).
@@ -98,3 +106,42 @@ RLS
 - Allow authenticated users to read room_message_votes; allow users to insert/update/delete their own vote.
 Storage
 - Bucket: chat_attachments (private; use signed URLs).
+- Bucket: avatars (private; use signed URLs; store as `${auth.uid()}/filename`).
+
+Avatars storage policy (example)
+```
+-- Allow authenticated users to read all avatars
+create policy "avatars read"
+on storage.objects for select
+to authenticated
+using (bucket_id = 'avatars');
+
+-- Allow users to manage files only in their own folder
+create policy "avatars insert"
+on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "avatars update"
+on storage.objects for update
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "avatars delete"
+on storage.objects for delete
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+```

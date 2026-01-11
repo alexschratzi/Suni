@@ -14,6 +14,7 @@ import {
   uploadAttachment,
 } from "@/src/lib/chatAttachments";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
+import { createAvatarUrl } from "@/src/lib/avatars";
 
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
@@ -24,6 +25,8 @@ type TabKey = "rooms" | "direct";
 
 type UserProfile = {
   username?: string;
+  avatarPath?: string | null;
+  avatarUrl?: string | null;
 };
 
 type RawDirect = {
@@ -409,7 +412,9 @@ export default function ChatScreen() {
     (async () => {
       const { data, error } = await supabase
         .from(TABLES.profiles)
-        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
+        .select(
+          `${COLUMNS.profiles.id},${COLUMNS.profiles.username},${COLUMNS.profiles.avatarPath}`
+        )
         .in(COLUMNS.profiles.id, missing);
 
       if (error) {
@@ -417,14 +422,32 @@ export default function ChatScreen() {
         return;
       }
 
-      const entries =
-        (data || []).map((row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          const profile: UserProfile = { username: row?.[COLUMNS.profiles.username] };
-          return [id, profile] as const;
-        }) || [];
+      const baseEntries = missing.map((id) => [
+        id,
+        { username: undefined, avatarPath: null, avatarUrl: null } as UserProfile,
+      ]);
 
-      setUserProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      const entries = await Promise.all(
+        (data || []).map(async (row: any) => {
+          const id = row?.[COLUMNS.profiles.id];
+          if (!id) return null;
+          const avatarPath = row?.[COLUMNS.profiles.avatarPath] ?? null;
+          const avatarUrl = await createAvatarUrl(avatarPath);
+          const profile: UserProfile = {
+            username: row?.[COLUMNS.profiles.username] ?? undefined,
+            avatarPath,
+            avatarUrl,
+          };
+          return [id, profile] as const;
+        })
+      );
+      const resolved = entries.filter(Boolean) as Array<readonly [string, UserProfile]>;
+
+      setUserProfiles((prev) => ({
+        ...prev,
+        ...Object.fromEntries(baseEntries),
+        ...Object.fromEntries(resolved),
+      }));
     })();
   }, [rawDirects, userProfiles]);
 
@@ -515,6 +538,7 @@ export default function ChatScreen() {
       rawDirects.map((d) => ({
         id: d.id,
         displayName: userProfiles[d.otherUid]?.username || d.otherUid,
+        avatarUrl: userProfiles[d.otherUid]?.avatarUrl ?? null,
         last: d.last ?? "",
         lastTimestamp: d.lastTimestamp ?? null,
         hidden: d.hidden ?? false,
