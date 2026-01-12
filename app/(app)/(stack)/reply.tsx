@@ -57,6 +57,7 @@ export default function ReplyScreen() {
   const messageAttachmentPathValue = toSingle(messageAttachmentPath);
   const messageAttachmentNameValue = toSingle(messageAttachmentName);
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
+  const headerTitle = dmIdValue ? "Chat" : "Antworten";
 
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
@@ -475,6 +476,27 @@ export default function ReplyScreen() {
       ? t("chat.sort.oldest")
       : t("chat.sort.newest");
 
+  const openSortMenu = React.useCallback(() => {
+    if (sortMenuVisible) {
+      setSortMenuVisible(false);
+      setTimeout(() => setSortMenuVisible(true), 0);
+      return;
+    }
+    setSortMenuVisible(true);
+  }, [sortMenuVisible]);
+
+  const closeSortMenu = React.useCallback(() => {
+    setSortMenuVisible(false);
+  }, []);
+
+  const handleSortSelect = React.useCallback(
+    (next: SortOrder) => {
+      setSortOrder(next);
+      closeSortMenu();
+    },
+    [closeSortMenu]
+  );
+
   const handlePickAttachment = async () => {
     const next = await pickAttachment();
     if (next) setAttachment(next);
@@ -744,7 +766,7 @@ export default function ReplyScreen() {
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.header}>
           <IconButton icon="arrow-left" onPress={() => router.back()} />
-          <Text variant="titleMedium">Antworten</Text>
+          <Text variant="titleMedium">{headerTitle}</Text>
         </View>
 
         {!dmIdValue && (
@@ -784,10 +806,10 @@ export default function ReplyScreen() {
           <View style={styles.sortRow}>
             <Menu
               visible={sortMenuVisible}
-              onDismiss={() => setSortMenuVisible(false)}
+              onDismiss={closeSortMenu}
               anchor={
                 <TouchableOpacity
-                  onPress={() => setSortMenuVisible(true)}
+                  onPress={openSortMenu}
                   style={[
                     styles.sortAnchor,
                     {
@@ -795,6 +817,7 @@ export default function ReplyScreen() {
                       borderColor: theme.colors.outlineVariant,
                     },
                   ]}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
                   <Ionicons name="swap-vertical" size={16} color={theme.colors.primary} />
                   <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
@@ -809,31 +832,19 @@ export default function ReplyScreen() {
               }
             >
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("newest");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("newest")}
                 title={t("chat.sort.newest")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("oldest");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("oldest")}
                 title={t("chat.sort.oldest")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("popular");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("popular")}
                 title={t("chat.sort.popular")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("unpopular");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("unpopular")}
                 title={t("chat.sort.unpopular")}
               />
             </Menu>
@@ -1198,10 +1209,12 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: "82%",
+    minWidth: 72,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
+    flexShrink: 1,
   },
   bubbleMine: {
     borderTopRightRadius: 6,
@@ -1231,5 +1244,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
     alignSelf: "flex-end",
+    textAlign: "right",
+    minWidth: 44,
   },
 });

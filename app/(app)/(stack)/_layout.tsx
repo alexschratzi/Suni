@@ -98,7 +98,7 @@ export default function AppStackLayout() {
         <Stack.Screen name="todos" options={{ title: "To-Dos" }} />
         <Stack.Screen name="global_settings" options={{ title: "Einstellungen" }} />
         <Stack.Screen name="settings/timetable" options={{ title: "Kalender verwalten" }} />
-        <Stack.Screen name="reply" options={{ title: "Antwort" }} />
+        <Stack.Screen name="reply" options={{ title: "Antwort", headerShown: false }} />
         <Stack.Screen name="friends" options={{ title: "Freunde" }} />
         <Stack.Screen name="embedded-browser" options={{ headerShown: false }} />
         <Stack.Screen name="logout" options={{ headerShown: false }} />

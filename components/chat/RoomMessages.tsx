@@ -186,6 +186,27 @@ export default function RoomMessages(props: Props) {
       ? t("chat.sort.oldest")
       : t("chat.sort.newest");
 
+  const openSortMenu = React.useCallback(() => {
+    if (sortMenuVisible) {
+      setSortMenuVisible(false);
+      setTimeout(() => setSortMenuVisible(true), 0);
+      return;
+    }
+    setSortMenuVisible(true);
+  }, [sortMenuVisible]);
+
+  const closeSortMenu = React.useCallback(() => {
+    setSortMenuVisible(false);
+  }, []);
+
+  const handleSortSelect = React.useCallback(
+    (next: SortOrder) => {
+      setSortOrder(next);
+      closeSortMenu();
+    },
+    [closeSortMenu]
+  );
+
   React.useEffect(() => {
     let cancelled = false;
     const messageIds = messages.map((msg) => msg.id).filter(Boolean);
@@ -365,10 +386,10 @@ export default function RoomMessages(props: Props) {
       <View style={styles.sortRow}>
         <Menu
           visible={sortMenuVisible}
-          onDismiss={() => setSortMenuVisible(false)}
+          onDismiss={closeSortMenu}
           anchor={
             <TouchableOpacity
-              onPress={() => setSortMenuVisible(true)}
+              onPress={openSortMenu}
               style={[
                 styles.sortAnchor,
                 {
@@ -376,6 +397,7 @@ export default function RoomMessages(props: Props) {
                   borderColor: theme.colors.outlineVariant,
                 },
               ]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <Ionicons name="swap-vertical" size={16} color={accentColor} />
               <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
@@ -390,31 +412,19 @@ export default function RoomMessages(props: Props) {
           }
         >
         <Menu.Item
-          onPress={() => {
-            setSortOrder("newest");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("newest")}
           title={t("chat.sort.newest")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("oldest");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("oldest")}
           title={t("chat.sort.oldest")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("popular");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("popular")}
           title={t("chat.sort.popular")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("unpopular");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("unpopular")}
           title={t("chat.sort.unpopular")}
         />
       </Menu>
