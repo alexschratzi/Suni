@@ -1,5 +1,5 @@
 // app/(app)/(stack)/settings/timetable.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import {
   ActivityIndicator,
@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { getICalSubscriptions, deleteICalSubscription } from "@/src/server/calendar";
 import { notifyICalChanged } from "@/src/utils/calendarSyncEvents";
+import { loadLockedCourseIcalSubscriptionIds } from "@/src/timetable/utils/storage";
 
 import type { EntryDisplayType } from "@/types/timetable";
 import { ICalSubscriptionEditorDialog } from "@/components/timetable/ICalSubscriptionEditorDialog";
@@ -40,6 +41,9 @@ export default function TimetableSettingsScreen() {
 
   const [subscriptions, setSubscriptions] = useState<ICalSubscriptionRow[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(true);
+
+  // ✅ NEW: locked course subscriptions
+  const [lockedIds, setLockedIds] = useState<Set<string>>(new Set());
 
   // Dialog state
   const [editorVisible, setEditorVisible] = useState(false);
@@ -76,12 +80,23 @@ export default function TimetableSettingsScreen() {
   };
 
   /* ------------------------------------------------------------------------ */
+  /* Locked course calendars                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  const refreshLocked = async () => {
+    const ids = await loadLockedCourseIcalSubscriptionIds();
+    setLockedIds(ids);
+  };
+
+  /* ------------------------------------------------------------------------ */
   /* Fetch subs (server first, fallback local)                                 */
   /* ------------------------------------------------------------------------ */
 
   const refreshSubs = async () => {
     try {
       setLoadingSubs(true);
+      await refreshLocked();
+
       try {
         const serverSubs = await getICalSubscriptions(userId);
         const mapped: ICalSubscriptionRow[] = (serverSubs as any[]).map((s) => ({
@@ -119,6 +134,9 @@ export default function TimetableSettingsScreen() {
   };
 
   const openEditDialog = (sub: ICalSubscriptionRow) => {
+    // ✅ NEW: locked subs can't be edited
+    if (lockedIds.has(sub.id)) return;
+
     setEditingSub(sub);
     setEditorVisible(true);
   };
@@ -129,6 +147,9 @@ export default function TimetableSettingsScreen() {
   };
 
   const handleRemoveSubscription = async (id: string) => {
+    // ✅ NEW: locked subs can't be deleted via UI
+    if (lockedIds.has(id)) return;
+
     try {
       await deleteICalSubscription(userId, id);
       await refreshSubs();
@@ -137,6 +158,11 @@ export default function TimetableSettingsScreen() {
       console.error("Failed to delete iCal subscription:", e);
     }
   };
+
+  const rows = useMemo(
+    () => subscriptions.map((sub) => ({ sub, isLocked: lockedIds.has(sub.id) })),
+    [subscriptions, lockedIds],
+  );
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                     */
@@ -198,30 +224,44 @@ export default function TimetableSettingsScreen() {
                 </View>
               )}
 
-              {subscriptions.map((sub) => (
-                <List.Item
-                  key={sub.id}
-                  title={sub.name}
-                  description={sub.url}
-                  onPress={() => openEditDialog(sub)}
-                  left={() => (
-                    <View style={styles.colorDotContainer}>
-                      <View
-                        style={[
-                          styles.colorDot,
-                          { backgroundColor: sub.color || theme.colors.primary },
-                        ]}
-                      />
-                    </View>
-                  )}
-                  right={() => (
-                    <IconButton
-                      icon="delete"
-                      onPress={() => handleRemoveSubscription(sub.id)}
-                    />
-                  )}
-                />
-              ))}
+              {rows.map(({ sub, isLocked }) => {
+                const muted = theme.colors.onSurfaceVariant;
+
+                return (
+                  <List.Item
+                    key={sub.id}
+                    title={sub.name}
+                    description={sub.url}
+                    onPress={() => openEditDialog(sub)}
+                    disabled={isLocked}
+                    titleStyle={isLocked ? { color: muted } : undefined}
+                    descriptionStyle={isLocked ? { color: muted } : undefined}
+                    left={() => (
+                      <View style={styles.colorDotContainer}>
+                        <View
+                          style={[
+                            styles.colorDot,
+                            {
+                              backgroundColor: sub.color || theme.colors.primary,
+                              opacity: isLocked ? 0.35 : 1,
+                            },
+                          ]}
+                        />
+                      </View>
+                    )}
+                    right={() =>
+                      isLocked ? (
+                        <IconButton icon="lock" disabled />
+                      ) : (
+                        <IconButton
+                          icon="delete"
+                          onPress={() => handleRemoveSubscription(sub.id)}
+                        />
+                      )
+                    }
+                  />
+                );
+              })}
 
               <List.Item
                 title="Neue iCal-Verknüpfung"
@@ -244,6 +284,7 @@ export default function TimetableSettingsScreen() {
           setSubscriptions(nextSubs);
           void saveLocalSubscriptions(nextSubs);
           notifyICalChanged();
+          void refreshLocked(); // keep lock state synced
         }}
       />
     </>

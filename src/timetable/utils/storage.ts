@@ -6,6 +6,9 @@ const ICAL_ASYNC_KEY = "ical_subscriptions_v1";
 const LOCAL_EVENTS_KEY = "timetable_local_events_v1";
 const ICAL_EVENT_META_KEY = "ical_event_meta_v1";
 
+// ✅ NEW: lock list for course-managed iCal subscriptions
+const COURSE_ICAL_LOCKED_KEY = "course_ical_locked_ids_v1";
+
 function normalizeDisplayType(v: any): "none" | "course" | "event" {
   return v === "course" || v === "event" || v === "none" ? v : "none";
 }
@@ -98,4 +101,42 @@ export async function saveIcalMeta(meta: Record<string, ICalEventMeta>) {
   } catch (e) {
     console.warn("Failed to save iCal event meta:", e);
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* ✅ NEW: Locked “course calendar” subscription IDs                           */
+/* -------------------------------------------------------------------------- */
+
+/** IDs of iCal subscriptions that were added via addCourseCalender() */
+export async function loadLockedCourseIcalSubscriptionIds(): Promise<Set<string>> {
+  try {
+    const raw = await AsyncStorage.getItem(COURSE_ICAL_LOCKED_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.map((x) => String(x)));
+  } catch (e) {
+    console.warn("Failed to load locked course iCal IDs:", e);
+    return new Set();
+  }
+}
+
+export async function saveLockedCourseIcalSubscriptionIds(ids: Set<string>) {
+  try {
+    await AsyncStorage.setItem(COURSE_ICAL_LOCKED_KEY, JSON.stringify([...ids]));
+  } catch (e) {
+    console.warn("Failed to save locked course iCal IDs:", e);
+  }
+}
+
+export async function lockCourseIcalSubscriptionId(id: string) {
+  const ids = await loadLockedCourseIcalSubscriptionIds();
+  ids.add(String(id));
+  await saveLockedCourseIcalSubscriptionIds(ids);
+}
+
+export async function unlockCourseIcalSubscriptionId(id: string) {
+  const ids = await loadLockedCourseIcalSubscriptionIds();
+  ids.delete(String(id));
+  await saveLockedCourseIcalSubscriptionIds(ids);
 }
