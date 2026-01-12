@@ -10,6 +10,7 @@ import type {
   EntryDisplayType,
   EvWithMeta,
   EventEditorForm,
+  EventEditorFormBase,
   ICalEventMeta,
   PartyEditorForm,
 } from "@/types/timetable";
@@ -37,32 +38,48 @@ function normalizeDisplayType(v: any): EntryDisplayType {
 
 function clampAbbr(raw: string): string {
   const s = String(raw ?? "").trim();
-  // Keep it simple & predictable: remove spaces, cap at 4
   return s.replace(/\s+/g, "").slice(0, 4);
 }
 
-function toCourseForm(base: EventEditorForm): CourseEditorForm {
-  const b = base as any;
+function toBaseForm(form: EventEditorForm): EventEditorFormBase {
   return {
-    ...base,
-    displayType: "course",
-    courseName: b.courseName ?? base.fullTitle ?? "",
-    courseType: b.courseType ?? base.fullTitle ?? "",
-    lecturer: b.lecturer ?? base.fullTitle ?? "",
-    room: b.room ?? base.fullTitle ?? "",
+    fullTitle: form.fullTitle ?? "",
+    titleAbbr: form.titleAbbr ?? "",
+    from: form.from ?? "",
+    until: form.until ?? "",
+    note: form.note ?? "",
+    color: form.color ?? "#4dabf7",
+    displayType: normalizeDisplayType(form.displayType),
   };
 }
 
-function toPartyForm(base: EventEditorForm): PartyEditorForm {
-  const b = base as any;
+function toCourseForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): CourseEditorForm {
+  const p: any = prev ?? {};
+  return {
+    ...base,
+    displayType: "course",
+    courseName: p.courseName ?? ev?.course?.courseName ?? base.fullTitle ?? "",
+    courseType: p.courseType ?? ev?.course?.courseType ?? "",
+    lecturer: p.lecturer ?? ev?.course?.lecturer ?? "",
+    room: p.room ?? ev?.course?.room ?? "",
+  };
+}
+
+function toPartyForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): PartyEditorForm {
+  const p: any = prev ?? {};
+  const invitedGroupsStr =
+    p.invitedGroups ??
+    (Array.isArray(ev?.party?.invitedGroups) ? ev!.party!.invitedGroups!.join(", ") : "") ??
+    "";
+
   return {
     ...base,
     displayType: "event",
-    eventName: b.eventName ?? base.fullTitle ?? "",
-    location: b.location ?? "",
-    createdBy: b.createdBy ?? "",
-    entryFee: b.entryFee ?? "",
-    invitedGroups: b.invitedGroups ?? "",
+    eventName: p.eventName ?? ev?.party?.eventName ?? base.fullTitle ?? "",
+    location: p.location ?? ev?.party?.location ?? "",
+    createdBy: p.createdBy ?? ev?.party?.createdBy ?? "",
+    entryFee: p.entryFee ?? ev?.party?.entryFee ?? "",
+    invitedGroups: invitedGroupsStr,
   };
 }
 
@@ -132,7 +149,7 @@ export function useTimetableEditor({
       const autoAbbr = clampAbbr(makeTitleAbbr(fullTitle));
       const titleAbbr = clampAbbr(ev.titleAbbr ?? autoAbbr);
 
-      const base: EventEditorForm = {
+      const base: EventEditorFormBase = {
         fullTitle,
         titleAbbr,
         from: toISO(ev.start),
@@ -143,8 +160,8 @@ export function useTimetableEditor({
       };
 
       let finalForm: EventEditorForm = base;
-      if (base.displayType === "course") finalForm = toCourseForm(base);
-      if (base.displayType === "event") finalForm = toPartyForm(base);
+      if (base.displayType === "course") finalForm = toCourseForm(base, undefined, ev);
+      if (base.displayType === "event") finalForm = toPartyForm(base, undefined, ev);
 
       setEditingEvent(ev);
       setEditorForm(finalForm);
@@ -178,6 +195,28 @@ export function useTimetableEditor({
     setEditorForm((prev) => (prev ? { ...(prev as any), ...(patch as any) } : prev));
   }, []);
 
+  /**
+   * ✅ NEW: When user switches type, convert the form shape so Course/Event fields become editable.
+   */
+  const setDisplayType = useCallback(
+    (nextType: EntryDisplayType) => {
+      setEditorForm((prev) => {
+        if (!prev) return prev;
+        if (!editingEvent) return prev;
+
+        const next = normalizeDisplayType(nextType);
+        const base = toBaseForm({ ...(prev as any), displayType: next } as any);
+
+        if (next === "course") return toCourseForm(base, prev, editingEvent);
+        if (next === "event") return toPartyForm(base, prev, editingEvent);
+
+        // next === "none"
+        return { ...base, displayType: "none" };
+      });
+    },
+    [editingEvent],
+  );
+
   const onChangeFullTitle = useCallback(
     (text: string) => {
       if (editingEvent?.source === "ical") return;
@@ -187,7 +226,6 @@ export function useTimetableEditor({
 
         const next: any = { ...prev, fullTitle: text };
 
-        // ✅ auto-generate unless user customized
         if (!hasCustomTitleAbbr) {
           next.titleAbbr = clampAbbr(makeTitleAbbr(text));
         }
@@ -199,7 +237,7 @@ export function useTimetableEditor({
 
   const onChangeTitleAbbr = useCallback(
     (text: string) => {
-      if (editingEvent?.source === "ical") return; // "like title": iCal title isn't editable
+      if (editingEvent?.source === "ical") return;
       const clamped = clampAbbr(text);
       setHasCustomTitleAbbr(true);
       updateForm({ titleAbbr: clamped });
@@ -223,13 +261,15 @@ export function useTimetableEditor({
     const a = initialSnapshotRef.current;
     const b = snapshotComparable(editorForm);
     if (!a || !b) return false;
-    return JSON.stringify(a) !== JSON.stringify(b) || initialHasCustomAbbrRef.current !== hasCustomTitleAbbr;
+    return (
+      JSON.stringify(a) !== JSON.stringify(b) ||
+      initialHasCustomAbbrRef.current !== hasCustomTitleAbbr
+    );
   }, [editorForm, hasCustomTitleAbbr]);
 
   const requestCloseEditor = useCallback(() => {
     if (!editingEvent) return;
 
-    // creating + no changes => remove draft event
     if (isCreatingNew && !isDirty) {
       const draftId = createdDraftIdRef.current;
       if (draftId) setEvents((prev) => prev.filter((e) => e.id !== draftId));
@@ -259,6 +299,35 @@ export function useTimetableEditor({
 
     const nextDisplayType = normalizeDisplayType(editorForm.displayType);
 
+    // Pull type-specific edits (if any) from the current form
+    const f: any = editorForm;
+
+    const nextCourse =
+      nextDisplayType === "course"
+        ? {
+            courseName: String(f.courseName ?? ""),
+            courseType: String(f.courseType ?? ""),
+            lecturer: String(f.lecturer ?? ""),
+            room: String(f.room ?? ""),
+          }
+        : undefined;
+
+    const invitedGroupsRaw = String(f.invitedGroups ?? "");
+    const nextParty =
+      nextDisplayType === "event"
+        ? {
+            eventName: String(f.eventName ?? ""),
+            location: String(f.location ?? ""),
+            createdBy: String(f.createdBy ?? ""),
+            entryFee: String(f.entryFee ?? ""),
+            invitedGroups: invitedGroupsRaw
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            friendsAttending: [],
+          }
+        : undefined;
+
     if (isIcal) {
       const metaKey =
         editingEvent.metaKey ||
@@ -279,12 +348,17 @@ export function useTimetableEditor({
           isTitleAbbrCustom: hasCustomTitleAbbr,
           displayType: nextDisplayType,
           hidden: !!editingEvent.hidden,
+
+          // ✅ NEW: persist course/party edits for iCal items
+          course: nextCourse,
+          party: nextParty,
         },
       };
 
       setIcalMeta(nextMeta);
       void saveIcalMeta(nextMeta);
 
+      // Reflect immediately in UI event list
       setEvents((prev) =>
         prev.map((e) =>
           e.id === editingEvent.id
@@ -296,6 +370,10 @@ export function useTimetableEditor({
                 color: editorForm.color || e.color,
                 isTitleAbbrCustom: hasCustomTitleAbbr,
                 displayType: nextDisplayType,
+
+                // ✅ NEW: keep the edited type fields on the event object too
+                course: nextCourse,
+                party: nextParty,
               }
             : e,
         ),
@@ -305,34 +383,9 @@ export function useTimetableEditor({
       return;
     }
 
+    // Local event save
     const fullTitle = editorForm.fullTitle || "Untitled";
     const titleAbbr = clampAbbr(editorForm.titleAbbr || makeTitleAbbr(fullTitle));
-
-    const nextCourse =
-      nextDisplayType === "course"
-        ? {
-            courseName: (editorForm as any).courseName ?? "",
-            courseType: (editorForm as any).courseType ?? "",
-            lecturer: (editorForm as any).lecturer ?? "",
-            room: (editorForm as any).room ?? "",
-          }
-        : undefined;
-
-    const invitedGroupsRaw = String((editorForm as any).invitedGroups ?? "");
-    const nextParty =
-      nextDisplayType === "event"
-        ? {
-            eventName: (editorForm as any).eventName ?? "",
-            location: (editorForm as any).location ?? "",
-            createdBy: (editorForm as any).createdBy ?? "",
-            entryFee: (editorForm as any).entryFee ?? "",
-            invitedGroups: invitedGroupsRaw
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean),
-            friendsAttending: [],
-          }
-        : undefined;
 
     const updated: EvWithMeta = {
       ...editingEvent,
@@ -417,7 +470,6 @@ export function useTimetableEditor({
         hidden: false,
       };
 
-      // in-memory only; persisted on Save
       setEvents((prev) => [...prev, newEvent]);
       openEditorForEvent(newEvent, { creating: true });
     },
@@ -454,6 +506,8 @@ export function useTimetableEditor({
     closeEditor,
 
     updateForm,
+    setDisplayType, // ✅ NEW
+
     onChangeFullTitle,
     onChangeTitleAbbr,
     handlePickerChange,

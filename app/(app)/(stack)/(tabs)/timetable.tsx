@@ -206,7 +206,7 @@ export default function TimetableScreen() {
           onChangeTitleAbbr={editor.onChangeTitleAbbr}
           onChangeNote={(text) => editor.updateForm({ note: text })}
           onSelectColor={(c) => editor.updateForm({ color: c })}
-          onSelectDisplayType={(t) => editor.updateForm({ displayType: t })}
+          onSelectDisplayType={(t) => editor.setDisplayType(t)}
           onChangeCourseField={(patch) => editor.updateForm(patch as any)}
           onChangePartyField={(patch) => editor.updateForm(patch as any)}
           onSetActivePicker={editor.setActivePicker}

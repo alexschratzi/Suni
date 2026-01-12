@@ -1,4 +1,3 @@
-// src/timetable/hooks/useTimetableSync.ts
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -34,15 +33,49 @@ function normalizeDisplayTypeOrNull(v: any): EntryDisplayType | null {
   return v === "none" || v === "course" || v === "event" ? v : null;
 }
 
+/**
+ * Merge local-only extended fields that are not represented in the server DTO,
+ * so they don't get wiped on refresh.
+ */
+function mergeLocalExtras(serverEv: EvWithMeta, localEv?: EvWithMeta): EvWithMeta {
+  if (!localEv) return serverEv;
+
+  return {
+    ...serverEv,
+
+    // keep any richer fields that server doesn't store
+    course: localEv.course ?? serverEv.course,
+    party: localEv.party ?? serverEv.party,
+
+    // optional: keep hidden flag if you use it for local events
+    hidden: localEv.hidden ?? serverEv.hidden,
+
+    // optional: if you want to preserve fullTitle/titleAbbr customization
+    fullTitle: localEv.fullTitle ?? serverEv.fullTitle,
+    titleAbbr: localEv.titleAbbr ?? serverEv.titleAbbr,
+    isTitleAbbrCustom: localEv.isTitleAbbrCustom ?? serverEv.isTitleAbbrCustom,
+    note: localEv.note ?? serverEv.note,
+
+    // keep displayType if you ever had mismatches
+    displayType: normalizeDisplayType(localEv.displayType ?? serverEv.displayType),
+  };
+}
+
 export function useTimetableSync({ userId }: Params) {
   const [events, setEvents] = useState<EvWithMeta[]>([]);
   const [icalMeta, setIcalMeta] = useState<Record<string, ICalEventMeta>>({});
 
   const refresh = useCallback(async () => {
     try {
+      // ✅ local cache (needed to preserve course/party fields)
+      const localCachedEvents = await loadLocalEvents();
+      const localById = new Map(localCachedEvents.map((e) => [e.id, e]));
+
+      // iCal meta
       const storedMeta = await loadIcalMeta();
       setIcalMeta(storedMeta);
 
+      // subs
       const serverSubs = await getICalSubscriptions(userId as any);
       const normalizedSubs: ICalSubscription[] = serverSubs.map((s: any) => ({
         id: s.id,
@@ -51,15 +84,25 @@ export function useTimetableSync({ userId }: Params) {
         color: s.color,
         defaultDisplayType: normalizeDisplayTypeOrNull(s.default_display_type),
       }));
-
       await saveLocalICalSubscriptions(normalizedSubs);
 
+      // ✅ server local events
       const serverCalendar = await getCalendarById(1 as any);
-      const serverEntriesForUser = (serverCalendar.entries as any[]).filter((e) => e.user_id === userId);
-      const serverLocalEvents: EvWithMeta[] = serverEntriesForUser.map(mapDtoToEvent);
+      const serverEntriesForUser = (serverCalendar.entries as any[]).filter(
+        (e) => e.user_id === userId,
+      );
 
+      const serverLocalEventsRaw: EvWithMeta[] = serverEntriesForUser.map(mapDtoToEvent);
+
+      // ✅ IMPORTANT: merge local-only extras back in
+      const serverLocalEvents: EvWithMeta[] = serverLocalEventsRaw.map((ev) =>
+        mergeLocalExtras(ev, localById.get(ev.id)),
+      );
+
+      // update local cache with merged view
       await saveLocalEvents(serverLocalEvents);
 
+      // ✅ iCal events
       let allIcalEvents: EvWithMeta[] = [];
 
       for (const sub of normalizedSubs) {
@@ -91,6 +134,12 @@ export function useTimetableSync({ userId }: Params) {
             isTitleAbbrCustom: meta?.isTitleAbbrCustom ?? false,
             source: "ical",
             displayType,
+            hidden: meta?.hidden ?? false,
+
+            // ✅ allow iCal course/party edits to show up
+            course: meta?.course,
+            party: meta?.party,
+
             icalSubscriptionId: sub.id,
             icalEventUid: raw.uid,
             metaKey,

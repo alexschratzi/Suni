@@ -21,7 +21,6 @@ export type EventEditorFormBase = {
 };
 
 export type CourseEditorForm = EventEditorFormBase & {
-  // For now these are editable fields in the Course edit window (even if derived later).
   courseName: string;
   courseType: string;
   lecturer: string;
@@ -64,22 +63,10 @@ export type EvWithMeta = Ev & {
 
   source: EventSource;
 
-  /**
-   * Display type drives overview + edit windows and calendar filtering/transparency.
-   */
   displayType: EntryDisplayType;
 
-  /**
-   * Hide flag (new)
-   * - local: persisted in local events storage / server sync
-   * - ical: persisted via ICalEventMeta override
-   */
   hidden?: boolean;
 
-  /**
-   * Optional structured fields used by the type-specific UI.
-   * (For iCal, you’ll later derive these from raw ics summary/location/etc.)
-   */
   course?: Partial<CourseInfo>;
   party?: Partial<PartyInfo>;
 
@@ -106,10 +93,14 @@ export type ICalEventMeta = {
 
   displayType?: EntryDisplayType;
 
-  /**
-   * New: allow hiding iCal items via meta override
-   */
   hidden?: boolean;
+
+  /**
+   * ✅ NEW: persist type-specific fields for iCal items too
+   * (so Course/Event can be edited and kept)
+   */
+  course?: Partial<CourseInfo>;
+  party?: Partial<PartyInfo>;
 };
 
 export type RawIcalEvent = {
