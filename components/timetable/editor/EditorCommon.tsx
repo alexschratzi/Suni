@@ -1,10 +1,14 @@
 // components/timetable/editor/EditorCommon.tsx
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Text, TextInput, type MD3Theme } from "react-native-paper";
+import { Text, TextInput, type MD3Theme, type TextInputProps } from "react-native-paper";
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <Text variant="labelSmall" style={styles.label}>{children}</Text>;
+  return (
+    <Text variant="labelSmall" style={styles.label}>
+      {children}
+    </Text>
+  );
 }
 
 export function ColorRow({
@@ -59,6 +63,33 @@ export function ReadonlyField({
     </View>
   );
 }
+
+/**
+ * Static TextInput wrapper (kept name for drop-in compatibility).
+ * No dynamic resizing logic.
+ */
+export const AutoGrowTextInput = React.forwardRef<
+  any,
+  TextInputProps & {
+    minHeight?: number;
+    maxHeight?: number;
+  }
+>(function AutoGrowTextInput(
+  { multiline = true, scrollEnabled, contentStyle, style, minHeight: _minHeight, maxHeight: _maxHeight, ...rest },
+  forwardedRef,
+) {
+  return (
+    <TextInput
+      {...rest}
+      ref={forwardedRef}
+      multiline={multiline}
+      scrollEnabled={scrollEnabled ?? multiline}
+      textAlignVertical={multiline ? "top" : undefined}
+      style={style}
+      contentStyle={contentStyle}
+    />
+  );
+});
 
 const styles = StyleSheet.create({
   label: { marginTop: 10, marginBottom: 4 },

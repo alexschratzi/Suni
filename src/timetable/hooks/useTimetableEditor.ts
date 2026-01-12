@@ -1,5 +1,5 @@
 // src/timetable/hooks/useTimetableEditor.ts
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
 import type { OnCreateEventResponse, OnEventResponse } from "@howljs/calendar-kit";
@@ -60,6 +60,35 @@ function toPartyForm(base: EventEditorForm): PartyEditorForm {
   };
 }
 
+function snapshotComparable(form: EventEditorForm | null) {
+  if (!form) return null;
+  const f: any = form;
+
+  // Compare a stable subset (including type-specific fields if present)
+  return {
+    displayType: form.displayType,
+    fullTitle: form.fullTitle ?? "",
+    titleAbbr: form.titleAbbr ?? "",
+    from: form.from ?? "",
+    until: form.until ?? "",
+    note: form.note ?? "",
+    color: form.color ?? "",
+
+    // course-ish
+    courseName: f.courseName ?? "",
+    courseType: f.courseType ?? "",
+    lecturer: f.lecturer ?? "",
+    room: f.room ?? "",
+
+    // party-ish
+    eventName: f.eventName ?? "",
+    location: f.location ?? "",
+    createdBy: f.createdBy ?? "",
+    entryFee: f.entryFee ?? "",
+    invitedGroups: f.invitedGroups ?? "",
+  };
+}
+
 export function useTimetableEditor({
   userId,
   events,
@@ -68,14 +97,20 @@ export function useTimetableEditor({
   setIcalMeta,
   makeTitleAbbr,
 }: Params) {
-  // NEW: overview state
   const [viewingEvent, setViewingEvent] = useState<EvWithMeta | null>(null);
 
-  // edit state (existing)
   const [editingEvent, setEditingEvent] = useState<EvWithMeta | null>(null);
   const [editorForm, setEditorForm] = useState<EventEditorForm | null>(null);
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+
+  // ✅ creation marker lives in hook state (not on EvWithMeta type)
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const createdDraftIdRef = useRef<string | null>(null);
+
+  // ✅ dirty tracking snapshot
+  const initialSnapshotRef = useRef<any>(null);
+  const initialHasCustomAbbrRef = useRef<boolean>(false);
 
   const isIcalEditing = useMemo(() => editingEvent?.source === "ical", [editingEvent?.source]);
 
@@ -85,14 +120,13 @@ export function useTimetableEditor({
     await saveCalendar({ entries } as any);
   }, []);
 
-  const openOverviewForEvent = useCallback((ev: EvWithMeta) => {
-    setViewingEvent(ev);
-  }, []);
-
+  const openOverviewForEvent = useCallback((ev: EvWithMeta) => setViewingEvent(ev), []);
   const closeOverview = useCallback(() => setViewingEvent(null), []);
 
   const openEditorForEvent = useCallback(
-    (ev: EvWithMeta) => {
+    (ev: EvWithMeta, opts?: { creating?: boolean }) => {
+      const creating = !!opts?.creating;
+
       const fullTitle = ev.fullTitle ?? ev.title ?? "";
       const autoAbbr = makeTitleAbbr(fullTitle);
       const titleAbbr = ev.titleAbbr ?? autoAbbr;
@@ -107,31 +141,36 @@ export function useTimetableEditor({
         displayType: normalizeDisplayType(ev.displayType),
       };
 
-      // Type-specific default edit forms
       let finalForm: EventEditorForm = base;
       if (base.displayType === "course") finalForm = toCourseForm(base);
       if (base.displayType === "event") finalForm = toPartyForm(base);
 
       setEditingEvent(ev);
       setEditorForm(finalForm);
-
       setHasCustomTitleAbbr(ev.isTitleAbbrCustom ?? false);
       setActivePicker(null);
+
+      setIsCreatingNew(creating);
+      createdDraftIdRef.current = creating ? ev.id : null;
+
+      // capture snapshot for dirty tracking
+      initialSnapshotRef.current = snapshotComparable(finalForm);
+      initialHasCustomAbbrRef.current = ev.isTitleAbbrCustom ?? false;
     },
     [makeTitleAbbr],
   );
-
-  const openEditFromOverview = useCallback(() => {
-    if (!viewingEvent) return;
-    setViewingEvent(null);
-    openEditorForEvent(viewingEvent);
-  }, [openEditorForEvent, viewingEvent]);
 
   const closeEditor = useCallback(() => {
     setEditingEvent(null);
     setEditorForm(null);
     setHasCustomTitleAbbr(false);
     setActivePicker(null);
+
+    setIsCreatingNew(false);
+    createdDraftIdRef.current = null;
+
+    initialSnapshotRef.current = null;
+    initialHasCustomAbbrRef.current = false;
   }, []);
 
   const updateForm = useCallback((patch: Partial<EventEditorForm>) => {
@@ -172,46 +211,48 @@ export function useTimetableEditor({
     [activePicker, editingEvent?.source, editorForm, updateForm],
   );
 
-  // NEW: hide (works from overview)
-  const hideViewedEvent = useCallback(() => {
-    if (!viewingEvent) return;
+  const isDirty = useMemo(() => {
+    const a = initialSnapshotRef.current;
+    const b = snapshotComparable(editorForm);
+    if (!a || !b) return false;
+    return JSON.stringify(a) !== JSON.stringify(b) || initialHasCustomAbbrRef.current !== hasCustomTitleAbbr;
+  }, [editorForm, hasCustomTitleAbbr]);
 
-    const ev = viewingEvent;
+  // ✅ Called when user tries to close WITHOUT needing a confirm dialog
+  // - If creating + no changes => remove draft (not created)
+  const requestCloseEditor = useCallback(() => {
+    if (!editingEvent) return;
 
-    // iCal: store hidden in meta
-    if (ev.source === "ical") {
-      const metaKey =
-        ev.metaKey ||
-        makeIcalMetaKey(ev.icalSubscriptionId || "unknown", ev.icalEventUid || ev.id);
-
-      const nextMeta: Record<string, ICalEventMeta> = {
-        ...icalMeta,
-        [metaKey]: {
-          ...(icalMeta[metaKey] ?? {}),
-          hidden: true,
-          // also keep type override if present
-          displayType: normalizeDisplayType(ev.displayType),
-        },
-      };
-
-      setIcalMeta(nextMeta);
-      void saveIcalMeta(nextMeta);
-
-      setEvents((prev) => prev.map((e) => (e.id === ev.id ? { ...e, hidden: true } : e)));
-      setViewingEvent(null);
+    // new draft + no changes => remove it
+    if (isCreatingNew && !isDirty) {
+      const draftId = createdDraftIdRef.current;
+      if (draftId) {
+        setEvents((prev) => prev.filter((e) => e.id !== draftId));
+      }
+      closeEditor();
       return;
     }
 
-    // local: persist hidden via saveLocalEvents + server sync
-    setEvents((prev) => {
-      const updated = prev.map((e) => (e.id === ev.id ? { ...e, hidden: true } : e));
-      void saveLocalEvents(updated);
-      void syncLocalEventsToServer(updated, userId);
-      return updated;
-    });
+    closeEditor();
+  }, [closeEditor, editingEvent, isCreatingNew, isDirty, setEvents]);
 
-    setViewingEvent(null);
-  }, [icalMeta, setEvents, setIcalMeta, syncLocalEventsToServer, userId, viewingEvent]);
+  // ✅ Discard changes (used by confirm dialog)
+  // - If creating => remove draft entirely
+  // - Else just close (we don’t mutate stored event until Save anyway)
+  const discardEditorChanges = useCallback(() => {
+    if (!editingEvent) return;
+
+    if (isCreatingNew) {
+      const draftId = createdDraftIdRef.current;
+      if (draftId) {
+        setEvents((prev) => prev.filter((e) => e.id !== draftId));
+      }
+      closeEditor();
+      return;
+    }
+
+    closeEditor();
+  }, [closeEditor, editingEvent, isCreatingNew, setEvents]);
 
   const saveEditor = useCallback(() => {
     if (!editingEvent || !editorForm) return;
@@ -268,7 +309,6 @@ export function useTimetableEditor({
     const fullTitle = editorForm.fullTitle || "Untitled";
     const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
 
-    // persist type-specific fields into event (optional)
     const nextCourse =
       nextDisplayType === "course"
         ? {
@@ -313,8 +353,11 @@ export function useTimetableEditor({
 
     setEvents((prev) => {
       const updatedList = prev.map((e) => (e.id === updated.id ? updated : e));
+
+      // ✅ Persist only on Save (this is what prevents “unchanged new events” from being created)
       void saveLocalEvents(updatedList);
       void syncLocalEventsToServer(updatedList, userId);
+
       return updatedList;
     });
 
@@ -335,6 +378,14 @@ export function useTimetableEditor({
   const deleteEditorEvent = useCallback(() => {
     if (!editingEvent) return;
 
+    // Draft new event: just remove (never persisted)
+    if (isCreatingNew) {
+      const draftId = createdDraftIdRef.current;
+      if (draftId) setEvents((prev) => prev.filter((e) => e.id !== draftId));
+      closeEditor();
+      return;
+    }
+
     if (editingEvent.source === "ical") {
       closeEditor();
       return;
@@ -348,7 +399,7 @@ export function useTimetableEditor({
     });
 
     closeEditor();
-  }, [closeEditor, editingEvent, setEvents, syncLocalEventsToServer, userId]);
+  }, [closeEditor, editingEvent, isCreatingNew, setEvents, syncLocalEventsToServer, userId]);
 
   const onCreate = useCallback(
     (ev: OnCreateEventResponse) => {
@@ -357,34 +408,28 @@ export function useTimetableEditor({
       const startISO = toISO(ev.start);
       const endISO = toISO(ev.end);
 
-      const fullTitle = "NEW";
-      const titleAbbr = makeTitleAbbr(fullTitle);
-
+      // ✅ Start empty. Not persisted until Save.
       const newEvent: EvWithMeta = {
         id: Math.random().toString(36).slice(2),
-        title: titleAbbr,
+        title: "",
         start: { dateTime: startISO },
         end: { dateTime: endISO },
         color: "#4dabf7",
-        fullTitle,
-        titleAbbr,
+        fullTitle: "",
+        titleAbbr: "",
         isTitleAbbrCustom: false,
         source: "local",
         displayType: "none",
         hidden: false,
       };
 
-      setEvents((prev) => {
-        const updated = [...prev, newEvent];
-        void saveLocalEvents(updated);
-        void syncLocalEventsToServer(updated, userId);
-        return updated;
-      });
+      // ✅ Put it in memory so the user can edit it immediately,
+      // but DO NOT persist until Save.
+      setEvents((prev) => [...prev, newEvent]);
 
-      // Creation should open EDIT directly (as before), not overview
-      openEditorForEvent(newEvent);
+      openEditorForEvent(newEvent, { creating: true });
     },
-    [makeTitleAbbr, openEditorForEvent, setEvents, syncLocalEventsToServer, userId],
+    [openEditorForEvent, setEvents],
   );
 
   const onPressEvent = useCallback(
@@ -402,8 +447,6 @@ export function useTimetableEditor({
     viewingEvent,
     openOverviewForEvent,
     closeOverview,
-    openEditFromOverview,
-    hideViewedEvent,
 
     // edit
     editingEvent,
@@ -411,6 +454,12 @@ export function useTimetableEditor({
     activePicker,
     setActivePicker,
     isIcalEditing,
+
+    // ✅ new close/dirty API
+    isCreatingNew,
+    isDirty,
+    requestCloseEditor,
+    discardEditorChanges,
 
     openEditorForEvent,
     closeEditor,

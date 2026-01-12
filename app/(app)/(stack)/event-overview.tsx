@@ -1,10 +1,9 @@
-//app/(app)/(stack)/event-overview.tsx
+// app/(app)/(stack)/event-overview.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Button,
-  Divider,
   Surface,
   Text,
   useTheme,
@@ -82,7 +81,6 @@ export default function TimetableEventOverviewScreen() {
     if (!id) return;
     if (synced) {
       setPreloaded(synced);
-      // cache served its purpose; avoid stale memory growth
       clearNavEvent(id);
     }
   }, [id, synced]);
@@ -129,7 +127,7 @@ export default function TimetableEventOverviewScreen() {
 
   const onEdit = useCallback(() => {
     if (!ev) return;
-    editor.openEditorForEvent(ev);
+    editor.openEditorForEvent(ev, { creating: false });
   }, [editor, ev]);
 
   if (!id) {
@@ -140,8 +138,6 @@ export default function TimetableEventOverviewScreen() {
     );
   }
 
-  // ✅ No flicker placeholder:
-  // show a minimal “loading” layout only if neither preloaded nor synced exist
   if (!ev) {
     return (
       <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
@@ -168,6 +164,10 @@ export default function TimetableEventOverviewScreen() {
   return (
     <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
+        <Text variant="titleLarge">{fullTitle || "Untitled"}</Text>
+        <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 4 }}>
+          {typeLabel(displayType)}
+        </Text>
 
         {displayType === "none" && (
           <>
@@ -221,7 +221,6 @@ export default function TimetableEventOverviewScreen() {
             Edit
           </Button>
         </View>
-
       </ScrollView>
 
       {/* Editor sidebar over overview */}
@@ -232,7 +231,10 @@ export default function TimetableEventOverviewScreen() {
         form={editor.editorForm}
         activePicker={editor.activePicker}
         isIcalEditing={editor.isIcalEditing}
-        onClose={editor.closeEditor}
+        isCreatingNew={editor.isCreatingNew}
+        isDirty={editor.isDirty}
+        onRequestClose={editor.requestCloseEditor}
+        onDiscardChanges={editor.discardEditorChanges}
         onSave={editor.saveEditor}
         onDelete={editor.deleteEditorEvent}
         onChangeFullTitle={editor.onChangeFullTitle}

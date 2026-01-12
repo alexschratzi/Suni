@@ -1,3 +1,4 @@
+// app/(app)/(stack)/(tabs)/timetable.tsx
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { DeviceEventEmitter, PixelRatio, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -138,22 +139,21 @@ export default function TimetableScreen() {
 
   const onHeaderLayout = useCallback((h: number) => setHeaderBlockH(h), []);
 
-const onPressEvent = useCallback(
-  (event: OnEventResponse) => {
-    const ev = events.find((e) => e.id === event.id);
-    if (!ev) return;
+  const onPressEvent = useCallback(
+    (event: OnEventResponse) => {
+      const ev = events.find((e) => e.id === event.id);
+      if (!ev) return;
 
-    // ✅ cache the full event snapshot so overview can render instantly
-    putNavEvent(ev);
+      // ✅ cache the full event snapshot so overview can render instantly
+      putNavEvent(ev);
 
-    router.push({
-      pathname: "/(app)/(stack)/event-overview",
-      params: { id: ev.id },
-    });
-  },
-  [events, router],
-);
-
+      router.push({
+        pathname: "/(app)/(stack)/event-overview",
+        params: { id: ev.id },
+      });
+    },
+    [events, router],
+  );
 
   return (
     <PaperProvider theme={screenPaperTheme}>
@@ -179,8 +179,8 @@ const onPressEvent = useCallback(
             desiredIntervalHeight={desiredIntervalHeight}
             defaultDurationMin={DEFAULT_EVENT_DURATION_MIN}
             dragStepMin={SNAP_TO_MINUTE}
-            onCreate={editor.onCreate} // still opens edit drawer directly (creation)
-            onPressEvent={onPressEvent} // now pushes stack window
+            onCreate={editor.onCreate} // creation opens drawer
+            onPressEvent={onPressEvent} // press navigates to overview
             onChange={onChange}
             onDateChanged={onDateChanged}
             renderDayItem={renderDayItem}
@@ -188,7 +188,7 @@ const onPressEvent = useCallback(
           />
         </View>
 
-        {/* EDITOR SIDEBAR (over calendar) — used for creation OR if you later want direct edit */}
+        {/* EDITOR SIDEBAR (over calendar) */}
         <EventEditorDrawer
           visible={!!editor.editingEvent && !!editor.editorForm}
           paper={screenPaperTheme}
@@ -196,7 +196,10 @@ const onPressEvent = useCallback(
           form={editor.editorForm}
           activePicker={editor.activePicker}
           isIcalEditing={editor.isIcalEditing}
-          onClose={editor.closeEditor}
+          isCreatingNew={editor.isCreatingNew}
+          isDirty={editor.isDirty}
+          onRequestClose={editor.requestCloseEditor}
+          onDiscardChanges={editor.discardEditorChanges}
           onSave={editor.saveEditor}
           onDelete={editor.deleteEditorEvent}
           onChangeFullTitle={editor.onChangeFullTitle}
