@@ -110,15 +110,11 @@ export default function Onboarding() {
         const cookies = flattenToCookiesJson(cookiesByOrigin);
 
         const result = await checkLoginWithBackend(String(university.id), cookies);
-        console.log("trie check login login with result");
-        console.log(result);
 
         if ("status" in result && result.status === 1 && result.authenticated) {
           stopPolling();
           setBrowserUrl(null);
           await acknowledgeLogin();
-        } else {
-          console.log(result);
         }
       } catch (e: any) {
         console.warn("Polling/check-login failed:", e?.message || String(e));

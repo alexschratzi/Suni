@@ -16,7 +16,7 @@ import {
   LinkHubLink,
   UniConfig,
   loadActiveUniConfig,
-  fetchUniConfig,          // ✅ add this
+  fetchUniConfig,
 } from "./uni-login";
 import { useResetOnboarding } from "./useResetOnboarding";
 import { getCachedStudentProfile, scrapeStudentProfile } from "../../src/server/uniScraper";
@@ -63,7 +63,7 @@ export default function LinkHub() {
 
   const [links, setLinks] = React.useState<LinkHubLink[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [refreshing, setRefreshing] = React.useState(false); // ✅ pull-to-refresh
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const resetOnboarding = useResetOnboarding();
@@ -74,7 +74,7 @@ export default function LinkHub() {
   const [scraping, setScraping] = React.useState(false);
 
   const autoRefreshRef = React.useRef(false);
-  const refreshBusyRef = React.useRef(false); // ✅ block parallel refresh
+  const refreshBusyRef = React.useRef(false);
 
   const cookieDomains = React.useMemo(() => {
     return buildCookieOrigins({
