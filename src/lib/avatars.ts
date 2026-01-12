@@ -1,3 +1,4 @@
+// src/lib/avatars.ts
 import * as ImagePicker from "expo-image-picker";
 
 import { supabase } from "@/src/lib/supabase";

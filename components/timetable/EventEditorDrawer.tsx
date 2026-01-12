@@ -1,66 +1,26 @@
 // components/timetable/EventEditorDrawer.tsx
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
-  BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import {
-  Button,
-  Divider,
-  IconButton,
-  Surface,
-  Text,
-  TextInput,
-  type MD3Theme,
-} from "react-native-paper";
-import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Divider, Surface } from "react-native-paper";
 
-import type {
-  ActivePicker,
-  CourseEditorForm,
-  EntryDisplayType,
-  EvWithMeta,
-  EventEditorForm,
-  PartyEditorForm,
-} from "@/types/timetable";
+import type { EntryDisplayType } from "@/types/timetable";
+import type { EventEditorDrawerProps } from "./editor/types";
 
-import { ColorRow, SectionLabel } from "./editor/EditorCommon";
-import { CourseFields, DateTimeFields, PartyFields, TypeSelector } from "./editor/EditorFields";
+import { EditorHeaderTitle } from "./editor/EditorHeaderTitle";
+import { EditorContent } from "./editor/EditorContent";
+import { UnsavedChangesModal } from "./editor/UnsavedChangesModal";
 
-const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
+function clampAbbr(raw: string): string {
+  const s = String(raw ?? "").trim();
+  return s.replace(/\s+/g, "").slice(0, 4);
+}
 
-type Props = {
-  visible: boolean;
-  paper: MD3Theme;
-
-  editingEvent: EvWithMeta | null;
-  form: EventEditorForm | null;
-
-  activePicker: ActivePicker;
-  isIcalEditing: boolean;
-
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-
-  onChangeFullTitle: (text: string) => void;
-  onChangeTitleAbbr: (text: string) => void;
-  onChangeNote: (text: string) => void;
-
-  onSelectColor: (color: string) => void;
-  onSelectDisplayType: (t: EntryDisplayType) => void;
-
-  onChangeCourseField: (patch: Partial<CourseEditorForm>) => void;
-  onChangePartyField: (patch: Partial<PartyEditorForm>) => void;
-
-  onSetActivePicker: (p: ActivePicker) => void;
-  onPickerChange: (event: DateTimePickerEvent, date?: Date) => void;
-};
-
-export function EventEditorDrawer(props: Props) {
+export function EventEditorDrawer(props: EventEditorDrawerProps) {
   const {
     visible,
     paper,
@@ -68,53 +28,85 @@ export function EventEditorDrawer(props: Props) {
     form,
     activePicker,
     isIcalEditing,
-    onClose,
+
+    isCreatingNew,
+    isDirty,
+    onRequestClose,
+    onDiscardChanges,
+
     onSave,
     onDelete,
+
     onChangeFullTitle,
     onChangeTitleAbbr,
     onChangeNote,
+
     onSelectColor,
     onSelectDisplayType,
+
     onChangeCourseField,
     onChangePartyField,
+
     onSetActivePicker,
     onPickerChange,
   } = props;
 
   const modalRef = useRef<BottomSheetModal>(null);
+  const titleRef = useRef<any>(null);
+  const abbrRef = useRef<any>(null);
 
-  // ✅ Inline “sync visible -> present/dismiss”
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // ✅ used to skip confirm for intentional/programmatic closes (Save/Delete/Apply/Discard)
+  const bypassNextCloseConfirmRef = useRef(false);
+  // ✅ used to re-open only when confirm came from swipe-down
+  const confirmWasFromSwipeRef = useRef(false);
+
   useEffect(() => {
     const m = modalRef.current;
     if (!m) return;
-
-    if (visible) {
-      m.present();
-    } else {
-      m.dismiss();
-    }
+    if (visible) m.present();
+    else m.dismiss();
   }, [visible]);
 
-  const snapPoints = useMemo(() => ["90%"], []);
   const ready = !!editingEvent && !!form;
+  const snapPoints = useMemo(() => ["92%"], []);
   const t = (form?.displayType ?? "none") as EntryDisplayType;
 
-  const headerTitle = useMemo(() => {
-    const base =
-      t === "course"
-        ? "Course bearbeiten"
-        : t === "event"
-          ? "Event (Party) bearbeiten"
-          : "Eintrag bearbeiten";
-    return isIcalEditing ? `${base} (iCal)` : base;
-  }, [isIcalEditing, t]);
+  // local drafts prevent cursor flicker
+  const [titleDraft, setTitleDraft] = useState("");
+  const [abbrDraft, setAbbrDraft] = useState("");
+
+  const eventKey = useMemo(() => {
+    if (!editingEvent) return "none";
+    return (
+      (editingEvent as any).id ??
+      `${editingEvent.source}:${(editingEvent as any).start}:${(editingEvent as any).end}`
+    );
+  }, [editingEvent]);
+
+  useEffect(() => {
+    if (!visible || !ready || !form) return;
+    setTitleDraft(form.fullTitle ?? "");
+    setAbbrDraft(clampAbbr(form.titleAbbr ?? ""));
+    setConfirmOpen(false);
+    bypassNextCloseConfirmRef.current = false;
+    confirmWasFromSwipeRef.current = false;
+  }, [visible, ready, eventKey, form]);
+
+  useEffect(() => {
+    if (!visible || !ready) return;
+    if (!isCreatingNew) return;
+    if (isIcalEditing) return;
+
+    const id = setTimeout(() => titleRef.current?.focus?.(), 250);
+    return () => clearTimeout(id);
+  }, [visible, ready, isCreatingNew, isIcalEditing]);
 
   const renderBackdrop = useCallback(
     (backdropProps: any) => (
       <BottomSheetBackdrop
         {...backdropProps}
-        // ✅ outside-tap should NOT close
         pressBehavior="none"
         appearsOnIndex={0}
         disappearsOnIndex={-1}
@@ -123,27 +115,111 @@ export function EventEditorDrawer(props: Props) {
     [],
   );
 
-  const dismiss = useCallback(() => {
-    modalRef.current?.dismiss();
+  const onChangeTitle = useCallback(
+    (text: string) => {
+      setTitleDraft(text);
+      onChangeFullTitle(text);
+    },
+    [onChangeFullTitle],
+  );
+
+  const onChangeAbbr = useCallback(
+    (text: string) => {
+      const clamped = clampAbbr(text);
+      setAbbrDraft(clamped);
+      onChangeTitleAbbr(clamped);
+    },
+    [onChangeTitleAbbr],
+  );
+
+  const attemptCloseViaButton = useCallback(() => {
+    if (confirmOpen) return;
+    if (isDirty) {
+      confirmWasFromSwipeRef.current = false;
+      setConfirmOpen(true);
+      return;
+    }
+    onRequestClose();
+  }, [confirmOpen, isDirty, onRequestClose]);
+
+  const onSheetChange = useCallback(
+    (index: number) => {
+      if (index !== -1) return;
+
+      // ✅ Skip confirm once for intentional closes (Save/Delete/Apply/Discard)
+      if (bypassNextCloseConfirmRef.current) {
+        bypassNextCloseConfirmRef.current = false;
+        return;
+      }
+
+      if (confirmOpen) return;
+
+      if (isDirty) {
+        confirmWasFromSwipeRef.current = true;
+        setConfirmOpen(true);
+        return;
+      }
+
+      onRequestClose();
+    },
+    [confirmOpen, isDirty, onRequestClose],
+  );
+
+  const onCancelConfirm = useCallback(() => {
+    const fromSwipe = confirmWasFromSwipeRef.current;
+    setConfirmOpen(false);
+    confirmWasFromSwipeRef.current = false;
+
+    if (fromSwipe) {
+      setTimeout(() => modalRef.current?.present(), 0);
+    }
   }, []);
 
+  const onDiscard = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    setConfirmOpen(false);
+    confirmWasFromSwipeRef.current = false;
+    onDiscardChanges();
+  }, [onDiscardChanges]);
+
+  const onApply = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    setConfirmOpen(false);
+    confirmWasFromSwipeRef.current = false;
+    onSave();
+  }, [onSave]);
+
+  // ✅ Wrap Save/Delete so they DON'T trigger the dirty-confirm on sheet dismiss
+  const handleSave = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    onSave();
+  }, [onSave]);
+
+  const handleDelete = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    onDelete();
+  }, [onDelete]);
+
   return (
-    <BottomSheetModal
-      ref={modalRef}
-      snapPoints={snapPoints}
-      backdropComponent={renderBackdrop}
-      enablePanDownToClose
-      onDismiss={onClose}
-      handleIndicatorStyle={{ backgroundColor: paper.colors.outlineVariant }}
-      backgroundStyle={{ backgroundColor: paper.colors.surface }}
-    >
-      <BottomSheetView style={styles.container}>
+    <>
+      <BottomSheetModal
+        ref={modalRef}
+        snapPoints={snapPoints}
+        index={0}
+        backdropComponent={renderBackdrop}
+        onChange={onSheetChange}
+        backgroundStyle={{ backgroundColor: paper.colors.surface }}
+        handleIndicatorStyle={{ backgroundColor: paper.colors.outlineVariant }}
+        enablePanDownToClose
+        enableDynamicSizing={false}
+        enableOverDrag={false}
+        enableHandlePanningGesture
+        enableContentPanningGesture={false}
+        keyboardBehavior={Platform.OS === "ios" ? "interactive" : "extend"}
+        keyboardBlurBehavior="restore"
+      >
         {!ready ? (
-          <View style={{ padding: 16 }}>
-            <Text variant="bodyMedium" style={{ color: paper.colors.onSurfaceVariant }}>
-              Loading…
-            </Text>
-          </View>
+          <View style={{ padding: 16 }} />
         ) : (
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -152,146 +228,64 @@ export function EventEditorDrawer(props: Props) {
           >
             <Surface mode="flat" elevation={0} style={[styles.sheet, { backgroundColor: paper.colors.surface }]}>
               <BottomSheetScrollView
-                contentContainerStyle={{ paddingBottom: 24 }}
+                style={{ flex: 1 }}
+                nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                contentContainerStyle={styles.scrollContent}
               >
-                {/* Header */}
-                <View style={styles.headerRow}>
-                  <Text variant="titleMedium" style={{ flex: 1 }}>
-                    {headerTitle}
-                  </Text>
-                  <IconButton icon="close" onPress={dismiss} />
-                </View>
-
-                <Divider style={{ marginVertical: 8 }} />
-
-                {/* Type selector */}
-                <TypeSelector value={t} onChange={onSelectDisplayType} />
+                <EditorHeaderTitle
+                  paper={paper}
+                  titleRef={titleRef}
+                  titleValue={titleDraft}
+                  onChangeTitle={onChangeTitle}
+                  abbrRef={abbrRef}
+                  abbrValue={abbrDraft}
+                  onChangeAbbr={onChangeAbbr}
+                  isIcalEditing={isIcalEditing}
+                  isCreatingNew={isCreatingNew}
+                  entryType={t}
+                  onPressClose={attemptCloseViaButton}
+                />
 
                 <Divider style={{ marginVertical: 10 }} />
 
-                {/* NONE */}
-                {t === "none" && (
-                  <>
-                    <SectionLabel>
-                      Title{isIcalEditing ? " (aus iCal, nicht änderbar)" : ""}
-                    </SectionLabel>
-                    <TextInput
-                      mode="outlined"
-                      value={form.fullTitle}
-                      onChangeText={onChangeFullTitle}
-                      dense
-                      editable={!isIcalEditing}
-                    />
-
-                    <SectionLabel>Title abbr.</SectionLabel>
-                    <TextInput mode="outlined" value={form.titleAbbr} onChangeText={onChangeTitleAbbr} dense />
-
-                    <DateTimeFields
-                      form={form}
-                      isIcalEditing={isIcalEditing}
-                      activePicker={activePicker}
-                      onSetActivePicker={onSetActivePicker}
-                      onPickerChange={onPickerChange}
-                    />
-
-                    <SectionLabel>Note</SectionLabel>
-                    <TextInput
-                      mode="outlined"
-                      value={form.note}
-                      onChangeText={onChangeNote}
-                      multiline
-                      numberOfLines={3}
-                    />
-
-                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
-                  </>
-                )}
-
-                {/* COURSE */}
-                {t === "course" && (
-                  <>
-                    <CourseFields form={form as CourseEditorForm} onChangeCourseField={onChangeCourseField} />
-
-                    <Divider style={{ marginVertical: 10 }} />
-
-                    <DateTimeFields
-                      form={form}
-                      isIcalEditing={isIcalEditing}
-                      activePicker={activePicker}
-                      onSetActivePicker={onSetActivePicker}
-                      onPickerChange={onPickerChange}
-                    />
-
-                    <SectionLabel>Note</SectionLabel>
-                    <TextInput
-                      mode="outlined"
-                      value={form.note}
-                      onChangeText={onChangeNote}
-                      multiline
-                      numberOfLines={3}
-                    />
-
-                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
-                  </>
-                )}
-
-                {/* EVENT (PARTY) */}
-                {t === "event" && (
-                  <>
-                    <PartyFields form={form as PartyEditorForm} onChangePartyField={onChangePartyField} />
-
-                    <Divider style={{ marginVertical: 10 }} />
-
-                    <DateTimeFields
-                      form={form}
-                      isIcalEditing={isIcalEditing}
-                      activePicker={activePicker}
-                      onSetActivePicker={onSetActivePicker}
-                      onPickerChange={onPickerChange}
-                    />
-
-                    <SectionLabel>Note</SectionLabel>
-                    <TextInput
-                      mode="outlined"
-                      value={form.note}
-                      onChangeText={onChangeNote}
-                      multiline
-                      numberOfLines={3}
-                    />
-
-                    <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
-                  </>
-                )}
-
-                {/* Actions */}
-                <View style={styles.actionsRow}>
-                  {editingEvent?.source === "local" && (
-                    <Button onPress={onDelete} textColor={paper.colors.error}>
-                      Löschen
-                    </Button>
-                  )}
-                  <Button mode="contained" onPress={onSave}>
-                    Speichern
-                  </Button>
-                </View>
+                <EditorContent
+                  paper={paper}
+                  editingEvent={editingEvent!}
+                  form={form!}
+                  activePicker={activePicker}
+                  isIcalEditing={isIcalEditing}
+                  entryType={t}
+                  onSelectDisplayType={onSelectDisplayType}
+                  onChangeNote={onChangeNote}
+                  onSelectColor={onSelectColor}
+                  onChangeCourseField={onChangeCourseField}
+                  onChangePartyField={onChangePartyField}
+                  onSetActivePicker={onSetActivePicker}
+                  onPickerChange={onPickerChange}
+                  // ✅ use wrapped handlers
+                  onDelete={handleDelete}
+                  onSave={handleSave}
+                />
               </BottomSheetScrollView>
             </Surface>
           </KeyboardAvoidingView>
         )}
-      </BottomSheetView>
-    </BottomSheetModal>
+      </BottomSheetModal>
+
+      <UnsavedChangesModal
+        open={confirmOpen}
+        paper={paper}
+        onCancel={onCancelConfirm}
+        onDiscard={onDiscard}
+        onApply={onApply}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   sheet: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
-  headerRow: { flexDirection: "row", alignItems: "center" },
-  actionsRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 16,
-    columnGap: 8,
-  },
+  scrollContent: { flexGrow: 1, paddingBottom: 140 },
 });
