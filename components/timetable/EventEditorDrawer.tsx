@@ -15,6 +15,11 @@ import { EditorHeaderTitle } from "./editor/EditorHeaderTitle";
 import { EditorContent } from "./editor/EditorContent";
 import { UnsavedChangesModal } from "./editor/UnsavedChangesModal";
 
+function clampAbbr(raw: string): string {
+  const s = String(raw ?? "").trim();
+  return s.replace(/\s+/g, "").slice(0, 4);
+}
+
 export function EventEditorDrawer(props: EventEditorDrawerProps) {
   const {
     visible,
@@ -48,10 +53,13 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
 
   const modalRef = useRef<BottomSheetModal>(null);
   const titleRef = useRef<any>(null);
+  const abbrRef = useRef<any>(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // ✅ used to skip confirm for intentional/programmatic closes (Save/Delete/Apply/Discard)
   const bypassNextCloseConfirmRef = useRef(false);
+  // ✅ used to re-open only when confirm came from swipe-down
   const confirmWasFromSwipeRef = useRef(false);
 
   useEffect(() => {
@@ -65,7 +73,9 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
   const snapPoints = useMemo(() => ["92%"], []);
   const t = (form?.displayType ?? "none") as EntryDisplayType;
 
+  // local drafts prevent cursor flicker
   const [titleDraft, setTitleDraft] = useState("");
+  const [abbrDraft, setAbbrDraft] = useState("");
 
   const eventKey = useMemo(() => {
     if (!editingEvent) return "none";
@@ -78,6 +88,7 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
   useEffect(() => {
     if (!visible || !ready || !form) return;
     setTitleDraft(form.fullTitle ?? "");
+    setAbbrDraft(clampAbbr(form.titleAbbr ?? ""));
     setConfirmOpen(false);
     bypassNextCloseConfirmRef.current = false;
     confirmWasFromSwipeRef.current = false;
@@ -112,6 +123,15 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
     [onChangeFullTitle],
   );
 
+  const onChangeAbbr = useCallback(
+    (text: string) => {
+      const clamped = clampAbbr(text);
+      setAbbrDraft(clamped);
+      onChangeTitleAbbr(clamped);
+    },
+    [onChangeTitleAbbr],
+  );
+
   const attemptCloseViaButton = useCallback(() => {
     if (confirmOpen) return;
     if (isDirty) {
@@ -126,6 +146,7 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
     (index: number) => {
       if (index !== -1) return;
 
+      // ✅ Skip confirm once for intentional closes (Save/Delete/Apply/Discard)
       if (bypassNextCloseConfirmRef.current) {
         bypassNextCloseConfirmRef.current = false;
         return;
@@ -168,6 +189,17 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
     onSave();
   }, [onSave]);
 
+  // ✅ Wrap Save/Delete so they DON'T trigger the dirty-confirm on sheet dismiss
+  const handleSave = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    onSave();
+  }, [onSave]);
+
+  const handleDelete = useCallback(() => {
+    bypassNextCloseConfirmRef.current = true;
+    onDelete();
+  }, [onDelete]);
+
   return (
     <>
       <BottomSheetModal
@@ -207,6 +239,9 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
                   titleRef={titleRef}
                   titleValue={titleDraft}
                   onChangeTitle={onChangeTitle}
+                  abbrRef={abbrRef}
+                  abbrValue={abbrDraft}
+                  onChangeAbbr={onChangeAbbr}
                   isIcalEditing={isIcalEditing}
                   isCreatingNew={isCreatingNew}
                   entryType={t}
@@ -223,15 +258,15 @@ export function EventEditorDrawer(props: EventEditorDrawerProps) {
                   isIcalEditing={isIcalEditing}
                   entryType={t}
                   onSelectDisplayType={onSelectDisplayType}
-                  onChangeTitleAbbr={onChangeTitleAbbr}
                   onChangeNote={onChangeNote}
                   onSelectColor={onSelectColor}
                   onChangeCourseField={onChangeCourseField}
                   onChangePartyField={onChangePartyField}
                   onSetActivePicker={onSetActivePicker}
                   onPickerChange={onPickerChange}
-                  onDelete={onDelete}
-                  onSave={onSave}
+                  // ✅ use wrapped handlers
+                  onDelete={handleDelete}
+                  onSave={handleSave}
                 />
               </BottomSheetScrollView>
             </Surface>

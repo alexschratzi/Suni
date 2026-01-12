@@ -13,6 +13,10 @@ type Props = {
   titleValue: string;
   onChangeTitle: (t: string) => void;
 
+  abbrRef?: React.RefObject<any>;
+  abbrValue: string;
+  onChangeAbbr: (t: string) => void;
+
   isIcalEditing: boolean;
   isCreatingNew: boolean;
   entryType: EntryDisplayType;
@@ -25,6 +29,9 @@ export function EditorHeaderTitle({
   titleRef,
   titleValue,
   onChangeTitle,
+  abbrRef,
+  abbrValue,
+  onChangeAbbr,
   isIcalEditing,
   isCreatingNew,
   entryType,
@@ -35,7 +42,7 @@ export function EditorHeaderTitle({
     [paper.colors.primary],
   );
 
-  const placeholder = useMemo(() => {
+  const titlePlaceholder = useMemo(() => {
     if (!isCreatingNew) return undefined;
     if (entryType === "course") return "Course title";
     if (entryType === "event") return "Event title";
@@ -45,6 +52,7 @@ export function EditorHeaderTitle({
   return (
     <View style={styles.topRow}>
       <View style={{ flex: 1 }}>
+        {/* MAIN TITLE */}
         <AutoGrowTextInput
           ref={titleRef}
           mode="flat"
@@ -53,7 +61,7 @@ export function EditorHeaderTitle({
           editable={!isIcalEditing}
           autoFocus={isCreatingNew && !isIcalEditing}
           selectTextOnFocus={isCreatingNew && !isIcalEditing}
-          placeholder={placeholder}
+          placeholder={titlePlaceholder}
           underlineColor="transparent"
           activeUnderlineColor="transparent"
           cursorColor={paper.colors.primary}
@@ -69,9 +77,33 @@ export function EditorHeaderTitle({
           numberOfLines={2}
           scrollEnabled
         />
+
+        {/* ABBREVIATION — directly under title */}
+        <AutoGrowTextInput
+          ref={abbrRef}
+          mode="flat"
+          value={abbrValue}
+          onChangeText={onChangeAbbr}
+          editable={!isIcalEditing}
+          underlineColor="transparent"
+          activeUnderlineColor="transparent"
+          cursorColor={paper.colors.primary}
+          selectionColor={paper.colors.primary}
+          theme={titleTheme}
+          style={[styles.abbrInline, { backgroundColor: "transparent" }]}
+          contentStyle={[
+            styles.abbrInlineContent,
+            { color: paper.colors.onSurfaceVariant, backgroundColor: "transparent" },
+          ]}
+          dense={false}
+          multiline={false}
+          maxLength={4}
+          // ❌ no placeholder
+          placeholder={undefined}
+        />
       </View>
 
-      <IconButton icon="close" onPress={onPressClose} style={{ marginTop: 6 }} />
+      <IconButton icon="close" onPress={onPressClose} style={{ marginTop: 4 }} />
     </View>
   );
 }
@@ -82,6 +114,8 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     columnGap: 8,
   },
+
+  /* Title */
   titleInline: {
     paddingHorizontal: 0,
     paddingVertical: 0,
@@ -89,9 +123,23 @@ const styles = StyleSheet.create({
   },
   titleInlineContent: {
     paddingHorizontal: 0,
-    paddingVertical: 6,
+    paddingVertical: 4, // ↓ tighter
     fontSize: 20,
     fontWeight: "700",
     lineHeight: 26,
+  },
+
+  /* Abbreviation */
+  abbrInline: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    marginTop: -10, // ↓ pulls it directly under the title
+  },
+  abbrInlineContent: {
+    paddingHorizontal: 0,
+    paddingVertical: 0, // ↓ minimal spacing
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 1,
   },
 });

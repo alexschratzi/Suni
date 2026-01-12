@@ -30,9 +30,7 @@ type Props = {
   entryType: EntryDisplayType;
   onSelectDisplayType: (t: EntryDisplayType) => void;
 
-  onChangeTitleAbbr: (t: string) => void;
   onChangeNote: (t: string) => void;
-
   onSelectColor: (c: string) => void;
 
   onChangeCourseField: (patch: Partial<CourseEditorForm>) => void;
@@ -53,7 +51,6 @@ export function EditorContent({
   isIcalEditing,
   entryType,
   onSelectDisplayType,
-  onChangeTitleAbbr,
   onChangeNote,
   onSelectColor,
   onChangeCourseField,
@@ -70,14 +67,6 @@ export function EditorContent({
 
       {entryType === "none" && (
         <>
-          <AutoGrowTextInput
-            mode="outlined"
-            label="Title abbr."
-            value={form.titleAbbr}
-            onChangeText={onChangeTitleAbbr}
-            dense
-          />
-
           <DateTimeFields
             form={form}
             isIcalEditing={isIcalEditing}

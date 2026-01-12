@@ -35,6 +35,12 @@ function normalizeDisplayType(v: any): EntryDisplayType {
   return v === "none" || v === "course" || v === "event" ? v : "none";
 }
 
+function clampAbbr(raw: string): string {
+  const s = String(raw ?? "").trim();
+  // Keep it simple & predictable: remove spaces, cap at 4
+  return s.replace(/\s+/g, "").slice(0, 4);
+}
+
 function toCourseForm(base: EventEditorForm): CourseEditorForm {
   const b = base as any;
   return {
@@ -64,7 +70,6 @@ function snapshotComparable(form: EventEditorForm | null) {
   if (!form) return null;
   const f: any = form;
 
-  // Compare a stable subset (including type-specific fields if present)
   return {
     displayType: form.displayType,
     fullTitle: form.fullTitle ?? "",
@@ -74,13 +79,11 @@ function snapshotComparable(form: EventEditorForm | null) {
     note: form.note ?? "",
     color: form.color ?? "",
 
-    // course-ish
     courseName: f.courseName ?? "",
     courseType: f.courseType ?? "",
     lecturer: f.lecturer ?? "",
     room: f.room ?? "",
 
-    // party-ish
     eventName: f.eventName ?? "",
     location: f.location ?? "",
     createdBy: f.createdBy ?? "",
@@ -104,11 +107,9 @@ export function useTimetableEditor({
   const [hasCustomTitleAbbr, setHasCustomTitleAbbr] = useState(false);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
 
-  // ✅ creation marker lives in hook state (not on EvWithMeta type)
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const createdDraftIdRef = useRef<string | null>(null);
 
-  // ✅ dirty tracking snapshot
   const initialSnapshotRef = useRef<any>(null);
   const initialHasCustomAbbrRef = useRef<boolean>(false);
 
@@ -128,8 +129,8 @@ export function useTimetableEditor({
       const creating = !!opts?.creating;
 
       const fullTitle = ev.fullTitle ?? ev.title ?? "";
-      const autoAbbr = makeTitleAbbr(fullTitle);
-      const titleAbbr = ev.titleAbbr ?? autoAbbr;
+      const autoAbbr = clampAbbr(makeTitleAbbr(fullTitle));
+      const titleAbbr = clampAbbr(ev.titleAbbr ?? autoAbbr);
 
       const base: EventEditorForm = {
         fullTitle,
@@ -147,13 +148,13 @@ export function useTimetableEditor({
 
       setEditingEvent(ev);
       setEditorForm(finalForm);
+
       setHasCustomTitleAbbr(ev.isTitleAbbrCustom ?? false);
       setActivePicker(null);
 
       setIsCreatingNew(creating);
       createdDraftIdRef.current = creating ? ev.id : null;
 
-      // capture snapshot for dirty tracking
       initialSnapshotRef.current = snapshotComparable(finalForm);
       initialHasCustomAbbrRef.current = ev.isTitleAbbrCustom ?? false;
     },
@@ -183,8 +184,13 @@ export function useTimetableEditor({
 
       setEditorForm((prev) => {
         if (!prev) return prev;
+
         const next: any = { ...prev, fullTitle: text };
-        if (!hasCustomTitleAbbr) next.titleAbbr = makeTitleAbbr(text);
+
+        // ✅ auto-generate unless user customized
+        if (!hasCustomTitleAbbr) {
+          next.titleAbbr = clampAbbr(makeTitleAbbr(text));
+        }
         return next;
       });
     },
@@ -193,10 +199,12 @@ export function useTimetableEditor({
 
   const onChangeTitleAbbr = useCallback(
     (text: string) => {
+      if (editingEvent?.source === "ical") return; // "like title": iCal title isn't editable
+      const clamped = clampAbbr(text);
       setHasCustomTitleAbbr(true);
-      updateForm({ titleAbbr: text });
+      updateForm({ titleAbbr: clamped });
     },
-    [updateForm],
+    [editingEvent?.source, updateForm],
   );
 
   const handlePickerChange = useCallback(
@@ -218,17 +226,13 @@ export function useTimetableEditor({
     return JSON.stringify(a) !== JSON.stringify(b) || initialHasCustomAbbrRef.current !== hasCustomTitleAbbr;
   }, [editorForm, hasCustomTitleAbbr]);
 
-  // ✅ Called when user tries to close WITHOUT needing a confirm dialog
-  // - If creating + no changes => remove draft (not created)
   const requestCloseEditor = useCallback(() => {
     if (!editingEvent) return;
 
-    // new draft + no changes => remove it
+    // creating + no changes => remove draft event
     if (isCreatingNew && !isDirty) {
       const draftId = createdDraftIdRef.current;
-      if (draftId) {
-        setEvents((prev) => prev.filter((e) => e.id !== draftId));
-      }
+      if (draftId) setEvents((prev) => prev.filter((e) => e.id !== draftId));
       closeEditor();
       return;
     }
@@ -236,17 +240,12 @@ export function useTimetableEditor({
     closeEditor();
   }, [closeEditor, editingEvent, isCreatingNew, isDirty, setEvents]);
 
-  // ✅ Discard changes (used by confirm dialog)
-  // - If creating => remove draft entirely
-  // - Else just close (we don’t mutate stored event until Save anyway)
   const discardEditorChanges = useCallback(() => {
     if (!editingEvent) return;
 
     if (isCreatingNew) {
       const draftId = createdDraftIdRef.current;
-      if (draftId) {
-        setEvents((prev) => prev.filter((e) => e.id !== draftId));
-      }
+      if (draftId) setEvents((prev) => prev.filter((e) => e.id !== draftId));
       closeEditor();
       return;
     }
@@ -269,7 +268,7 @@ export function useTimetableEditor({
         );
 
       const fullTitle = editingEvent.fullTitle ?? editingEvent.title ?? "Untitled";
-      const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
+      const titleAbbr = clampAbbr(editorForm.titleAbbr || makeTitleAbbr(fullTitle));
 
       const nextMeta: Record<string, ICalEventMeta> = {
         ...icalMeta,
@@ -307,7 +306,7 @@ export function useTimetableEditor({
     }
 
     const fullTitle = editorForm.fullTitle || "Untitled";
-    const titleAbbr = editorForm.titleAbbr || makeTitleAbbr(fullTitle);
+    const titleAbbr = clampAbbr(editorForm.titleAbbr || makeTitleAbbr(fullTitle));
 
     const nextCourse =
       nextDisplayType === "course"
@@ -353,11 +352,8 @@ export function useTimetableEditor({
 
     setEvents((prev) => {
       const updatedList = prev.map((e) => (e.id === updated.id ? updated : e));
-
-      // ✅ Persist only on Save (this is what prevents “unchanged new events” from being created)
       void saveLocalEvents(updatedList);
       void syncLocalEventsToServer(updatedList, userId);
-
       return updatedList;
     });
 
@@ -378,7 +374,6 @@ export function useTimetableEditor({
   const deleteEditorEvent = useCallback(() => {
     if (!editingEvent) return;
 
-    // Draft new event: just remove (never persisted)
     if (isCreatingNew) {
       const draftId = createdDraftIdRef.current;
       if (draftId) setEvents((prev) => prev.filter((e) => e.id !== draftId));
@@ -408,7 +403,6 @@ export function useTimetableEditor({
       const startISO = toISO(ev.start);
       const endISO = toISO(ev.end);
 
-      // ✅ Start empty. Not persisted until Save.
       const newEvent: EvWithMeta = {
         id: Math.random().toString(36).slice(2),
         title: "",
@@ -423,10 +417,8 @@ export function useTimetableEditor({
         hidden: false,
       };
 
-      // ✅ Put it in memory so the user can edit it immediately,
-      // but DO NOT persist until Save.
+      // in-memory only; persisted on Save
       setEvents((prev) => [...prev, newEvent]);
-
       openEditorForEvent(newEvent, { creating: true });
     },
     [openEditorForEvent, setEvents],
@@ -443,19 +435,16 @@ export function useTimetableEditor({
   );
 
   return {
-    // overview
     viewingEvent,
     openOverviewForEvent,
     closeOverview,
 
-    // edit
     editingEvent,
     editorForm,
     activePicker,
     setActivePicker,
     isIcalEditing,
 
-    // ✅ new close/dirty API
     isCreatingNew,
     isDirty,
     requestCloseEditor,
