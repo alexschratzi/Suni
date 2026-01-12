@@ -3,16 +3,21 @@ import * as React from "react";
 import {
   ActivityIndicator,
   FlatList,
+  RefreshControl,
   StyleSheet,
   View,
 } from "react-native";
 import { Card, Text, useTheme } from "react-native-paper";
 import { useRouter } from "expo-router";
 
-
 import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
-import { LinkHubLink, UniConfig, loadActiveUniConfig } from "./uni-login";
+import {
+  LinkHubLink,
+  UniConfig,
+  loadActiveUniConfig,
+  fetchUniConfig,          // ✅ add this
+} from "./uni-login";
 import { useResetOnboarding } from "./useResetOnboarding";
 import { getCachedStudentProfile, scrapeStudentProfile } from "../../src/server/uniScraper";
 
@@ -24,6 +29,32 @@ import {
 } from "@/components/university/cookies";
 
 import HubTile from "./HubTile";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const KEY_LAST_FORCED_SCRAPE_TS = "uni:last_forced_profile_scrape_ts";
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+async function canForceScrapeNow(): Promise<{
+  allowed: boolean;
+  waitMs: number;
+  lastTs: number | null;
+}> {
+  const raw = await AsyncStorage.getItem(KEY_LAST_FORCED_SCRAPE_TS);
+  const lastTs = raw ? Number(raw) : null;
+
+  if (!lastTs || !Number.isFinite(lastTs)) {
+    return { allowed: true, waitMs: 0, lastTs: null };
+  }
+
+  const elapsed = Date.now() - lastTs;
+  const waitMs = Math.max(0, ONE_HOUR_MS - elapsed);
+
+  return { allowed: waitMs === 0, waitMs, lastTs };
+}
+
+async function markForcedScrapeNow(): Promise<void> {
+  await AsyncStorage.setItem(KEY_LAST_FORCED_SCRAPE_TS, String(Date.now()));
+}
 
 export default function LinkHub() {
   const { university } = useUniversity();
@@ -32,6 +63,7 @@ export default function LinkHub() {
 
   const [links, setLinks] = React.useState<LinkHubLink[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false); // ✅ pull-to-refresh
   const [error, setError] = React.useState<string | null>(null);
 
   const resetOnboarding = useResetOnboarding();
@@ -42,6 +74,7 @@ export default function LinkHub() {
   const [scraping, setScraping] = React.useState(false);
 
   const autoRefreshRef = React.useRef(false);
+  const refreshBusyRef = React.useRef(false); // ✅ block parallel refresh
 
   const cookieDomains = React.useMemo(() => {
     return buildCookieOrigins({
@@ -109,7 +142,7 @@ export default function LinkHub() {
     [router, browserResetToken]
   );
 
-    const ensureProfile = React.useCallback(
+  const ensureProfile = React.useCallback(
     async (opts?: { force?: boolean; setBusy?: boolean }) => {
       const force = Boolean(opts?.force);
       const setBusy = Boolean(opts?.setBusy);
@@ -132,6 +165,8 @@ export default function LinkHub() {
           cookies: cookiesJson,
         });
 
+        markForcedScrapeNow();
+
         return profile;
       } finally {
         if (setBusy) setScraping(false);
@@ -139,6 +174,32 @@ export default function LinkHub() {
     },
     [university?.id, uniCfg?.uniId, cookieDomains]
   );
+
+  const onRefresh = React.useCallback(async () => {
+    if (!university?.id) return;
+    if (refreshBusyRef.current) return;
+
+    refreshBusyRef.current = true;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      // 1) refetch uni config + update cache
+      const cfg = await fetchUniConfig(university.id);
+      setUniCfg(cfg);
+      setLinks(cfg.linkhubLinks ?? []);
+
+      const gate = await canForceScrapeNow();
+      if (gate.allowed) {
+        await ensureProfile({ force: true, setBusy: true });
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Fehler beim Aktualisieren.");
+    } finally {
+      setRefreshing(false);
+      refreshBusyRef.current = false;
+    }
+  }, [university?.id, ensureProfile]);
 
   React.useEffect(() => {
     let alive = true;
@@ -163,7 +224,7 @@ export default function LinkHub() {
   const handleOpenGrades = React.useCallback(async () => {
     if (scraping) return;
     try {
-      await ensureProfile({ force: false, setBusy: true }); // blocks UI + disables button
+      await ensureProfile({ force: false, setBusy: true });
       router.push("/(app)/(stack)/grades");
     } catch (e: any) {
       console.warn("Open grades failed:", e?.message || String(e));
@@ -173,7 +234,7 @@ export default function LinkHub() {
   const handleStartScraping = React.useCallback(async () => {
     if (scraping) return;
     try {
-      await ensureProfile({ force: true, setBusy: true }); // force refresh
+      await ensureProfile({ force: true, setBusy: true });
     } catch (e: any) {
       console.warn("Scraping error:", e?.message || String(e));
     }
@@ -191,16 +252,14 @@ export default function LinkHub() {
 
   const handleHardResetBrowserSession = React.useCallback(async () => {
     await clearAllCookies();
-    setBrowserResetToken((x) => x + 1); // keep if you still use it
+    setBrowserResetToken((x) => x + 1);
   }, []);
 
   const data = React.useMemo(() => {
-    // Put “Grades” tile first, then the linkhub links
-    const items: Array<{ kind: "grades" } | { kind: "link"; link: LinkHubLink }> = [
-      { kind: "grades" },
+    return [
+      { kind: "grades" as const },
       ...links.map((l) => ({ kind: "link" as const, link: l })),
     ];
-    return items;
   }, [links]);
 
   return (
@@ -227,30 +286,29 @@ export default function LinkHub() {
           }
           numColumns={1}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
           renderItem={({ item }) => {
             if (item.kind === "grades") {
               return (
-                <View>
-                  <HubTile
-                    title={scraping ? "Noten werden geladen…" : "Noten / Leistungen"}
-                    subtitle="Aktuelle Kurse & Bewertungen abrufen"
-                    icon="school"
-                    onPress={handleOpenGrades}
-                    disabled={!university || scraping}
-                  />
-                </View>
+                <HubTile
+                  title={scraping ? "Noten werden geladen…" : "Noten / Leistungen"}
+                  subtitle="Aktuelle Kurse & Bewertungen abrufen"
+                  icon="school"
+                  onPress={handleOpenGrades}
+                  disabled={!university || scraping}
+                />
               );
             }
 
             return (
-              <View>
-                <HubTile
-                  title={item.link.title}
-                  icon="open-in-new"
-                  onPress={() => openEmbeddedBrowser(item.link.link, item.link.title)}
-                  disabled={!item.link.link}
-                />
-              </View>
+              <HubTile
+                title={item.link.title}
+                icon="open-in-new"
+                onPress={() => openEmbeddedBrowser(item.link.link, item.link.title)}
+                disabled={!item.link.link}
+              />
             );
           }}
           ListEmptyComponent={
@@ -267,14 +325,12 @@ export default function LinkHub() {
                   icon="bug"
                   onPress={handleDebugCookies}
                 />
-
                 <HubTile
                   title="DEV: Cookies löschen"
                   subtitle="Hard Reset"
                   icon="delete"
                   onPress={handleHardResetBrowserSession}
                 />
-
                 <HubTile
                   title={scraping ? "DEV: Scraping…" : "DEV: Scraping starten"}
                   subtitle="Profil neu abrufen"
@@ -282,7 +338,6 @@ export default function LinkHub() {
                   onPress={handleStartScraping}
                   disabled={scraping}
                 />
-
                 <HubTile
                   title="DEV: Logout"
                   subtitle="Reset onboarding"
