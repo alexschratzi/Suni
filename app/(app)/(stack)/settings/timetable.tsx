@@ -175,42 +175,21 @@ export default function TimetableSettingsScreen() {
         contentContainerStyle={styles.container}
       >
         <Text variant="titleLarge" style={styles.title}>
-          Stundenplan-Einstellungen
+          Kalender verwalten
         </Text>
 
         <Text
           variant="bodyMedium"
           style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}
         >
-          Hier können spezifische Einstellungen für den Stundenplan vorgenommen werden.
+          Hier können andere Kalender abboniert werden. Hinzugefügt Kalender synchronisieren sich automatisch.
         </Text>
-
-        {/* Navigation */}
-        <Surface style={{ borderRadius: 12, marginBottom: 16 }} elevation={1}>
-          <View style={{ borderRadius: 12, overflow: "hidden" }}>
-            <List.Section>
-              <List.Subheader>Navigation</List.Subheader>
-
-              <List.Item
-                title="Zu heute springen"
-                description="Kalender auf den aktuellen Tag / die aktuelle Woche zurücksetzen"
-                left={(props) => <List.Icon {...props} icon="calendar-today" />}
-                onPress={() =>
-                  router.push({
-                    pathname: "/(app)/(stack)/(tabs)/timetable",
-                    params: { jumpToToday: "1" },
-                  })
-                }
-              />
-            </List.Section>
-          </View>
-        </Surface>
 
         {/* iCal subscriptions */}
         <Surface style={{ borderRadius: 12 }} elevation={1}>
           <View style={{ borderRadius: 12, overflow: "hidden" }}>
             <List.Section>
-              <List.Subheader>iCal-Abonnements</List.Subheader>
+              <List.Subheader>Meine Kalender</List.Subheader>
 
               {loadingSubs && (
                 <View style={styles.loadingRow}>
@@ -264,8 +243,8 @@ export default function TimetableSettingsScreen() {
               })}
 
               <List.Item
-                title="Neue iCal-Verknüpfung"
-                description="iCal-Link, Name, Farbe und Default-Typ hinzufügen"
+                title="Neuen Kalender hinzufügen"
+                description="Kalender per iCal-Link, Google, Apple oder Outlook hinzufügen"
                 left={(props) => <List.Icon {...props} icon="plus" />}
                 onPress={openCreateDialog}
               />

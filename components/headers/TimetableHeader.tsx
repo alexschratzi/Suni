@@ -209,7 +209,7 @@ export function TimetableHeaderRight() {
           onPress={openMenu}
           style={styles.iconButton}
           accessibilityRole="button"
-          aria-label="Stundenplan-Optionen"
+          aria-label="Kalender-Aktionen"
           hitSlop={10}
         >
           <Ionicons
@@ -277,7 +277,7 @@ export function TimetableHeaderRight() {
                             { color: theme.colors.onSurface },
                           ]}
                         >
-                          Kalender-Optionen
+                          Kalender verwalten
                         </Text>
                       </Pressable>
 
