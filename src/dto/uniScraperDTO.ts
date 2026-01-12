@@ -27,6 +27,7 @@ export interface StudentProfile {
     matrikel_nr?: string,
     
     university_id: string,
+    universtiy_name: string,
     current_semester?: string,
     
     calendar_url?: string,

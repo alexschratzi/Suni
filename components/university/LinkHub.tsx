@@ -3,12 +3,10 @@ import * as React from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
-  ScrollView,
   StyleSheet,
   View,
 } from "react-native";
-import { Button, Card, Text, useTheme } from "react-native-paper";
+import { Card, Text, useTheme } from "react-native-paper";
 import { useRouter } from "expo-router";
 
 
@@ -26,11 +24,8 @@ import {
 } from "@/components/university/cookies";
 
 import HubTile from "./HubTile";
-type Props = {
-  onOpenGrades?: () => void;
-};
 
-export default function LinkHub({ onOpenGrades }: Props) {
+export default function LinkHub() {
   const { university } = useUniversity();
   const theme = useTheme();
   const router = useRouter();
@@ -100,36 +95,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
     };
   }, [university]);
 
-  const refreshProfileIfNeeded = React.useCallback(async () => {
-    if (autoRefreshRef.current) return;
-    autoRefreshRef.current = true;
-
-    const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
-    if (!university_id) return;
-
-    const cached = await getCachedStudentProfile();
-    if (cached) return;
-
-    try {
-      const byOrigin = await collectCookiesByOrigin(cookieDomains);
-      const cookiesJson = flattenToCookiesJson(byOrigin);
-
-      const profile = await scrapeStudentProfile({
-        university_id,
-        cookies: cookiesJson,
-      });
-
-    } catch (e: any) {
-      autoRefreshRef.current = false;
-    }
-  }, [university?.id, uniCfg?.uniId, cookieDomains]);
-
-  React.useEffect(() => {
-    if (!university || !uniCfg) return;
-    if (cookieDomains.length === 0) return;
-    refreshProfileIfNeeded();
-  }, [university, uniCfg, cookieDomains, refreshProfileIfNeeded]);
-
   const openEmbeddedBrowser = React.useCallback(
     (url: string, title?: string) => {
       router.push({
@@ -144,35 +109,75 @@ export default function LinkHub({ onOpenGrades }: Props) {
     [router, browserResetToken]
   );
 
-  const ensureProfile = React.useCallback(async () => {
-    const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
-    if (!university_id) return;
+    const ensureProfile = React.useCallback(
+    async (opts?: { force?: boolean; setBusy?: boolean }) => {
+      const force = Boolean(opts?.force);
+      const setBusy = Boolean(opts?.setBusy);
 
-    const cached = await getCachedStudentProfile();
-    if (cached) return cached;
+      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
+      if (!university_id) return null;
 
-    const byOrigin = await collectCookiesByOrigin(cookieDomains);
-    const cookiesJson = flattenToCookiesJson(byOrigin);
+      if (setBusy) setScraping(true);
+      try {
+        if (!force) {
+          const cached = await getCachedStudentProfile();
+          if (cached) return cached;
+        }
 
-    return await scrapeStudentProfile({
-      university_id,
-      cookies: cookiesJson,
-    });
-  }, [university?.id, uniCfg?.uniId, cookieDomains]);
+        const byOrigin = await collectCookiesByOrigin(cookieDomains);
+        const cookiesJson = flattenToCookiesJson(byOrigin);
+
+        const profile = await scrapeStudentProfile({
+          university_id,
+          cookies: cookiesJson,
+        });
+
+        return profile;
+      } finally {
+        if (setBusy) setScraping(false);
+      }
+    },
+    [university?.id, uniCfg?.uniId, cookieDomains]
+  );
+
+  React.useEffect(() => {
+    let alive = true;
+    if (!university || !uniCfg) return;
+
+    (async () => {
+      setScraping(true);
+      try {
+        await ensureProfile();
+      } catch (e) {
+        console.warn("Auto profile load failed", e);
+      } finally {
+        if (alive) setScraping(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [university, uniCfg, ensureProfile]);
 
   const handleOpenGrades = React.useCallback(async () => {
     if (scraping) return;
-
-    setScraping(true);
     try {
-      await ensureProfile(); // keeps your current behavior: scrape if missing
+      await ensureProfile({ force: false, setBusy: true }); // blocks UI + disables button
       router.push("/(app)/(stack)/grades");
     } catch (e: any) {
       console.warn("Open grades failed:", e?.message || String(e));
-    } finally {
-      setScraping(false);
     }
   }, [ensureProfile, router, scraping]);
+
+  const handleStartScraping = React.useCallback(async () => {
+    if (scraping) return;
+    try {
+      await ensureProfile({ force: true, setBusy: true }); // force refresh
+    } catch (e: any) {
+      console.warn("Scraping error:", e?.message || String(e));
+    }
+  }, [ensureProfile, scraping]);
 
   const handleDebugCookies = React.useCallback(async () => {
     try {
@@ -187,29 +192,6 @@ export default function LinkHub({ onOpenGrades }: Props) {
   const handleHardResetBrowserSession = React.useCallback(async () => {
     await clearAllCookies();
     setBrowserResetToken((x) => x + 1); // keep if you still use it
-  }, []);
-
-  const handleStartScraping = React.useCallback(async () => {
-    if (!university && !uniCfg?.uniId) return;
-    setScraping(true);
-    try {
-      const byOrigin = await collectCookiesByOrigin(cookieDomains);
-      const cookiesJson = flattenToCookiesJson(byOrigin);
-
-      const university_id = String(university?.id ?? uniCfg?.uniId ?? "");
-      await scrapeStudentProfile({ university_id, cookies: cookiesJson });
-    } catch (e: any) {
-      console.warn("Scraping error:", e?.message || String(e));
-    } finally {
-      setScraping(false);
-    }
-  }, [cookieDomains, university, uniCfg]);
-
-  const screenBg = theme.colors.background;
-
-  // Optional: hide debug behind DEV only
-  const devHardReset = React.useCallback(async () => {
-    await clearAllCookies();
   }, []);
 
   const data = React.useMemo(() => {

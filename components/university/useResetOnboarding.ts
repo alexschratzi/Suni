@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {useUniversity} from "./UniversityContext";
 import {clearActiveUniConfig} from "./uni-login";
 import CookieManager from "@react-native-cookies/cookies";
+import { clearStudentProfileCache } from "@/src/server/uniScraper";
 
 const STORAGE_KEYS = {
   country: "uc.country",
@@ -50,6 +51,7 @@ export function useResetOnboarding() {
       await resetLoginAck();
       await setUniversity(null);
       await setCountry(null);
+      await clearStudentProfileCache();
     },
     [setCountry, setUniversity, resetLoginAck]
   );
