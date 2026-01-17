@@ -20,6 +20,7 @@ import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import { createAvatarUrl } from "@/src/lib/avatars";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createAttachmentUrl,
   pickAttachment,
@@ -32,6 +33,7 @@ type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
 
 export default function ReplyScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const {
@@ -57,11 +59,11 @@ export default function ReplyScreen() {
   const messageAttachmentPathValue = toSingle(messageAttachmentPath);
   const messageAttachmentNameValue = toSingle(messageAttachmentName);
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
-  const headerTitle = dmIdValue ? "Chat" : "Antworten";
 
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
+  const [dmPartnerName, setDmPartnerName] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
@@ -73,6 +75,9 @@ export default function ReplyScreen() {
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string | null>>(
     {}
   );
+  const headerTitle = dmIdValue
+    ? dmPartnerName || t("chat.directTitle", "Chat")
+    : "Antworten";
 
   useEffect(() => {
     if (!userId) {
@@ -148,6 +153,58 @@ export default function ReplyScreen() {
       supabase.removeChannel(channel);
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!dmIdValue || !userId) {
+      setDmPartnerName("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPartner = async () => {
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(COLUMNS.dmThreads.userIds)
+        .eq(COLUMNS.dmThreads.id, dmIdValue)
+        .maybeSingle();
+
+      if (error) {
+        console.error("DM thread load error:", error.message);
+        return;
+      }
+
+      const userIds = (data as any)?.[COLUMNS.dmThreads.userIds];
+      const otherId = Array.isArray(userIds)
+        ? userIds.find((id: string) => id !== userId)
+        : null;
+
+      if (!otherId) {
+        if (!cancelled) setDmPartnerName("");
+        return;
+      }
+
+      const { data: profile, error: profileErr } = await supabase
+        .from(TABLES.profiles)
+        .select(COLUMNS.profiles.username)
+        .eq(COLUMNS.profiles.id, otherId)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.error("DM partner load error:", profileErr.message);
+        return;
+      }
+
+      if (cancelled) return;
+      setDmPartnerName((profile as any)?.[COLUMNS.profiles.username] ?? "");
+    };
+
+    loadPartner();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dmIdValue, userId]);
 
   // Load replies (DM or group thread)
   useEffect(() => {
@@ -720,6 +777,41 @@ export default function ReplyScreen() {
       minute: "2-digit",
     });
   };
+  const isSameDay = (a: any, b: any) => {
+    const dateA = toDate(a);
+    const dateB = toDate(b);
+    if (!dateA || !dateB) return false;
+    return (
+      dateA.getFullYear() === dateB.getFullYear() &&
+      dateA.getMonth() === dateB.getMonth() &&
+      dateA.getDate() === dateB.getDate()
+    );
+  };
+  const formatDateLabel = (value: any) => {
+    const dateValue = toDate(value);
+    if (!dateValue) return "";
+    const today = new Date();
+    const startOfToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+    const startOfDate = new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    );
+    const diffDays = Math.round(
+      (startOfToday.getTime() - startOfDate.getTime()) / 86400000
+    );
+    if (diffDays === 0) return t("chat.date.today", "Heute");
+    if (diffDays === 1) return t("chat.date.yesterday", "Gestern");
+    return dateValue.toLocaleDateString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
   const formatTimestamp = (value: any) => {
     const dateValue = toDate(value);
     if (!dateValue) return t("chat.justNow");
@@ -764,7 +856,7 @@ export default function ReplyScreen() {
       keyboardVerticalOffset={110}
     >
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <IconButton icon="arrow-left" onPress={() => router.back()} />
           <Text variant="titleMedium">{headerTitle}</Text>
         </View>
@@ -854,11 +946,10 @@ export default function ReplyScreen() {
         <FlatList
           data={sortedReplies}
           keyExtractor={(i) => i.id}
-          contentContainerStyle={{
-            paddingHorizontal: 12,
-            paddingBottom: 12,
-          }}
-          renderItem={({ item }) => {
+          contentContainerStyle={
+            dmIdValue ? styles.dmListContent : styles.threadListContent
+          }
+          renderItem={({ item, index }) => {
             const isDirect = !!dmIdValue;
             const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
 
@@ -989,105 +1080,107 @@ export default function ReplyScreen() {
             const timeLabel = formatTime(item.timestamp);
             const hasText = !!item.text;
             const hasAttachment = !!item.attachmentPath;
+            const nextItem = sortedReplies[index + 1];
+            const prevItem = sortedReplies[index - 1];
+            const showDate =
+              !prevItem || !isSameDay(prevItem.timestamp, item.timestamp);
+            const dateLabel = formatDateLabel(item.timestamp);
+            const showTail = !nextItem || nextItem.sender !== item.sender;
+            const bubbleColor = isMine
+              ? theme.colors.primary
+              : theme.colors.surfaceVariant;
+            const textColor = isMine
+              ? theme.colors.onPrimary
+              : theme.colors.onSurface;
+            const timeColor = isMine
+              ? theme.colors.onPrimary
+              : theme.colors.onSurfaceVariant;
+            const rowSpacing = showTail ? 8 : 2;
 
             return (
-              <View
-                style={[
-                  styles.messageRow,
-                  isMine ? styles.rowMine : styles.rowOther,
-                ]}
-              >
-                {!isMine &&
-                  (avatarUrl ? (
-                    <Avatar.Image
-                      size={28}
-                      source={{ uri: avatarUrl }}
-                      style={[styles.dmAvatar, { backgroundColor: theme.colors.surface }]}
-                    />
-                  ) : (
-                    <Avatar.Text
-                      size={28}
-                      label={initials(item.username || "??")}
-                      color={theme.colors.onPrimary}
-                      style={[styles.dmAvatar, { backgroundColor: theme.colors.primary }]}
-                    />
-                  ))}
-                <Surface
-                  style={[
-                    styles.bubble,
-                    isMine ? styles.bubbleMine : styles.bubbleOther,
-                    {
-                      backgroundColor: isMine
-                        ? theme.colors.primary
-                        : theme.colors.surfaceVariant,
-                      borderColor: theme.colors.outlineVariant,
-                    },
-                  ]}
-                >
-                  {!isMine && (
-                    <Text
-                      style={[
-                        styles.sender,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.username || "???"}
-                    </Text>
-                  )}
-                  {hasText && (
-                    <Text
-                      style={[
-                        styles.msgText,
-                        {
-                          color: isMine
-                            ? theme.colors.onPrimary
-                            : theme.colors.onSurface,
-                        },
-                      ]}
-                    >
-                      {item.text}
-                    </Text>
-                  )}
-                  {hasAttachment && (
-                    <TouchableOpacity
-                      style={styles.attachmentRow}
-                      onPress={() => openAttachment(item.attachmentPath)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="attach"
-                        size={16}
-                        color={isMine ? theme.colors.onPrimary : theme.colors.primary}
-                      />
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.attachmentText,
-                          {
-                            color: isMine
-                              ? theme.colors.onPrimary
-                              : theme.colors.onSurface,
-                          },
-                        ]}
-                      >
-                        {item.attachmentName || "file"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  <Text
+              <View>
+                {showDate && !!dateLabel && (
+                  <View
                     style={[
-                      styles.time,
-                      {
-                        color: isMine
-                          ? theme.colors.onPrimary
-                          : theme.colors.onSurfaceVariant,
-                      },
+                      styles.dateSeparator,
+                      { backgroundColor: theme.colors.surfaceVariant },
                     ]}
                   >
-                    {timeLabel}
-                  </Text>
-                </Surface>
+                    <Text
+                      style={[
+                        styles.dateSeparatorText,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      {dateLabel}
+                    </Text>
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.messageRow,
+                    isMine ? styles.rowMine : styles.rowOther,
+                    { marginBottom: rowSpacing },
+                  ]}
+                >
+                  <View style={styles.bubbleWrap}>
+                    <Surface
+                      style={[
+                        styles.bubble,
+                        styles.bubbleShadow,
+                        isMine ? styles.bubbleMine : styles.bubbleOther,
+                        !showTail &&
+                          (isMine ? styles.bubbleNoTailMine : styles.bubbleNoTailOther),
+                        { backgroundColor: bubbleColor },
+                      ]}
+                    >
+                      {hasText && (
+                        <Text
+                          style={[
+                            styles.msgText,
+                            { color: textColor },
+                          ]}
+                        >
+                          {item.text}
+                        </Text>
+                      )}
+                      {hasAttachment && (
+                        <TouchableOpacity
+                          style={styles.attachmentRow}
+                          onPress={() => openAttachment(item.attachmentPath)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name="attach"
+                            size={16}
+                            color={textColor}
+                          />
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.attachmentText,
+                              { color: textColor },
+                            ]}
+                          >
+                            {item.attachmentName || "file"}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <Text style={[styles.timeInline, { color: timeColor }]}>
+                        {timeLabel}
+                      </Text>
+                    </Surface>
+                    {showTail && (
+                      <View
+                        style={[
+                          styles.bubbleTail,
+                          isMine ? styles.bubbleTailMine : styles.bubbleTailOther,
+                          { backgroundColor: bubbleColor },
+                        ]}
+                      />
+                    )}
+                  </View>
+                </View>
               </View>
             );
           }}
@@ -1118,8 +1211,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingBottom: 10,
   },
   originalCard: {
     padding: 12,
@@ -1146,10 +1238,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   messageRow: {
-    marginBottom: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "flex-end",
+    width: "100%",
   },
   threadRow: {
     marginBottom: 10,
@@ -1204,27 +1296,64 @@ const styles = StyleSheet.create({
   metaTime: {
     fontSize: 12,
   },
-  dmAvatar: {
-    marginRight: 8,
+  bubbleWrap: {
+    position: "relative",
+    flexShrink: 1,
+    maxWidth: "92%",
   },
   bubble: {
-    maxWidth: "82%",
-    minWidth: 72,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: "100%",
+    minWidth: 44,
+    paddingTop: 6,
+    paddingBottom: 16,
+    paddingHorizontal: 10,
+    paddingRight: 32,
+    borderRadius: 10,
     flexShrink: 1,
   },
+  bubbleShadow: {
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 1.5,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
   bubbleMine: {
-    borderTopRightRadius: 6,
+    borderBottomRightRadius: 4,
   },
   bubbleOther: {
-    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 4,
   },
-  sender: {
+  bubbleNoTailMine: {
+    borderBottomRightRadius: 10,
+  },
+  bubbleNoTailOther: {
+    borderBottomLeftRadius: 10,
+  },
+  bubbleTail: {
+    position: "absolute",
+    bottom: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+    transform: [{ rotate: "45deg" }],
+  },
+  bubbleTailMine: {
+    right: -4,
+  },
+  bubbleTailOther: {
+    left: -4,
+  },
+  dateSeparator: {
+    alignSelf: "center",
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  dateSeparatorText: {
     fontSize: 12,
-    marginBottom: 4,
+    fontWeight: "600",
   },
   msgText: {
     fontSize: 16,
@@ -1240,11 +1369,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 13,
   },
-  time: {
+  timeInline: {
+    position: "absolute",
+    right: 8,
+    bottom: 4,
     fontSize: 11,
-    marginTop: 6,
-    alignSelf: "flex-end",
     textAlign: "right",
-    minWidth: 44,
+    minWidth: 34,
+  },
+  dmListContent: {
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 12,
+  },
+  threadListContent: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
 });
