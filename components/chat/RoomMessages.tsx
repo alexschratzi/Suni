@@ -18,10 +18,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import InputBar from "./InputBar";
 import { createAttachmentUrl } from "@/src/lib/chatAttachments";
-import { createAvatarUrl } from "@/src/lib/avatars";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 import { initials } from "@/utils/utils";
 
@@ -269,34 +269,23 @@ export default function RoomMessages(props: Props) {
 
     let cancelled = false;
 
-    const loadAvatars = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.avatarPath}`)
-        .in(COLUMNS.profiles.id, missing);
-
-      if (error) {
-        console.error("Room avatar load error:", error.message);
-        return;
-      }
-
-      const base = Object.fromEntries(missing.map((id) => [id, null]));
-      const entries = await Promise.all(
-        (data || []).map(async (row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          if (!id) return null;
-          const path = row?.[COLUMNS.profiles.avatarPath] ?? null;
-          const url = await createAvatarUrl(path);
-          return [id, url] as const;
-        })
+    const cached = getMemoryProfiles(missing);
+    if (Object.keys(cached).length > 0) {
+      const mapped = Object.fromEntries(
+        Object.entries(cached).map(([id, entry]) => [id, entry.avatarUrl ?? null])
       );
-      const resolved = entries.filter(Boolean) as Array<readonly [string, string | null]>;
+      setAvatarUrls((prev) => ({ ...prev, ...mapped }));
+    }
 
+    const loadAvatars = async () => {
+      const profiles = await fetchProfilesWithCache(missing);
       if (cancelled) return;
+      const mapped = Object.fromEntries(
+        Object.entries(profiles).map(([id, entry]) => [id, entry.avatarUrl ?? null])
+      );
       setAvatarUrls((prev) => ({
         ...prev,
-        ...base,
-        ...Object.fromEntries(resolved),
+        ...mapped,
       }));
     };
 

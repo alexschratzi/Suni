@@ -23,6 +23,11 @@ import {
   pickAvatar,
   uploadAvatar,
 } from "@/src/lib/avatars";
+import {
+  fetchProfilesWithCache,
+  getMemoryProfiles,
+  upsertProfilesCache,
+} from "@/src/lib/profileCache";
 
 type ProfileRow = {
   id: string;
@@ -54,10 +59,10 @@ export default function ProfileScreen() {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
+      const { data: sessionRes, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
 
-      const user = userRes.user;
+      const user = sessionRes.session?.user;
       if (!user) {
         setEmail(null);
         setProfile(null);
@@ -65,6 +70,17 @@ export default function ProfileScreen() {
       }
 
       setEmail(user.email ?? null);
+
+      const cached = getMemoryProfiles([user.id])[user.id];
+      if (cached && !profile) {
+        setProfile({
+          id: user.id,
+          username: cached.username ?? null,
+          role: cached.role ?? null,
+          avatarPath: cached.avatarPath ?? null,
+        });
+        setLoading(false);
+      }
 
       // Load profile from DB
       const { data: prof, error: profErr } = await supabase
@@ -86,9 +102,18 @@ export default function ProfileScreen() {
 
         if (insErr) throw insErr;
 
-        setProfile({ id: user.id, username: null, role: "student", avatarPath: null });
+        const freshProfile = {
+          id: user.id,
+          username: null,
+          role: "student",
+          avatarPath: null,
+        };
+        setProfile(freshProfile);
+        await upsertProfilesCache([freshProfile]);
       } else {
-        setProfile(mapProfileRow(prof));
+        const mapped = mapProfileRow(prof);
+        setProfile(mapped);
+        await upsertProfilesCache([mapped]);
       }
     } catch (err: any) {
       console.log("Profil laden fehlgeschlagen:", err);
@@ -116,24 +141,28 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     let active = true;
+    const profileId = profile?.id;
     const path = profile?.avatarPath;
-    if (!path) {
+    if (!path || !profileId) {
       setAvatarUrl(null);
       return;
     }
 
-    const run = async () => {
-      const url = await createAvatarUrl(path);
-      if (!active) return;
-      setAvatarUrl(url);
-    };
+    const cached = getMemoryProfiles([profileId])[profileId];
+    if (cached?.avatarUrl && cached.avatarPath === path) {
+      setAvatarUrl(cached.avatarUrl);
+    }
 
-    run();
+    (async () => {
+      const profiles = await fetchProfilesWithCache([profileId]);
+      if (!active) return;
+      setAvatarUrl(profiles[profileId]?.avatarUrl ?? null);
+    })();
 
     return () => {
       active = false;
     };
-  }, [profile?.avatarPath]);
+  }, [profile?.avatarPath, profile?.id]);
 
   const handleUpdateUsername = async () => {
     try {
@@ -204,6 +233,15 @@ export default function ProfileScreen() {
       setProfile(mapProfileRow(data));
       const nextUrl = await createAvatarUrl(uploaded.path);
       if (nextUrl) setAvatarUrl(nextUrl);
+      await upsertProfilesCache([
+        {
+          id: profile.id,
+          username: (data as any)?.username ?? profile.username ?? null,
+          role: (data as any)?.role ?? profile.role ?? null,
+          avatarPath: uploaded.path,
+          avatarUrl: nextUrl ?? null,
+        },
+      ]);
 
       if (previousPath && previousPath !== uploaded.path) {
         const { error: removeErr } = await supabase.storage
