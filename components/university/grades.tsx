@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
-import { ActivityIndicator, Button, Card, Divider, List, Modal, Portal, Text } from "react-native-paper";
+import { ActivityIndicator, Button, Card, Divider, List, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { BarChart } from "react-native-chart-kit";
 
 import { useUniversity } from "./UniversityContext";
@@ -25,7 +25,7 @@ function sortSemesters(a: string, b: string): number {
 }
 
 export default function Grades() {
-  const router = useRouter();
+    const router = useRouter();
     const { university, shouldShowLinks } = useUniversity();
 
     const [loading, setLoading] = React.useState(false);
@@ -38,6 +38,15 @@ export default function Grades() {
 
     const screenW = Dimensions.get("window").width;
     const chartInnerW = Math.max(320, screenW - 24 - 24); // 12*2 outer + 12*2 card
+    const theme = useTheme();
+    const primary = theme.colors.primary;
+
+    // Pick readable neutrals depending on mode
+    const textColor = theme.dark ? "rgba(255,255,255,0.87)" : "rgba(0,0,0,0.87)";
+    const mutedText = theme.dark ? "rgba(255,255,255,0.60)" : "rgba(0,0,0,0.60)";
+    const grid = theme.dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)";
+
+
 
     const loadProfileFromCache = React.useCallback(async () => {
         setLoading(true);
@@ -282,7 +291,7 @@ export default function Grades() {
                             {gradeBarData.values.length < 1 ? (
                                 <Text style={{ opacity: 0.7 }}>Keine Noten vorhanden.</Text>
                             ) : (
-                                <View style={{ overflow: "hidden", borderRadius: 8 }}>
+                                <View style={{ overflow: "hidden", borderRadius: 12, backgroundColor: "transparent" }}>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                                         <BarChart
                                             data={{
@@ -295,16 +304,30 @@ export default function Grades() {
                                             yAxisLabel=""
                                             yAxisSuffix=""
                                             chartConfig={{
-                                                backgroundGradientFrom: "#ffffff",
-                                                backgroundGradientTo: "#ffffff",
+                                                backgroundGradientFrom: "transparent",
+                                                backgroundGradientTo: "transparent",
+                                                backgroundGradientFromOpacity: 0,
+                                                backgroundGradientToOpacity: 0,
                                                 decimalPlaces: 0,
-                                                color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                                                labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+                                                color: () => primary,
+                                                labelColor: (opacity = 1) =>
+                                                    theme.dark
+                                                        ? `rgba(255,255,255,${0.70 * opacity})`
+                                                        : `rgba(0,0,0,${0.70 * opacity})`,
+                                                propsForBackgroundLines: { stroke: grid, strokeWidth: 1 },
+                                                propsForLabels: { fontSize: 11 },
+                                                fillShadowGradient: primary,
+                                                fillShadowGradientOpacity: 1,
                                             }}
-                                            style={{ borderRadius: 8 }}
+                                            showValuesOnTopOfBars
+                                            withInnerLines
+                                            flatColor
+                                            verticalLabelRotation={0}
+                                            style={{ backgroundColor: "transparent" }}
                                         />
                                     </ScrollView>
                                 </View>
+
                             )}
                         </Card>
 
