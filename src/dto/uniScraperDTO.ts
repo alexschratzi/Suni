@@ -35,3 +35,9 @@ export interface StudentProfile {
 }
 
 
+export interface StudyCalendar {
+    name: string, 
+    url: string,
+    expiration_date: string, 
+    type: CalendarType
+}

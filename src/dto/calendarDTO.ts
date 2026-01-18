@@ -1,6 +1,6 @@
 // src/dto/calendarDTO.ts
 
-export type EntryDisplayTypeDTO = "none" | "course" | "event";
+export type EntryDisplayTypeDTO = "none" | "course" | "event" | "assignment";
 
 export interface CalendarEntryDTO {
   title: string;

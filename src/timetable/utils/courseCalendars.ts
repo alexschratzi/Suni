@@ -2,7 +2,7 @@
 import { getICalSubscriptions, updateICal, deleteICalSubscription } from "@/src/server/calendar";
 import { notifyICalChanged } from "@/src/utils/calendarSyncEvents";
 import { lockCourseIcalSubscriptionId, unlockCourseIcalSubscriptionId } from "@/src/timetable/utils/storage";
-import type { ICalSubscriptionDTO } from "@/src/dto/calendarDTO";
+import type { EntryDisplayTypeDTO, ICalSubscriptionDTO } from "@/src/dto/calendarDTO";
 
 /**
  * TODO: replace with real auth.
@@ -25,11 +25,12 @@ async function findSubscriptionByUrl(userId: string, url: string): Promise<ICalS
   return match ?? null;
 }
 
+// TODO: Rename to addCalender ..  and use type
 /**
  * Adds an iCal subscription that is considered "course-managed" (locked in UI).
  * If the URL already exists (exact string match after trim), returns the existing id.
  */
-export async function addCourseCalender(universityName: string, icalUrl: string): Promise<string> {
+export async function addCourseCalender(universityName: string, icalUrl: string, type: EntryDisplayTypeDTO): Promise<string> {
   const userId = DEFAULT_USER_ID;
 
   const name = String(universityName || "").trim() || "Course Calendar";
