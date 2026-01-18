@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 
 export type Direct = {
   id: string;
+  otherUid: string;
   displayName: string;
   last?: string;
   lastTimestamp?: string | null;
@@ -99,11 +100,15 @@ export default function DirectList({
                 },
               ]}
             >
-              <TouchableOpacity
+                <TouchableOpacity
                 onPress={() => {
                   router.push({
                     pathname: "/(app)/(stack)/reply",
-                    params: { dmId: item.id },
+                    params: {
+                      dmId: item.id,
+                      otherUid: item.otherUid,
+                      otherName: item.displayName,
+                    },
                   });
                 }}
                 activeOpacity={0.8}

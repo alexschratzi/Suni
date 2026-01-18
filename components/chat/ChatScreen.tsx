@@ -9,12 +9,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
 import {
   pickAttachment,
   uploadAttachment,
 } from "@/src/lib/chatAttachments";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
-import { createAvatarUrl } from "@/src/lib/avatars";
 
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
@@ -409,46 +409,42 @@ export default function ChatScreen() {
 
     if (!missing.length) return;
 
-    (async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(
-          `${COLUMNS.profiles.id},${COLUMNS.profiles.username},${COLUMNS.profiles.avatarPath}`
-        )
-        .in(COLUMNS.profiles.id, missing);
-
-      if (error) {
-        console.error("Direct profile load error:", error.message);
-        return;
-      }
-
-      const baseEntries = missing.map((id) => [
-        id,
-        { username: undefined, avatarPath: null, avatarUrl: null } as UserProfile,
-      ]);
-
-      const entries = await Promise.all(
-        (data || []).map(async (row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          if (!id) return null;
-          const avatarPath = row?.[COLUMNS.profiles.avatarPath] ?? null;
-          const avatarUrl = await createAvatarUrl(avatarPath);
-          const profile: UserProfile = {
-            username: row?.[COLUMNS.profiles.username] ?? undefined,
-            avatarPath,
-            avatarUrl,
-          };
-          return [id, profile] as const;
-        })
+    const cached = getMemoryProfiles(missing);
+    if (Object.keys(cached).length > 0) {
+      const mapped = Object.fromEntries(
+        Object.entries(cached).map(([id, entry]) => [
+          id,
+          {
+            username: entry.username ?? undefined,
+            avatarPath: entry.avatarPath ?? null,
+            avatarUrl: entry.avatarUrl ?? null,
+          } as UserProfile,
+        ])
       );
-      const resolved = entries.filter(Boolean) as Array<readonly [string, UserProfile]>;
+      setUserProfiles((prev) => ({ ...prev, ...mapped }));
+    }
 
-      setUserProfiles((prev) => ({
-        ...prev,
-        ...Object.fromEntries(baseEntries),
-        ...Object.fromEntries(resolved),
-      }));
+    let cancelled = false;
+
+    (async () => {
+      const profiles = await fetchProfilesWithCache(missing);
+      if (cancelled) return;
+      const mapped = Object.fromEntries(
+        Object.entries(profiles).map(([id, entry]) => [
+          id,
+          {
+            username: entry.username ?? undefined,
+            avatarPath: entry.avatarPath ?? null,
+            avatarUrl: entry.avatarUrl ?? null,
+          } as UserProfile,
+        ])
+      );
+      setUserProfiles((prev) => ({ ...prev, ...mapped }));
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [rawDirects, userProfiles]);
 
   const refreshUnreadCounts = useCallback(() => {
@@ -537,6 +533,7 @@ export default function ChatScreen() {
     () =>
       rawDirects.map((d) => ({
         id: d.id,
+        otherUid: d.otherUid,
         displayName: userProfiles[d.otherUid]?.username || d.otherUid,
         avatarUrl: userProfiles[d.otherUid]?.avatarUrl ?? null,
         last: d.last ?? "",

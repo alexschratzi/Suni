@@ -2,36 +2,44 @@
 import { useEffect, useState } from "react";
 import React from "react";
 import {
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Alert,
   View,
-  StyleSheet,
   Linking,
   TouchableOpacity,
 } from "react-native";
-import { Text, Surface, useTheme, IconButton, Menu, Avatar } from "react-native-paper";
+import { Text, Surface, useTheme, IconButton, Menu } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import InputBar from "@/components/chat/InputBar";
+import ReplyMessageList from "@/components/reply/ReplyMessageList";
+import { styles } from "@/components/reply/replyStyles";
+import {
+  formatDateLabel,
+  formatTime,
+  formatTimestamp,
+  isSameDay,
+  toDate,
+} from "@/components/reply/replyUtils";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
-import { createAvatarUrl } from "@/src/lib/avatars";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createAttachmentUrl,
   pickAttachment,
   uploadAttachment,
 } from "@/src/lib/chatAttachments";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
-import { initials } from "@/utils/utils";
 
 type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
 
 export default function ReplyScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const {
@@ -40,6 +48,8 @@ export default function ReplyScreen() {
     messageText,
     messageUser,
     dmId,
+    otherUid,
+    otherName,
     messageAttachmentPath,
     messageAttachmentName,
   } = useLocalSearchParams();
@@ -54,6 +64,8 @@ export default function ReplyScreen() {
   const roomValue = toSingle(room);
   const messageIdValue = toSingle(messageId);
   const dmIdValue = toSingle(dmId);
+  const otherUidValue = toSingle(otherUid);
+  const otherNameValue = toSingle(otherName);
   const messageAttachmentPathValue = toSingle(messageAttachmentPath);
   const messageAttachmentNameValue = toSingle(messageAttachmentName);
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
@@ -61,6 +73,7 @@ export default function ReplyScreen() {
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
+  const [dmPartnerName, setDmPartnerName] = useState(otherNameValue || "");
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
@@ -72,6 +85,9 @@ export default function ReplyScreen() {
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string | null>>(
     {}
   );
+  const headerTitle = dmIdValue
+    ? dmPartnerName || t("chat.directTitle", "Chat")
+    : "Antworten";
 
   useEffect(() => {
     if (!userId) {
@@ -82,19 +98,18 @@ export default function ReplyScreen() {
 
     let cancelled = false;
 
-    const loadProfile = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(COLUMNS.profiles.username)
-        .eq(COLUMNS.profiles.id, userId)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Reply profile load error:", error.message);
-        return;
+    const loadProfile = async (force = false) => {
+      const cached = getMemoryProfiles([userId])[userId];
+      if (cached?.username) {
+        setUsername(cached.username ?? "");
       }
+
+      const profiles = await fetchProfilesWithCache([userId], { force });
       if (cancelled) return;
-      setUsername((data as any)?.[COLUMNS.profiles.username] ?? "");
+      const entry = profiles[userId];
+      if (entry) {
+        setUsername(entry.username ?? "");
+      }
     };
 
     const loadBlocked = async () => {
@@ -128,7 +143,7 @@ export default function ReplyScreen() {
           table: TABLES.profiles,
           filter: `${COLUMNS.profiles.id}=eq.${userId}`,
         },
-        loadProfile
+        () => loadProfile(true)
       )
       .on(
         "postgres_changes",
@@ -147,6 +162,74 @@ export default function ReplyScreen() {
       supabase.removeChannel(channel);
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!dmIdValue) {
+      setDmPartnerName("");
+      return;
+    }
+
+    if (otherNameValue) {
+      setDmPartnerName(otherNameValue);
+    }
+
+    let cancelled = false;
+
+    const loadFromProfile = async (uid: string) => {
+      const cached = getMemoryProfiles([uid])[uid];
+      if (cached?.username) {
+        setDmPartnerName(cached.username ?? "");
+      }
+      const profiles = await fetchProfilesWithCache([uid]);
+      if (cancelled) return;
+      const entry = profiles[uid];
+      if (entry?.username) {
+        setDmPartnerName(entry.username ?? "");
+      }
+    };
+
+    const loadFromThread = async () => {
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(COLUMNS.dmThreads.userIds)
+        .eq(COLUMNS.dmThreads.id, dmIdValue)
+        .maybeSingle();
+
+      if (error) {
+        console.error("DM thread load error:", error.message);
+        return;
+      }
+
+      const userIds = (data as any)?.[COLUMNS.dmThreads.userIds];
+      const otherId = Array.isArray(userIds)
+        ? userIds.find((id: string) => id !== userId)
+        : null;
+
+      if (!otherId) {
+        if (!cancelled) setDmPartnerName("");
+        return;
+      }
+
+      await loadFromProfile(otherId);
+    };
+
+    if (otherUidValue) {
+      loadFromProfile(otherUidValue);
+      return;
+    }
+
+    if (otherNameValue) {
+      return;
+    }
+
+    loadFromThread();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dmIdValue, otherNameValue, otherUidValue, userId]);
 
   // Load replies (DM or group thread)
   useEffect(() => {
@@ -325,42 +408,32 @@ export default function ReplyScreen() {
   }, [dmIdValue, replies.length, userId]);
 
   useEffect(() => {
+    if (dmIdValue) return;
     const senderIds = Array.from(
       new Set(replies.map((reply) => reply.sender).filter(Boolean))
     ) as string[];
     const missing = senderIds.filter((id) => !(id in avatarUrls));
     if (missing.length === 0) return;
 
+    const cached = getMemoryProfiles(missing);
+    if (Object.keys(cached).length > 0) {
+      const mapped = Object.fromEntries(
+        Object.entries(cached).map(([id, entry]) => [id, entry.avatarUrl ?? null])
+      );
+      setAvatarUrls((prev) => ({ ...prev, ...mapped }));
+    }
+
     let cancelled = false;
 
     const loadAvatars = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.avatarPath}`)
-        .in(COLUMNS.profiles.id, missing);
-
-      if (error) {
-        console.error("Reply avatar load error:", error.message);
-        return;
-      }
-
-      const base = Object.fromEntries(missing.map((id) => [id, null]));
-      const entries = await Promise.all(
-        (data || []).map(async (row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          if (!id) return null;
-          const path = row?.[COLUMNS.profiles.avatarPath] ?? null;
-          const url = await createAvatarUrl(path);
-          return [id, url] as const;
-        })
-      );
-      const resolved = entries.filter(Boolean) as Array<readonly [string, string | null]>;
-
+      const profiles = await fetchProfilesWithCache(missing);
       if (cancelled) return;
+      const mapped = Object.fromEntries(
+        Object.entries(profiles).map(([id, entry]) => [id, entry.avatarUrl ?? null])
+      );
       setAvatarUrls((prev) => ({
         ...prev,
-        ...base,
-        ...Object.fromEntries(resolved),
+        ...mapped,
       }));
     };
 
@@ -369,7 +442,7 @@ export default function ReplyScreen() {
     return () => {
       cancelled = true;
     };
-  }, [replies, avatarUrls]);
+  }, [replies, avatarUrls, dmIdValue]);
 
   const loadReplyVotes = async (replyIds: string[]) => {
     if (!userId || replyIds.length === 0) {
@@ -474,6 +547,27 @@ export default function ReplyScreen() {
       : sortOrder === "oldest"
       ? t("chat.sort.oldest")
       : t("chat.sort.newest");
+
+  const openSortMenu = React.useCallback(() => {
+    if (sortMenuVisible) {
+      setSortMenuVisible(false);
+      setTimeout(() => setSortMenuVisible(true), 0);
+      return;
+    }
+    setSortMenuVisible(true);
+  }, [sortMenuVisible]);
+
+  const closeSortMenu = React.useCallback(() => {
+    setSortMenuVisible(false);
+  }, []);
+
+  const handleSortSelect = React.useCallback(
+    (next: SortOrder) => {
+      setSortOrder(next);
+      closeSortMenu();
+    },
+    [closeSortMenu]
+  );
 
   const handlePickAttachment = async () => {
     const next = await pickAttachment();
@@ -679,37 +773,6 @@ export default function ReplyScreen() {
     }
   };
 
-  const toDate = (value: any) => {
-    if (!value) return null;
-    if (value instanceof Date) return value;
-    if (typeof value === "string" || typeof value === "number") {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
-    if (typeof value.toDate === "function") return value.toDate();
-    return null;
-  };
-
-  const formatTime = (value: any) => {
-    const dateValue = toDate(value);
-    if (!dateValue) return t("chat.justNow");
-    return dateValue.toLocaleTimeString(locale, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-  const formatTimestamp = (value: any) => {
-    const dateValue = toDate(value);
-    if (!dateValue) return t("chat.justNow");
-    return dateValue.toLocaleString(locale, {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   const sortedReplies = React.useMemo(() => {
     if (dmIdValue) return replies;
     const list = [...replies];
@@ -742,9 +805,9 @@ export default function ReplyScreen() {
       keyboardVerticalOffset={110}
     >
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <IconButton icon="arrow-left" onPress={() => router.back()} />
-          <Text variant="titleMedium">Antworten</Text>
+          <Text variant="titleMedium">{headerTitle}</Text>
         </View>
 
         {!dmIdValue && (
@@ -784,10 +847,10 @@ export default function ReplyScreen() {
           <View style={styles.sortRow}>
             <Menu
               visible={sortMenuVisible}
-              onDismiss={() => setSortMenuVisible(false)}
+              onDismiss={closeSortMenu}
               anchor={
                 <TouchableOpacity
-                  onPress={() => setSortMenuVisible(true)}
+                  onPress={openSortMenu}
                   style={[
                     styles.sortAnchor,
                     {
@@ -795,6 +858,7 @@ export default function ReplyScreen() {
                       borderColor: theme.colors.outlineVariant,
                     },
                   ]}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
                   <Ionicons name="swap-vertical" size={16} color={theme.colors.primary} />
                   <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
@@ -809,277 +873,38 @@ export default function ReplyScreen() {
               }
             >
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("newest");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("newest")}
                 title={t("chat.sort.newest")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("oldest");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("oldest")}
                 title={t("chat.sort.oldest")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("popular");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("popular")}
                 title={t("chat.sort.popular")}
               />
               <Menu.Item
-                onPress={() => {
-                  setSortOrder("unpopular");
-                  setSortMenuVisible(false);
-                }}
+                onPress={() => handleSortSelect("unpopular")}
                 title={t("chat.sort.unpopular")}
               />
             </Menu>
           </View>
         )}
 
-        <FlatList
-          data={sortedReplies}
-          keyExtractor={(i) => i.id}
-          contentContainerStyle={{
-            paddingHorizontal: 12,
-            paddingBottom: 12,
-          }}
-          renderItem={({ item }) => {
-            const isDirect = !!dmIdValue;
-            const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
-
-            if (!isDirect) {
-              const timeLabel = formatTimestamp(item.timestamp);
-              const hasText = !!item.text;
-              const hasAttachment = !!item.attachmentPath;
-              const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
-              const upActive = vote.myVote === 1;
-              const downActive = vote.myVote === -1;
-              return (
-                <View style={styles.threadRow}>
-                  <View style={styles.voteColumn}>
-                    <TouchableOpacity
-                      onPress={() => handleVote(item.id, 1)}
-                      style={styles.voteButton}
-                    >
-                      <Ionicons
-                        name="chevron-up"
-                        size={20}
-                        color={
-                          upActive
-                            ? theme.colors.primary
-                            : theme.colors.onSurfaceVariant
-                        }
-                      />
-                    </TouchableOpacity>
-                    <Text
-                      style={[
-                        styles.voteScore,
-                        {
-                          color: upActive
-                            ? theme.colors.primary
-                            : downActive
-                            ? theme.colors.error
-                            : theme.colors.onSurfaceVariant,
-                        },
-                      ]}
-                    >
-                      {vote.score}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => handleVote(item.id, -1)}
-                      style={styles.voteButton}
-                    >
-                      <Ionicons
-                        name="chevron-down"
-                        size={20}
-                        color={
-                          downActive
-                            ? theme.colors.error
-                            : theme.colors.onSurfaceVariant
-                        }
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <Surface
-                    style={[
-                      styles.threadCard,
-                      {
-                        backgroundColor: theme.colors.surfaceVariant,
-                        borderColor: theme.colors.outlineVariant,
-                      },
-                    ]}
-                  >
-                    <View style={styles.metaRow}>
-                      <View style={styles.metaLeft}>
-                        {avatarUrl ? (
-                          <Avatar.Image
-                            size={22}
-                            source={{ uri: avatarUrl }}
-                            style={{ backgroundColor: theme.colors.surfaceVariant }}
-                          />
-                        ) : (
-                          <Avatar.Text
-                            size={22}
-                            label={initials(item.username || "??")}
-                            color={theme.colors.onPrimary}
-                            style={{ backgroundColor: theme.colors.primary }}
-                          />
-                        )}
-                        <Text
-                          style={[
-                            styles.metaUser,
-                            { color: theme.colors.onSurfaceVariant },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.username || "???"}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}
-                        numberOfLines={1}
-                      >
-                        {timeLabel}
-                      </Text>
-                    </View>
-                    {hasText && (
-                      <Text style={[styles.msgText, { color: theme.colors.onSurface }]}>
-                        {item.text}
-                      </Text>
-                    )}
-                    {hasAttachment && (
-                      <TouchableOpacity
-                        style={styles.attachmentRow}
-                        onPress={() => openAttachment(item.attachmentPath)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="attach" size={16} color={theme.colors.primary} />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.attachmentText,
-                            { color: theme.colors.onSurface },
-                          ]}
-                        >
-                          {item.attachmentName || "file"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </Surface>
-                </View>
-              );
-            }
-
-            const isMine = !!userId && item.sender === userId;
-            const timeLabel = formatTime(item.timestamp);
-            const hasText = !!item.text;
-            const hasAttachment = !!item.attachmentPath;
-
-            return (
-              <View
-                style={[
-                  styles.messageRow,
-                  isMine ? styles.rowMine : styles.rowOther,
-                ]}
-              >
-                {!isMine &&
-                  (avatarUrl ? (
-                    <Avatar.Image
-                      size={28}
-                      source={{ uri: avatarUrl }}
-                      style={[styles.dmAvatar, { backgroundColor: theme.colors.surface }]}
-                    />
-                  ) : (
-                    <Avatar.Text
-                      size={28}
-                      label={initials(item.username || "??")}
-                      color={theme.colors.onPrimary}
-                      style={[styles.dmAvatar, { backgroundColor: theme.colors.primary }]}
-                    />
-                  ))}
-                <Surface
-                  style={[
-                    styles.bubble,
-                    isMine ? styles.bubbleMine : styles.bubbleOther,
-                    {
-                      backgroundColor: isMine
-                        ? theme.colors.primary
-                        : theme.colors.surfaceVariant,
-                      borderColor: theme.colors.outlineVariant,
-                    },
-                  ]}
-                >
-                  {!isMine && (
-                    <Text
-                      style={[
-                        styles.sender,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.username || "???"}
-                    </Text>
-                  )}
-                  {hasText && (
-                    <Text
-                      style={[
-                        styles.msgText,
-                        {
-                          color: isMine
-                            ? theme.colors.onPrimary
-                            : theme.colors.onSurface,
-                        },
-                      ]}
-                    >
-                      {item.text}
-                    </Text>
-                  )}
-                  {hasAttachment && (
-                    <TouchableOpacity
-                      style={styles.attachmentRow}
-                      onPress={() => openAttachment(item.attachmentPath)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="attach"
-                        size={16}
-                        color={isMine ? theme.colors.onPrimary : theme.colors.primary}
-                      />
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.attachmentText,
-                          {
-                            color: isMine
-                              ? theme.colors.onPrimary
-                              : theme.colors.onSurface,
-                          },
-                        ]}
-                      >
-                        {item.attachmentName || "file"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  <Text
-                    style={[
-                      styles.time,
-                      {
-                        color: isMine
-                          ? theme.colors.onPrimary
-                          : theme.colors.onSurfaceVariant,
-                      },
-                    ]}
-                  >
-                    {timeLabel}
-                  </Text>
-                </Surface>
-              </View>
-            );
-          }}
+        <ReplyMessageList
+          items={sortedReplies}
+          isDirect={!!dmIdValue}
+          userId={userId}
+          avatarUrls={avatarUrls}
+          voteStats={voteStats}
+          handleVote={handleVote}
+          openAttachment={openAttachment}
+          formatTime={(value) => formatTime(value, locale, t)}
+          formatTimestamp={(value) => formatTimestamp(value, locale, t)}
+          formatDateLabel={(value) => formatDateLabel(value, locale, t)}
+          isSameDay={isSameDay}
+          theme={theme}
         />
 
         <InputBar
@@ -1098,138 +923,3 @@ export default function ReplyScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingTop: 4,
-    paddingBottom: 4,
-  },
-  originalCard: {
-    padding: 12,
-    borderRadius: 12,
-    marginHorizontal: 12,
-    marginBottom: 12,
-  },
-  sortRow: {
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-  },
-  sortAnchor: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  sortText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  messageRow: {
-    marginBottom: 10,
-    paddingHorizontal: 4,
-    flexDirection: "row",
-    alignItems: "flex-end",
-  },
-  threadRow: {
-    marginBottom: 10,
-    paddingHorizontal: 4,
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  voteColumn: {
-    width: 34,
-    alignItems: "center",
-    marginRight: 6,
-    paddingTop: 6,
-  },
-  voteButton: {
-    paddingVertical: 2,
-  },
-  voteScore: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginVertical: 2,
-  },
-  rowMine: {
-    justifyContent: "flex-end",
-  },
-  rowOther: {
-    justifyContent: "flex-start",
-  },
-  threadCard: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  metaLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: 8,
-  },
-  metaUser: {
-    fontSize: 12,
-    marginLeft: 6,
-    flexShrink: 1,
-  },
-  metaTime: {
-    fontSize: 12,
-  },
-  dmAvatar: {
-    marginRight: 8,
-  },
-  bubble: {
-    maxWidth: "82%",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  bubbleMine: {
-    borderTopRightRadius: 6,
-  },
-  bubbleOther: {
-    borderTopLeftRadius: 6,
-  },
-  sender: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  msgText: {
-    fontSize: 16,
-    lineHeight: 20,
-  },
-  attachmentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-  },
-  attachmentText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 13,
-  },
-  time: {
-    fontSize: 11,
-    marginTop: 6,
-    alignSelf: "flex-end",
-  },
-});

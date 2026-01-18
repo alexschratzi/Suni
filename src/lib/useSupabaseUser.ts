@@ -8,6 +8,18 @@ export function useSupabaseUserId() {
     let active = true;
 
     const load = async () => {
+      const { data: sessionData, error: sessionErr } =
+        await supabase.auth.getSession();
+      if (sessionErr) {
+        console.warn("useSupabaseUserId getSession error:", sessionErr.message);
+      }
+      const sessionUser = sessionData.session?.user;
+      if (sessionUser) {
+        if (!active) return;
+        setUserId(sessionUser.id ?? null);
+        return;
+      }
+
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         console.warn("useSupabaseUserId getUser error:", error.message);

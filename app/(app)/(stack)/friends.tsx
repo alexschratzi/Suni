@@ -678,7 +678,11 @@ export default function FriendsScreen() {
                                 threadId &&
                                 router.push({
                                   pathname: "/(app)/(stack)/reply",
-                                  params: { dmId: threadId },
+                                  params: {
+                                    dmId: threadId,
+                                    otherUid: uid,
+                                    otherName: displayName(uid),
+                                  },
                                 })
                               }
                               disabled={!threadId}
@@ -690,7 +694,11 @@ export default function FriendsScreen() {
                             if (!threadId) return;
                             router.push({
                               pathname: "/(app)/(stack)/reply",
-                              params: { dmId: threadId },
+                              params: {
+                                dmId: threadId,
+                                otherUid: uid,
+                                otherName: displayName(uid),
+                              },
                             });
                           }}
                         />

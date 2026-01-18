@@ -18,10 +18,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Router } from "expo-router";
 import InputBar from "./InputBar";
 import { createAttachmentUrl } from "@/src/lib/chatAttachments";
-import { createAvatarUrl } from "@/src/lib/avatars";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 import { initials } from "@/utils/utils";
 
@@ -186,6 +186,27 @@ export default function RoomMessages(props: Props) {
       ? t("chat.sort.oldest")
       : t("chat.sort.newest");
 
+  const openSortMenu = React.useCallback(() => {
+    if (sortMenuVisible) {
+      setSortMenuVisible(false);
+      setTimeout(() => setSortMenuVisible(true), 0);
+      return;
+    }
+    setSortMenuVisible(true);
+  }, [sortMenuVisible]);
+
+  const closeSortMenu = React.useCallback(() => {
+    setSortMenuVisible(false);
+  }, []);
+
+  const handleSortSelect = React.useCallback(
+    (next: SortOrder) => {
+      setSortOrder(next);
+      closeSortMenu();
+    },
+    [closeSortMenu]
+  );
+
   React.useEffect(() => {
     let cancelled = false;
     const messageIds = messages.map((msg) => msg.id).filter(Boolean);
@@ -248,34 +269,23 @@ export default function RoomMessages(props: Props) {
 
     let cancelled = false;
 
-    const loadAvatars = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.avatarPath}`)
-        .in(COLUMNS.profiles.id, missing);
-
-      if (error) {
-        console.error("Room avatar load error:", error.message);
-        return;
-      }
-
-      const base = Object.fromEntries(missing.map((id) => [id, null]));
-      const entries = await Promise.all(
-        (data || []).map(async (row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          if (!id) return null;
-          const path = row?.[COLUMNS.profiles.avatarPath] ?? null;
-          const url = await createAvatarUrl(path);
-          return [id, url] as const;
-        })
+    const cached = getMemoryProfiles(missing);
+    if (Object.keys(cached).length > 0) {
+      const mapped = Object.fromEntries(
+        Object.entries(cached).map(([id, entry]) => [id, entry.avatarUrl ?? null])
       );
-      const resolved = entries.filter(Boolean) as Array<readonly [string, string | null]>;
+      setAvatarUrls((prev) => ({ ...prev, ...mapped }));
+    }
 
+    const loadAvatars = async () => {
+      const profiles = await fetchProfilesWithCache(missing);
       if (cancelled) return;
+      const mapped = Object.fromEntries(
+        Object.entries(profiles).map(([id, entry]) => [id, entry.avatarUrl ?? null])
+      );
       setAvatarUrls((prev) => ({
         ...prev,
-        ...base,
-        ...Object.fromEntries(resolved),
+        ...mapped,
       }));
     };
 
@@ -365,10 +375,10 @@ export default function RoomMessages(props: Props) {
       <View style={styles.sortRow}>
         <Menu
           visible={sortMenuVisible}
-          onDismiss={() => setSortMenuVisible(false)}
+          onDismiss={closeSortMenu}
           anchor={
             <TouchableOpacity
-              onPress={() => setSortMenuVisible(true)}
+              onPress={openSortMenu}
               style={[
                 styles.sortAnchor,
                 {
@@ -376,6 +386,7 @@ export default function RoomMessages(props: Props) {
                   borderColor: theme.colors.outlineVariant,
                 },
               ]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <Ionicons name="swap-vertical" size={16} color={accentColor} />
               <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
@@ -390,31 +401,19 @@ export default function RoomMessages(props: Props) {
           }
         >
         <Menu.Item
-          onPress={() => {
-            setSortOrder("newest");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("newest")}
           title={t("chat.sort.newest")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("oldest");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("oldest")}
           title={t("chat.sort.oldest")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("popular");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("popular")}
           title={t("chat.sort.popular")}
         />
         <Menu.Item
-          onPress={() => {
-            setSortOrder("unpopular");
-            setSortMenuVisible(false);
-          }}
+          onPress={() => handleSortSelect("unpopular")}
           title={t("chat.sort.unpopular")}
         />
       </Menu>
