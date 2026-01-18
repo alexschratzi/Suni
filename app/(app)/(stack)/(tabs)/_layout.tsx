@@ -14,17 +14,24 @@ import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
 const { Navigator } = createMaterialTopTabNavigator();
 export const MaterialTopTabs = withLayoutContext(Navigator);
 
-const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  news: "newspaper-outline",
-  uni: "school-outline",
-  timetable: "calendar-outline",
-  chat: "chatbubbles-outline",
+// Provide BOTH versions
+const ICONS: Record<
+  string,
+  { inactive: keyof typeof Ionicons.glyphMap; active: keyof typeof Ionicons.glyphMap }
+> = {
+  news: { inactive: "newspaper-outline", active: "newspaper" },
+  uni: { inactive: "school-outline", active: "school" },
+  timetable: { inactive: "calendar-outline", active: "calendar" },
+  chat: { inactive: "chatbubbles-outline", active: "chatbubbles" },
 };
 
 export default function TabLayout() {
   const theme = useTheme<MD3Theme>();
   const displayMode = useTimetableDisplayMode("courses");
-  const { nav, baseTabBarStyle, partyTabBarStyle, isParty } = useTimetableTheming(theme, displayMode);
+  const { nav, baseTabBarStyle, partyTabBarStyle, isParty } = useTimetableTheming(
+    theme,
+    displayMode,
+  );
 
   const lastTapRef = React.useRef<{ key: string; ts: number } | null>(null);
   const DOUBLE_TAP_MS = 220;
@@ -55,8 +62,17 @@ export default function TabLayout() {
       calendarScale.setValue(1);
 
       Animated.sequence([
-        Animated.timing(calendarScale, { toValue: 0.8, duration: 80, useNativeDriver: true }),
-        Animated.spring(calendarScale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
+        Animated.timing(calendarScale, {
+          toValue: 0.8,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+        Animated.spring(calendarScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 200,
+          useNativeDriver: true,
+        }),
       ]).start(() => {
         bounceRunningRef.current = false;
       });
@@ -77,10 +93,15 @@ export default function TabLayout() {
 
         sceneStyle: { backgroundColor: theme.colors.surface },
 
-        tabBarIcon: ({ color }) => {
-          const icon = (
-            <Ionicons name={ICONS[route.name] ?? "ellipse-outline"} size={28} color={color} />
-          );
+        tabBarIcon: ({ color, focused }) => {
+          const pair = ICONS[route.name];
+          const name = pair
+            ? focused
+              ? pair.active
+              : pair.inactive
+            : (focused ? "ellipse" : "ellipse-outline");
+
+          const icon = <Ionicons name={name} size={28} color={color} />;
 
           if (route.name !== "timetable") return icon;
 
@@ -135,3 +156,5 @@ export default function TabLayout() {
     </MaterialTopTabs>
   );
 }
+
+const styles = StyleSheet.create({});
