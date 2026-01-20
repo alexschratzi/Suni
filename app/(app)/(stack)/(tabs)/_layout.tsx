@@ -14,7 +14,6 @@ import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
 const { Navigator } = createMaterialTopTabNavigator();
 export const MaterialTopTabs = withLayoutContext(Navigator);
 
-// Provide BOTH versions
 const ICONS: Record<
   string,
   { inactive: keyof typeof Ionicons.glyphMap; active: keyof typeof Ionicons.glyphMap }
@@ -33,51 +32,66 @@ export default function TabLayout() {
     displayMode,
   );
 
+  // ─────────── Double-tap tracking for timetable ───────────
   const lastTapRef = React.useRef<{ key: string; ts: number } | null>(null);
   const DOUBLE_TAP_MS = 220;
 
-  const jumpLockRef = React.useRef(false);
-  const jumpLockTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ─────────── Global lock against spam taps ───────────
+  const actionLockRef = React.useRef(false);
+  const actionLockTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const lockJump = React.useCallback(() => {
-    jumpLockRef.current = true;
-    if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
-    jumpLockTimerRef.current = setTimeout(() => (jumpLockRef.current = false), 200);
+  const lockAction = React.useCallback(() => {
+    actionLockRef.current = true;
+    if (actionLockTimerRef.current) clearTimeout(actionLockTimerRef.current);
+    actionLockTimerRef.current = setTimeout(() => (actionLockRef.current = false), 220);
   }, []);
 
   React.useEffect(() => {
     return () => {
-      if (jumpLockTimerRef.current) clearTimeout(jumpLockTimerRef.current);
+      if (actionLockTimerRef.current) clearTimeout(actionLockTimerRef.current);
     };
   }, []);
 
+  // ─────────── Bounce animations (grow then bounce back) ───────────
   const calendarScale = React.useRef(new Animated.Value(1)).current;
-  const bounceRunningRef = React.useRef(false);
+  const newsScale = React.useRef(new Animated.Value(1)).current;
 
-  const playCalendarBounce = React.useCallback(() => {
-    if (bounceRunningRef.current) return;
-    bounceRunningRef.current = true;
+  const bounceRunningRef = React.useRef<{ calendar: boolean; news: boolean }>({
+    calendar: false,
+    news: false,
+  });
 
-    calendarScale.stopAnimation(() => {
-      calendarScale.setValue(1);
+  const playBounce = React.useCallback(
+    (which: "calendar" | "news") => {
+      const scale = which === "calendar" ? calendarScale : newsScale;
 
-      Animated.sequence([
-        Animated.timing(calendarScale, {
-          toValue: 0.8,
-          duration: 80,
-          useNativeDriver: true,
-        }),
-        Animated.spring(calendarScale, {
-          toValue: 1,
-          friction: 4,
-          tension: 200,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        bounceRunningRef.current = false;
+      if (bounceRunningRef.current[which]) return;
+      bounceRunningRef.current[which] = true;
+
+      // Stop any ongoing animation and start from 1
+      scale.stopAnimation(() => {
+        scale.setValue(1);
+
+        // ✅ Grow bigger quickly, then spring back to 1 (bounce)
+        Animated.sequence([
+          Animated.timing(scale, {
+            toValue: 1.18,
+            duration: 90,
+            useNativeDriver: true,
+          }),
+          Animated.spring(scale, {
+            toValue: 1,
+            friction: 4,
+            tension: 240,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          bounceRunningRef.current[which] = false;
+        });
       });
-    });
-  }, [calendarScale]);
+    },
+    [calendarScale, newsScale],
+  );
 
   return (
     <MaterialTopTabs
@@ -103,46 +117,78 @@ export default function TabLayout() {
 
           const icon = <Ionicons name={name} size={28} color={color} />;
 
-          if (route.name !== "timetable") return icon;
+          if (route.name === "timetable") {
+            return (
+              <Animated.View style={{ transform: [{ scale: calendarScale }] }}>
+                {icon}
+              </Animated.View>
+            );
+          }
 
-          return (
-            <Animated.View style={{ transform: [{ scale: calendarScale }] }}>
-              {icon}
-            </Animated.View>
-          );
+          if (route.name === "news") {
+            return (
+              <Animated.View style={{ transform: [{ scale: newsScale }] }}>
+                {icon}
+              </Animated.View>
+            );
+          }
+
+          return icon;
         },
       })}
       screenListeners={({ route, navigation }) => ({
         tabPress: () => {
-          if (route.name !== "timetable") return;
-          if (!navigation.isFocused()) return;
+          // ─────────── News: SINGLE TAP when already on News ───────────
+          if (route.name === "news") {
+            if (!navigation.isFocused()) return;
+            if (actionLockRef.current) return;
+            lockAction();
 
-          const now = Date.now();
-          const last = lastTapRef.current;
-          const isDoubleTap = last?.key === "timetable" && now - last.ts <= DOUBLE_TAP_MS;
+            Haptics.selectionAsync().catch(() => {});
+            playBounce("news");
 
-          lastTapRef.current = { key: "timetable", ts: now };
-          if (!isDoubleTap) return;
+            const now = Date.now();
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: "news",
+                params: { scrollToTop: String(now) },
+                merge: true,
+              }),
+            );
+            return;
+          }
 
-          if (jumpLockRef.current) return;
-          lockJump();
+          // ─────────── Timetable: DOUBLE TAP to jump ───────────
+          if (route.name === "timetable") {
+            if (!navigation.isFocused()) return;
 
-          Haptics.selectionAsync().catch(() => {});
-          playCalendarBounce();
+            const now = Date.now();
+            const last = lastTapRef.current;
+            const isDoubleTap = last?.key === "timetable" && now - last.ts <= DOUBLE_TAP_MS;
 
-          navigation.dispatch(
-            CommonActions.navigate({
-              name: "timetable",
-              params: { jumpToToday: String(now) },
-              merge: true,
-            }),
-          );
+            lastTapRef.current = { key: "timetable", ts: now };
+            if (!isDoubleTap) return;
+
+            if (actionLockRef.current) return;
+            lockAction();
+
+            Haptics.selectionAsync().catch(() => {});
+            playBounce("calendar");
+
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: "timetable",
+                params: { jumpToToday: String(now) },
+                merge: true,
+              }),
+            );
+          }
         },
       })}
     >
       <MaterialTopTabs.Screen name="news" options={{ title: "News" }} />
       <MaterialTopTabs.Screen name="uni" options={{ title: "Uni" }} />
-
+      <MaterialTopTabs.Screen name="chat" options={{ title: "Chat" }} />
       <MaterialTopTabs.Screen
         name="timetable"
         options={{
@@ -151,8 +197,6 @@ export default function TabLayout() {
           tabBarStyle: isParty && partyTabBarStyle ? partyTabBarStyle : baseTabBarStyle,
         }}
       />
-
-      <MaterialTopTabs.Screen name="chat" options={{ title: "Chat" }} />
     </MaterialTopTabs>
   );
 }
