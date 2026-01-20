@@ -17,6 +17,10 @@ export type NewsEntryProps = {
   profileImage: any;
   imageSource: any;
   text: string;
+
+  // NEW:
+  publishedAt: number; // epoch ms
+  now: number; // epoch ms (passed from screen to allow refresh/update)
 };
 
 const MAX_WIDE = 21 / 9; // crop super-wide panoramas
@@ -29,12 +33,51 @@ function clampAspectRatio(ar: number) {
   return ar;
 }
 
+function formatRelativeGerman(nowMs: number, publishedMs: number): string {
+  const diffMs = Math.max(0, nowMs - publishedMs);
+  const sec = Math.floor(diffMs / 1000);
+
+  if (sec < 60) {
+    return `vor ${sec} Sekunde${sec === 1 ? "" : "n"}`;
+  }
+
+  const min = Math.floor(sec / 60);
+  if (min < 60) {
+    return `vor ${min} Minute${min === 1 ? "" : "n"}`;
+  }
+
+  const hour = Math.floor(min / 60);
+  if (hour < 24) {
+    return `vor ${hour} Stunde${hour === 1 ? "" : "n"}`;
+  }
+
+  const day = Math.floor(hour / 24);
+  if (day < 7) {
+    return `vor ${day} Tag${day === 1 ? "" : "en"}`;
+  }
+
+  const week = Math.floor(day / 7);
+  if (week < 4) {
+    return `vor ${week} Woche${week === 1 ? "" : "n"}`;
+  }
+
+  const month = Math.floor(day / 30);
+  if (month < 12) {
+    return `vor ${month} Monat${month === 1 ? "" : "en"}`;
+  }
+
+  const year = Math.floor(day / 365);
+  return `vor ${year} Jahr${year === 1 ? "" : "en"}`;
+}
+
 export function NewsEntry({
   profileName,
   source,
   profileImage,
   imageSource,
   text,
+  publishedAt,
+  now,
 }: NewsEntryProps) {
   const theme = useTheme();
 
@@ -42,7 +85,6 @@ export function NewsEntry({
   const [liked, setLiked] = useState(false);
   const [following, setFollowing] = useState(false);
 
-  // ✅ measured width of the image container
   const [containerWidth, setContainerWidth] = useState<number>(0);
 
   const toggleExpanded = () => setExpanded((v) => !v);
@@ -60,7 +102,6 @@ export function NewsEntry({
     [liked]
   );
 
-  // ✅ natural aspect ratio from local asset + clamp to 21:9 extremes
   const aspectRatio = useMemo(() => {
     const src = Image.resolveAssetSource(imageSource);
     const w = src?.width ?? 0;
@@ -69,11 +110,14 @@ export function NewsEntry({
     return clampAspectRatio(natural);
   }, [imageSource]);
 
-  // ✅ compute explicit height from measured width
   const imageHeight = useMemo(() => {
-    if (!containerWidth) return 200; // fallback before layout
+    if (!containerWidth) return 200;
     return Math.round(containerWidth / aspectRatio);
   }, [containerWidth, aspectRatio]);
+
+  const relativeTime = useMemo(() => {
+    return formatRelativeGerman(now, publishedAt);
+  }, [now, publishedAt]);
 
   return (
     <Card style={styles.card} mode="elevated">
@@ -104,25 +148,19 @@ export function NewsEntry({
         </View>
 
         <Button
-  mode={following ? "outlined" : "contained"}
-  onPress={toggleFollowing}
-  icon={({ size, color }) => (
-    <Ionicons
-      name={
-        (following
-          ? "checkmark-outline"
-          : "person-add-outline") as any
-      }
-      size={size}
-      color={color}
-    />
-  )}
-  compact
->
-  {following ? "Gefolgt" : "Folgen"}
-</Button>
-
-
+          mode={following ? "outlined" : "contained"}
+          onPress={toggleFollowing}
+          icon={({ size, color }) => (
+            <Ionicons
+              name={(following ? "checkmark-outline" : "person-add-outline") as any}
+              size={size}
+              color={color}
+            />
+          )}
+          compact
+        >
+          {following ? "Gefolgt" : "Folgen"}
+        </Button>
       </View>
 
       {/* ─────────── Image (explicit width + height) ─────────── */}
@@ -130,7 +168,6 @@ export function NewsEntry({
         style={[styles.imageClip, { backgroundColor: theme.colors.surfaceVariant }]}
         onLayout={(e) => {
           const w = Math.round(e.nativeEvent.layout.width);
-          // avoid state spam
           if (w && w !== containerWidth) setContainerWidth(w);
         }}
       >
@@ -144,7 +181,7 @@ export function NewsEntry({
         />
       </View>
 
-      {/* ─────────── Text ─────────── */}
+      {/* ─────────── Text + Bottom Row ─────────── */}
       <Card.Content style={styles.content}>
         <Pressable onPress={toggleExpanded}>
           <Text variant="bodyMedium" numberOfLines={expanded ? undefined : 4}>
@@ -159,26 +196,35 @@ export function NewsEntry({
           </Text>
         </Pressable>
 
-        {/* ─────────── Bottom Actions ─────────── */}
-        <View style={styles.actionsRow}>
-          <IconButton
-            onPress={toggleLiked}
-            icon={({ size, color }) => (
-              <Ionicons name={likeIcon as any} size={size} color={color} />
-            )}
-            iconColor={liked ? theme.colors.primary : theme.colors.onSurface}
-          />
+        {/* Bottom actions + time */}
+        <View style={styles.bottomRow}>
+          <View style={styles.actionsRow}>
+            <IconButton
+              onPress={toggleLiked}
+              icon={({ size, color }) => (
+                <Ionicons name={likeIcon as any} size={size} color={color} />
+              )}
+              iconColor={liked ? theme.colors.primary : theme.colors.onSurface}
+            />
 
-          <IconButton
-            onPress={onShare}
-            icon={({ size, color }) => (
-              <Ionicons
-                name={"share-social-outline" as any}
-                size={size}
-                color={color}
-              />
-            )}
-          />
+            <IconButton
+              onPress={onShare}
+              icon={({ size, color }) => (
+                <Ionicons
+                  name={"share-social-outline" as any}
+                  size={size}
+                  color={color}
+                />
+              )}
+            />
+          </View>
+
+          <Text
+            variant="labelSmall"
+            style={[styles.timeText, { color: theme.colors.onSurfaceVariant }]}
+          >
+            {relativeTime}
+          </Text>
         </View>
       </Card.Content>
     </Card>
@@ -215,7 +261,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // IMPORTANT: this is the width reference we measure
   imageClip: {
     width: "100%",
     overflow: "hidden",
@@ -227,9 +272,20 @@ const styles = StyleSheet.create({
   moreLess: {
     marginTop: 6,
   },
+
+  bottomRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+  },
+
+  timeText: {
+    marginBottom: 10, // aligns visually with icon buttons
   },
 });
