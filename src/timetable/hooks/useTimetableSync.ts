@@ -1,3 +1,5 @@
+// src/timetable/hooks/useTimetableSync.ts
+
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -20,6 +22,8 @@ import {
   saveLocalICalSubscriptions,
 } from "@/src/timetable/utils/storage";
 
+import { parseFhSalzburgDescription } from "@/src/timetable/utils/fhSalzburg";
+
 type Params = {
   userId: string;
 };
@@ -33,6 +37,14 @@ function normalizeDisplayTypeOrNull(v: any): EntryDisplayType | null {
   return v === "none" || v === "course" || v === "event" ? v : null;
 }
 
+function normalizeNameForCompare(s: string): string {
+  // "FH Salzburg", "FH-Salzburg", "fh_salzburg" => "fhsalzburg"
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, "");
+}
+
 /**
  * Merge local-only extended fields that are not represented in the server DTO,
  * so they don't get wiped on refresh.
@@ -43,20 +55,16 @@ function mergeLocalExtras(serverEv: EvWithMeta, localEv?: EvWithMeta): EvWithMet
   return {
     ...serverEv,
 
-    // keep any richer fields that server doesn't store
     course: localEv.course ?? serverEv.course,
     party: localEv.party ?? serverEv.party,
 
-    // optional: keep hidden flag if you use it for local events
     hidden: localEv.hidden ?? serverEv.hidden,
 
-    // optional: if you want to preserve fullTitle/titleAbbr customization
     fullTitle: localEv.fullTitle ?? serverEv.fullTitle,
     titleAbbr: localEv.titleAbbr ?? serverEv.titleAbbr,
     isTitleAbbrCustom: localEv.isTitleAbbrCustom ?? serverEv.isTitleAbbrCustom,
     note: localEv.note ?? serverEv.note,
 
-    // keep displayType if you ever had mismatches
     displayType: normalizeDisplayType(localEv.displayType ?? serverEv.displayType),
   };
 }
@@ -112,15 +120,55 @@ export function useTimetableSync({ userId }: Params) {
           const metaKey = makeIcalMetaKey(sub.id, raw.uid);
           const meta = storedMeta[metaKey];
 
-          const fullTitle = raw.summary || sub.name;
-          const baseAbbr = makeTitleAbbr(fullTitle);
+          const isFhSalzburg =
+            normalizeNameForCompare(String(sub.name ?? "")) === "fhsalzburg";
+
+          // Default behavior: use SUMMARY
+          let derivedTitle = raw.summary || sub.name;
+          let derivedAbbr = makeTitleAbbr(derivedTitle);
+
+          // For FH-Salzburg: parse DESCRIPTION into richer course info
+          let derivedCourse:
+            | {
+                courseName: string;
+                courseType: string;
+                lecturer: string;
+                location: string;
+                groups: string[];
+              }
+            | undefined;
+
+          if (isFhSalzburg) {
+            const parsed = parseFhSalzburgDescription(raw.description ?? "");
+
+            if (parsed.title) derivedTitle = parsed.title;
+            if (parsed.titleAbbr) derivedAbbr = parsed.titleAbbr;
+
+            derivedCourse = {
+              courseName: parsed.title ?? derivedTitle,
+              courseType: parsed.courseType ?? "",
+              lecturer: parsed.lecturer ?? "",
+              // ✅ NEW: location comes from ICS LOCATION:
+              location: String(raw.location ?? "").trim(),
+              groups: parsed.groups ?? [],
+            };
+          }
+
+          const fullTitle = derivedTitle;
 
           const color = meta?.color ?? sub.color ?? "#4dabf7";
-          const titleAbbr = meta?.titleAbbr ?? baseAbbr;
+          const titleAbbr = meta?.titleAbbr ?? derivedAbbr;
 
           const displayType = normalizeDisplayType(
-            meta?.displayType ?? sub.defaultDisplayType ?? "none",
+            meta?.displayType ??
+              sub.defaultDisplayType ??
+              (isFhSalzburg ? "course" : "none"),
           );
+
+          // If FH-Salzburg: merge parsed baseline with any user overrides in meta
+          const mergedCourse = isFhSalzburg
+            ? { ...(derivedCourse ?? {}), ...(meta?.course ?? {}) }
+            : meta?.course;
 
           return {
             id: metaKey,
@@ -136,8 +184,7 @@ export function useTimetableSync({ userId }: Params) {
             displayType,
             hidden: meta?.hidden ?? false,
 
-            // ✅ allow iCal course/party edits to show up
-            course: meta?.course,
+            course: mergedCourse,
             party: meta?.party,
 
             icalSubscriptionId: sub.id,

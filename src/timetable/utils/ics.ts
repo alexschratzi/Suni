@@ -29,15 +29,21 @@ function parseIcsDate(raw: string): string | null {
   }
 
   const fallback = new Date(raw);
-  if (!isNaN(fallback.getTime())) {
-    return fallback.toISOString();
-  }
-
+  if (!isNaN(fallback.getTime())) return fallback.toISOString();
   return null;
 }
 
+function splitIcsLine(line: string): { left: string; right: string } | null {
+  // ✅ split at FIRST ":" only (values may contain ":" e.g. "EC: Big Data")
+  const idx = line.indexOf(":");
+  if (idx === -1) return null;
+  return { left: line.slice(0, idx), right: line.slice(idx + 1) };
+}
+
 function parseICS(ics: string): RawIcalEvent[] {
+  // Unfold lines: CRLF + space/tab indicates continuation (RFC 5545)
   const unfolded = ics.replace(/\r\n[ \t]/g, "");
+
   const parts = unfolded.split("BEGIN:VEVENT");
   parts.shift();
 
@@ -48,17 +54,22 @@ function parseICS(ics: string): RawIcalEvent[] {
     const body = endIdx === -1 ? part : part.slice(0, endIdx);
 
     const lines = body.split(/\r?\n/);
+
     let uid: string | undefined;
     let summary: string | undefined;
+    let description: string | undefined;
+    let location: string | undefined;
     let dtstartRaw: string | undefined;
     let dtendRaw: string | undefined;
 
     for (const line of lines) {
       if (!line.trim()) continue;
-      const [left, right] = line.split(":", 2);
-      if (!right) continue;
-      const propName = left.split(";")[0].toUpperCase();
-      const value = right.trim();
+
+      const parsed = splitIcsLine(line);
+      if (!parsed) continue;
+
+      const propName = parsed.left.split(";")[0].toUpperCase();
+      const value = parsed.right.trim();
 
       switch (propName) {
         case "UID":
@@ -66,6 +77,12 @@ function parseICS(ics: string): RawIcalEvent[] {
           break;
         case "SUMMARY":
           summary = value;
+          break;
+        case "DESCRIPTION":
+          description = value;
+          break;
+        case "LOCATION":
+          location = value; // ✅ NEW
           break;
         case "DTSTART":
           dtstartRaw = value;
@@ -79,17 +96,27 @@ function parseICS(ics: string): RawIcalEvent[] {
     }
 
     if (!uid || !dtstartRaw || !dtendRaw) continue;
+
     const startIso = parseIcsDate(dtstartRaw);
     const endIso = parseIcsDate(dtendRaw);
     if (!startIso || !endIso) continue;
 
-    out.push({ uid, summary: summary ?? "", start: startIso, end: endIso });
+    out.push({
+      uid,
+      summary: summary ?? "",
+      description: description ?? "",
+      location: location ?? "",
+      start: startIso,
+      end: endIso,
+    });
   }
 
   return out;
 }
 
-export async function fetchIcalEventsForSubscription(sub: ICalSubscription): Promise<RawIcalEvent[]> {
+export async function fetchIcalEventsForSubscription(
+  sub: ICalSubscription,
+): Promise<RawIcalEvent[]> {
   try {
     const res = await fetch(sub.url);
     if (!res.ok) {

@@ -2,13 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  Button,
-  Surface,
-  Text,
-  useTheme,
-  type MD3Theme,
-} from "react-native-paper";
+import { Button, Surface, Text, useTheme, type MD3Theme } from "react-native-paper";
 
 import dayjs from "dayjs";
 
@@ -43,6 +37,10 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function fmtListOrDash(arr?: string[]) {
+  return arr?.length ? arr.join(", ") : "-";
+}
+
 export default function TimetableEventOverviewScreen() {
   const paper = useTheme<MD3Theme>();
   const router = useRouter();
@@ -67,16 +65,16 @@ export default function TimetableEventOverviewScreen() {
     makeTitleAbbr,
   });
 
-  // Resolve the authoritative event from sync state once it exists
+  // Resolve authoritative event from sync state once it exists
   const synced = useMemo(() => {
     if (!id) return null;
     return events.find((e) => e.id === id) ?? null;
   }, [events, id]);
 
-  // Prefer synced data when available, otherwise show preloaded snapshot
+  // Prefer synced data when available
   const ev = synced ?? preloaded;
 
-  // Once synced is available, update preloaded (and optionally clear cache)
+  // Once synced is available, update preloaded and clear cache
   useEffect(() => {
     if (!id) return;
     if (synced) {
@@ -95,28 +93,6 @@ export default function TimetableEventOverviewScreen() {
 
   const displayType: EntryDisplayType = (ev?.displayType ?? "none") as EntryDisplayType;
 
-  const courseFields = useMemo(() => {
-    const name = ev?.fullTitle ?? ev?.title ?? "Course";
-    return {
-      courseName: name,
-      courseType: name,
-      lecturer: name,
-      room: name,
-    };
-  }, [ev]);
-
-  const partyFields = useMemo(() => {
-    const eventName = ev?.party?.eventName ?? (ev?.fullTitle ?? ev?.title ?? "Event");
-    return {
-      eventName,
-      location: ev?.party?.location ?? "-",
-      createdBy: ev?.party?.createdBy ?? "-",
-      entryFee: ev?.party?.entryFee ?? "-",
-      invitedGroups: ev?.party?.invitedGroups?.length ? ev.party.invitedGroups.join(", ") : "-",
-      friendsAttending: ev?.party?.friendsAttending?.length ? ev.party.friendsAttending.join(", ") : "-",
-    };
-  }, [ev]);
-
   const onHide = useCallback(async () => {
     if (!ev) return;
 
@@ -133,7 +109,9 @@ export default function TimetableEventOverviewScreen() {
   if (!id) {
     return (
       <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
-        <Text variant="titleMedium">Missing event id</Text>
+        <View style={{ padding: 16 }}>
+          <Text variant="titleMedium">Missing event id</Text>
+        </View>
       </Surface>
     );
   }
@@ -161,6 +139,21 @@ export default function TimetableEventOverviewScreen() {
   const note = ev.note ?? "";
   const color = ev.color ?? "#4dabf7";
 
+  const courseName = ev.course?.courseName ?? (fullTitle || "Course");
+  const courseType = ev.course?.courseType ?? "-";
+  const lecturer = ev.course?.lecturer ?? "-";
+  const location = ev.course?.location ?? "-";
+  const groups = fmtListOrDash(ev.course?.groups);
+
+  const partyEventName = ev.party?.eventName ?? (fullTitle || "Event");
+  const partyLocation = ev.party?.location ?? "-";
+  const partyCreatedBy = ev.party?.createdBy ?? "-";
+  const partyEntryFee = ev.party?.entryFee ?? "-";
+  const partyInvitedGroups =
+    ev.party?.invitedGroups?.length ? ev.party.invitedGroups.join(", ") : "-";
+  const partyFriendsAttending =
+    ev.party?.friendsAttending?.length ? ev.party.friendsAttending.join(", ") : "-";
+
   return (
     <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -169,38 +162,39 @@ export default function TimetableEventOverviewScreen() {
           {typeLabel(displayType)}
         </Text>
 
-        {displayType === "none" && (
-          <>
-            <Row label="Title (full)" value={fullTitle} />
-            <Row label="Title (abbr.)" value={titleAbbr} />
-            <Row label="From" value={fmt(fromIso)} />
-            <Row label="Until" value={fmt(untilIso)} />
-            <Row label="Note" value={note || "-"} />
-            <Row label="Color" value={color} />
-          </>
-        )}
+        {/* Common fields */}
+        <Row label="Title (abbr.)" value={titleAbbr || "-"} />
+        <Row label="From" value={fromIso ? fmt(fromIso) : "-"} />
+        <Row label="Until" value={untilIso ? fmt(untilIso) : "-"} />
+        <Row label="Note" value={note || "-"} />
+        <Row label="Color" value={color} />
 
         {displayType === "course" && (
           <>
-            <Row label="Course Name" value={courseFields.courseName} />
-            <Row label="Course Type" value={courseFields.courseType} />
-            <Row label="Lecturer" value={courseFields.lecturer} />
-            <Row label="Room" value={courseFields.room} />
-            <Text variant="bodySmall" style={{ marginTop: 10, color: paper.colors.onSurfaceVariant }}>
-              TODO: Add the algorithm for extracting these fields from iCal subscriptions (ICS data).
-              For now everything is shown as “Course Name”.
-            </Text>
+            <View style={{ marginTop: 14 }}>
+              <Text variant="titleMedium">Course details</Text>
+            </View>
+
+            <Row label="Course Name" value={courseName} />
+            <Row label="Type" value={courseType || "-"} />
+            <Row label="Groups" value={groups} />
+            <Row label="Location" value={location || "-"} />
+            <Row label="Lecturer" value={lecturer || "-"} />
           </>
         )}
 
         {displayType === "event" && (
           <>
-            <Row label="Event Name" value={partyFields.eventName} />
-            <Row label="Location" value={partyFields.location} />
-            <Row label="Event Created By" value={partyFields.createdBy} />
-            <Row label="Entry fee" value={partyFields.entryFee} />
-            <Row label="Invited Groups" value={partyFields.invitedGroups} />
-            <Row label="Friends who are attending" value={partyFields.friendsAttending} />
+            <View style={{ marginTop: 14 }}>
+              <Text variant="titleMedium">Event details</Text>
+            </View>
+
+            <Row label="Event Name" value={partyEventName} />
+            <Row label="Location" value={partyLocation} />
+            <Row label="Event Created By" value={partyCreatedBy} />
+            <Row label="Entry fee" value={partyEntryFee} />
+            <Row label="Invited Groups" value={partyInvitedGroups} />
+            <Row label="Friends who are attending" value={partyFriendsAttending} />
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
               <Button mode="outlined" onPress={() => {}}>

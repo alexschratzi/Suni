@@ -87,11 +87,28 @@ export function CourseFields({
     <View>
       {/* ✅ Title is edited in EventEditorDrawer (shared Title). No redundant "Course Title" field here. */}
 
-      <SectionLabel>Course Type</SectionLabel>
+      <SectionLabel>Type</SectionLabel>
       <AutoGrowTextInput
         mode="outlined"
         value={form.courseType ?? ""}
         onChangeText={(t) => onChangeCourseField({ courseType: t })}
+        dense
+      />
+
+      <SectionLabel>Groups (comma separated)</SectionLabel>
+      <AutoGrowTextInput
+        mode="outlined"
+        value={form.groups ?? ""}
+        onChangeText={(t) => onChangeCourseField({ groups: t })}
+        dense
+        multiline
+      />
+
+      <SectionLabel>Location</SectionLabel>
+      <AutoGrowTextInput
+        mode="outlined"
+        value={form.location ?? ""}
+        onChangeText={(t) => onChangeCourseField({ location: t })}
         dense
       />
 
@@ -102,9 +119,6 @@ export function CourseFields({
         onChangeText={(t) => onChangeCourseField({ lecturer: t })}
         dense
       />
-
-      <SectionLabel>Room</SectionLabel>
-      <AutoGrowTextInput mode="outlined" value={form.room ?? ""} onChangeText={(t) => onChangeCourseField({ room: t })} dense />
     </View>
   );
 }

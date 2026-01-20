@@ -1,4 +1,5 @@
 // src/timetable/hooks/useTimetableEditor.ts
+
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
@@ -53,19 +54,34 @@ function toBaseForm(form: EventEditorForm): EventEditorFormBase {
   };
 }
 
-function toCourseForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): CourseEditorForm {
+function toCourseForm(
+  base: EventEditorFormBase,
+  prev?: EventEditorForm,
+  ev?: EvWithMeta,
+): CourseEditorForm {
   const p: any = prev ?? {};
+
+  const groupsStr =
+    p.groups ??
+    (Array.isArray(ev?.course?.groups) ? ev!.course!.groups!.join(", ") : "") ??
+    "";
+
   return {
     ...base,
     displayType: "course",
     courseName: p.courseName ?? ev?.course?.courseName ?? base.fullTitle ?? "",
     courseType: p.courseType ?? ev?.course?.courseType ?? "",
     lecturer: p.lecturer ?? ev?.course?.lecturer ?? "",
-    room: p.room ?? ev?.course?.room ?? "",
+    location: p.location ?? ev?.course?.location ?? "",
+    groups: groupsStr,
   };
 }
 
-function toPartyForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): PartyEditorForm {
+function toPartyForm(
+  base: EventEditorFormBase,
+  prev?: EventEditorForm,
+  ev?: EvWithMeta,
+): PartyEditorForm {
   const p: any = prev ?? {};
   const invitedGroupsStr =
     p.invitedGroups ??
@@ -99,10 +115,11 @@ function snapshotComparable(form: EventEditorForm | null) {
     courseName: f.courseName ?? "",
     courseType: f.courseType ?? "",
     lecturer: f.lecturer ?? "",
-    room: f.room ?? "",
+    location: f.location ?? "",
+    groups: f.groups ?? "",
 
     eventName: f.eventName ?? "",
-    location: f.location ?? "",
+    location2: f.location ?? "", // keep stable key for party location too
     createdBy: f.createdBy ?? "",
     entryFee: f.entryFee ?? "",
     invitedGroups: f.invitedGroups ?? "",
@@ -196,7 +213,7 @@ export function useTimetableEditor({
   }, []);
 
   /**
-   * ✅ NEW: When user switches type, convert the form shape so Course/Event fields become editable.
+   * ✅ When user switches type, convert the form shape so Course/Event fields become editable.
    */
   const setDisplayType = useCallback(
     (nextType: EntryDisplayType) => {
@@ -210,7 +227,6 @@ export function useTimetableEditor({
         if (next === "course") return toCourseForm(base, prev, editingEvent);
         if (next === "event") return toPartyForm(base, prev, editingEvent);
 
-        // next === "none"
         return { ...base, displayType: "none" };
       });
     },
@@ -299,7 +315,6 @@ export function useTimetableEditor({
 
     const nextDisplayType = normalizeDisplayType(editorForm.displayType);
 
-    // Pull type-specific edits (if any) from the current form
     const f: any = editorForm;
 
     const nextCourse =
@@ -308,7 +323,11 @@ export function useTimetableEditor({
             courseName: String(f.courseName ?? ""),
             courseType: String(f.courseType ?? ""),
             lecturer: String(f.lecturer ?? ""),
-            room: String(f.room ?? ""),
+            location: String(f.location ?? ""),
+            groups: String(f.groups ?? "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
           }
         : undefined;
 
@@ -349,7 +368,6 @@ export function useTimetableEditor({
           displayType: nextDisplayType,
           hidden: !!editingEvent.hidden,
 
-          // ✅ NEW: persist course/party edits for iCal items
           course: nextCourse,
           party: nextParty,
         },
@@ -358,7 +376,6 @@ export function useTimetableEditor({
       setIcalMeta(nextMeta);
       void saveIcalMeta(nextMeta);
 
-      // Reflect immediately in UI event list
       setEvents((prev) =>
         prev.map((e) =>
           e.id === editingEvent.id
@@ -371,7 +388,6 @@ export function useTimetableEditor({
                 isTitleAbbrCustom: hasCustomTitleAbbr,
                 displayType: nextDisplayType,
 
-                // ✅ NEW: keep the edited type fields on the event object too
                 course: nextCourse,
                 party: nextParty,
               }
@@ -506,7 +522,7 @@ export function useTimetableEditor({
     closeEditor,
 
     updateForm,
-    setDisplayType, // ✅ NEW
+    setDisplayType,
 
     onChangeFullTitle,
     onChangeTitleAbbr,

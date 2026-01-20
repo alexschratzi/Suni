@@ -24,7 +24,8 @@ export type CourseEditorForm = EventEditorFormBase & {
   courseName: string;
   courseType: string;
   lecturer: string;
-  room: string;
+  location: string;
+  groups: string; // comma separated in editor
 };
 
 export type PartyEditorForm = EventEditorFormBase & {
@@ -32,7 +33,7 @@ export type PartyEditorForm = EventEditorFormBase & {
   location: string;
   createdBy: string;
   entryFee: string;
-  invitedGroups: string; // comma separated for now
+  invitedGroups: string;
 };
 
 export type EventEditorForm = EventEditorFormBase | CourseEditorForm | PartyEditorForm;
@@ -43,7 +44,8 @@ export type CourseInfo = {
   courseName: string;
   courseType: string;
   lecturer: string;
-  room: string;
+  location: string;
+  groups: string[];
 };
 
 export type PartyInfo = {
@@ -62,9 +64,7 @@ export type EvWithMeta = Ev & {
   note?: string;
 
   source: EventSource;
-
   displayType: EntryDisplayType;
-
   hidden?: boolean;
 
   course?: Partial<CourseInfo>;
@@ -92,13 +92,8 @@ export type ICalEventMeta = {
   isTitleAbbrCustom?: boolean;
 
   displayType?: EntryDisplayType;
-
   hidden?: boolean;
 
-  /**
-   * ✅ NEW: persist type-specific fields for iCal items too
-   * (so Course/Event can be edited and kept)
-   */
   course?: Partial<CourseInfo>;
   party?: Partial<PartyInfo>;
 };
@@ -106,6 +101,8 @@ export type ICalEventMeta = {
 export type RawIcalEvent = {
   uid: string;
   summary: string;
+  description?: string;
+  location?: string; // ✅ NEW: from LOCATION: in the ICS file
   start: string;
   end: string;
 };
