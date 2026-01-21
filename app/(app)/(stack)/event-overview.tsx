@@ -17,7 +17,7 @@ import { getNavEvent, clearNavEvent } from "@/src/timetable/utils/eventNavCache"
 function typeLabel(t: EntryDisplayType) {
   if (t === "course") return "Course";
   if (t === "event") return "Event";
-  return "Calendar Entry";
+  return "Calendar entry";
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -45,6 +45,11 @@ function fmtDateRange(startIso?: string, endIso?: string) {
   const from = s.format("HH:mm");
   const until = e.format("HH:mm");
   return `${date}, ${from} - ${until}`;
+}
+
+function nonEmptyOr(value: unknown, fallback: string) {
+  const v = String(value ?? "").trim();
+  return v ? v : fallback;
 }
 
 export default function TimetableEventOverviewScreen() {
@@ -152,20 +157,20 @@ export default function TimetableEventOverviewScreen() {
     );
   }
 
-  const fullTitle = ev.fullTitle ?? ev.title ?? "Untitled";
+  // ✅ Fix: treat empty strings as missing (event entries often have fullTitle === "")
+  const fullTitle = nonEmptyOr(ev.fullTitle ?? ev.title, "Untitled");
   const note = String(ev.note ?? "").trim();
   const color = ev.color ?? "#4dabf7";
 
   const dateRange = fmtDateRange(ev.start?.dateTime, ev.end?.dateTime);
 
   // Course fields
-  const courseType = ev.course?.courseType ?? "";
   const lecturer = ev.course?.lecturer ?? "-";
   const location = ev.course?.location ?? "-";
   const groups = fmtListOrDash(ev.course?.groups);
 
-  // Party fields
-  const partyEventName = ev.party?.eventName ?? fullTitle;
+  // Party fields (Event)
+  const partyEventName = nonEmptyOr(ev.party?.eventName, fullTitle);
   const partyLocation = ev.party?.location ?? "-";
   const partyCreatedBy = ev.party?.createdBy ?? "-";
   const partyEntryFee = ev.party?.entryFee ?? "-";
@@ -174,12 +179,15 @@ export default function TimetableEventOverviewScreen() {
   const partyFriendsAttending =
     ev.party?.friendsAttending?.length ? ev.party.friendsAttending.join(", ") : "-";
 
+  // ✅ Title to show
+  const titleToShow = displayType === "event" ? partyEventName : fullTitle;
+
   return (
     <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
         {/* Title */}
         <Text variant="titleLarge" style={{ lineHeight: 32 }}>
-          {displayType === "event" ? partyEventName : fullTitle}
+          {titleToShow}
         </Text>
 
         {/* Date line directly under title */}

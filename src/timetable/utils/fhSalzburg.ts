@@ -25,7 +25,7 @@ const STOPWORDS = new Set([
  * Multi-word course types treated as ONE type token.
  * Match is case-insensitive and must occur at the END of line 1 (after code removal).
  */
-const MULTI_WORD_TYPES = ["asynchronous teaching"] as const;
+const MULTI_WORD_TYPES = ["asynchronous teaching", "asynchrone lehre"] as const;
 
 function splitLines(desc: string): string[] {
   return String(desc ?? "")

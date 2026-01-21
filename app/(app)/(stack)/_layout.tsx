@@ -103,6 +103,7 @@ export default function AppStackLayout() {
         <Stack.Screen name="friends" options={{ title: "Freunde" }} />
         <Stack.Screen name="embedded-browser" options={{ headerShown: false }} />
         <Stack.Screen name="logout" options={{ headerShown: false }} />
+          <Stack.Screen name="event-overview" options={{ title: "Overview" }} />
       </Stack>
     </UniversityProvider>
   );
