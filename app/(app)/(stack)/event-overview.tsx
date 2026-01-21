@@ -14,24 +14,18 @@ import { EventEditorDrawer } from "@/components/timetable/EventEditorDrawer";
 
 import { getNavEvent, clearNavEvent } from "@/src/timetable/utils/eventNavCache";
 
-function fmt(iso: string) {
-  try {
-    return dayjs(iso).format("DD.MM.YYYY HH:mm");
-  } catch {
-    return iso;
-  }
-}
-
 function typeLabel(t: EntryDisplayType) {
   if (t === "course") return "Course";
-  if (t === "event") return "Event (Party)";
-  return "None";
+  if (t === "event") return "Event";
+  return "Calendar Entry";
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Field({ label, value }: { label: string; value: string }) {
   return (
-    <View style={{ marginTop: 10 }}>
-      <Text variant="labelSmall">{label}</Text>
+    <View style={styles.field}>
+      <Text variant="labelSmall" style={styles.fieldLabel}>
+        {label}
+      </Text>
       <Text variant="bodyMedium">{value}</Text>
     </View>
   );
@@ -39,6 +33,18 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function fmtListOrDash(arr?: string[]) {
   return arr?.length ? arr.join(", ") : "-";
+}
+
+function fmtDateRange(startIso?: string, endIso?: string) {
+  if (!startIso || !endIso) return "-";
+  const s = dayjs(startIso);
+  const e = dayjs(endIso);
+  if (!s.isValid() || !e.isValid()) return "-";
+
+  const date = s.format("DD.MM.YYYY");
+  const from = s.format("HH:mm");
+  const until = e.format("HH:mm");
+  return `${date}, ${from} - ${until}`;
 }
 
 export default function TimetableEventOverviewScreen() {
@@ -93,6 +99,20 @@ export default function TimetableEventOverviewScreen() {
 
   const displayType: EntryDisplayType = (ev?.displayType ?? "none") as EntryDisplayType;
 
+  // ✅ MUST be declared before early returns (hooks rule)
+  const typeLine = useMemo(() => {
+    if (!ev) return "";
+
+    const base = typeLabel(displayType);
+
+    if (displayType === "course") {
+      const t = String(ev.course?.courseType ?? "").trim();
+      return t ? `${base} - ${t}` : base;
+    }
+
+    return base;
+  }, [ev, displayType]);
+
   const onHide = useCallback(async () => {
     if (!ev) return;
 
@@ -132,20 +152,20 @@ export default function TimetableEventOverviewScreen() {
     );
   }
 
-  const fullTitle = ev.fullTitle ?? ev.title ?? "";
-  const titleAbbr = ev.titleAbbr ?? ev.title ?? "";
-  const fromIso = ev.start?.dateTime ?? "";
-  const untilIso = ev.end?.dateTime ?? "";
-  const note = ev.note ?? "";
+  const fullTitle = ev.fullTitle ?? ev.title ?? "Untitled";
+  const note = String(ev.note ?? "").trim();
   const color = ev.color ?? "#4dabf7";
 
-  const courseName = ev.course?.courseName ?? (fullTitle || "Course");
-  const courseType = ev.course?.courseType ?? "-";
+  const dateRange = fmtDateRange(ev.start?.dateTime, ev.end?.dateTime);
+
+  // Course fields
+  const courseType = ev.course?.courseType ?? "";
   const lecturer = ev.course?.lecturer ?? "-";
   const location = ev.course?.location ?? "-";
   const groups = fmtListOrDash(ev.course?.groups);
 
-  const partyEventName = ev.party?.eventName ?? (fullTitle || "Event");
+  // Party fields
+  const partyEventName = ev.party?.eventName ?? fullTitle;
   const partyLocation = ev.party?.location ?? "-";
   const partyCreatedBy = ev.party?.createdBy ?? "-";
   const partyEntryFee = ev.party?.entryFee ?? "-";
@@ -157,46 +177,47 @@ export default function TimetableEventOverviewScreen() {
   return (
     <Surface style={[styles.root, { backgroundColor: paper.colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text variant="titleLarge">{fullTitle || "Untitled"}</Text>
-        <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 4 }}>
-          {typeLabel(displayType)}
+        {/* Title */}
+        <Text variant="titleLarge" style={{ lineHeight: 32 }}>
+          {displayType === "event" ? partyEventName : fullTitle}
         </Text>
 
-        {/* Common fields */}
-        <Row label="Title (abbr.)" value={titleAbbr || "-"} />
-        <Row label="From" value={fromIso ? fmt(fromIso) : "-"} />
-        <Row label="Until" value={untilIso ? fmt(untilIso) : "-"} />
-        <Row label="Note" value={note || "-"} />
-        <Row label="Color" value={color} />
+        {/* Date line directly under title */}
+        <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 6 }}>
+          {dateRange}
+        </Text>
 
+        {/* Type line with color bubble */}
+        <View style={[styles.typeRow, { marginTop: 10 }]}>
+          <View
+            style={[
+              styles.colorDot,
+              { backgroundColor: color, borderColor: paper.colors.outlineVariant },
+            ]}
+          />
+          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
+            {typeLine}
+          </Text>
+        </View>
+
+        {/* Details */}
         {displayType === "course" && (
           <>
-            <View style={{ marginTop: 14 }}>
-              <Text variant="titleMedium">Course details</Text>
-            </View>
-
-            <Row label="Course Name" value={courseName} />
-            <Row label="Type" value={courseType || "-"} />
-            <Row label="Groups" value={groups} />
-            <Row label="Location" value={location || "-"} />
-            <Row label="Lecturer" value={lecturer || "-"} />
+            <Field label="Location" value={location || "-"} />
+            <Field label="Lecturer" value={lecturer || "-"} />
+            <Field label="Groups" value={groups} />
           </>
         )}
 
         {displayType === "event" && (
           <>
-            <View style={{ marginTop: 14 }}>
-              <Text variant="titleMedium">Event details</Text>
-            </View>
+            <Field label="Location" value={partyLocation} />
+            <Field label="Event Created By" value={partyCreatedBy} />
+            <Field label="Entry fee" value={partyEntryFee} />
+            <Field label="Invited Groups" value={partyInvitedGroups} />
+            <Field label="Friends who are attending" value={partyFriendsAttending} />
 
-            <Row label="Event Name" value={partyEventName} />
-            <Row label="Location" value={partyLocation} />
-            <Row label="Event Created By" value={partyCreatedBy} />
-            <Row label="Entry fee" value={partyEntryFee} />
-            <Row label="Invited Groups" value={partyInvitedGroups} />
-            <Row label="Friends who are attending" value={partyFriendsAttending} />
-
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+            <View style={styles.quickActions}>
               <Button mode="outlined" onPress={() => {}}>
                 Attend Event
               </Button>
@@ -207,7 +228,10 @@ export default function TimetableEventOverviewScreen() {
           </>
         )}
 
-        <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+        {/* Note only if content, at very bottom */}
+        {note ? <Field label="Note" value={note} /> : null}
+
+        <View style={styles.actionsRow}>
           <Button onPress={onHide} textColor={paper.colors.error}>
             Hide
           </Button>
@@ -247,6 +271,43 @@ export default function TimetableEventOverviewScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
-  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+
+  content: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+
+  typeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+
+  colorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+
+  field: {
+    marginTop: 12,
+  },
+  fieldLabel: {
+    marginBottom: 2,
+  },
+
+  quickActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+
+  actionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 18,
+  },
 });

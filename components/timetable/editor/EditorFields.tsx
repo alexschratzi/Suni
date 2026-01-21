@@ -23,19 +23,25 @@ export function TypeSelector({
   value: EntryDisplayType;
   onChange: (t: EntryDisplayType) => void;
 }) {
+  // ✅ Only allow "none" and "event"
   const buttons = useMemo(
     () => [
-      { value: "none", label: "None" },
-      { value: "course", label: "Course" },
+      { value: "none", label: "Entry" }, // ✅ renamed from "None"
       { value: "event", label: "Event" },
     ],
     [],
   );
 
+  // If current value is "course", SegmentedButtons would have no matching button.
+  // We still keep the component simple; caller must not render it for courses.
   return (
     <View>
       <SectionLabel>Type</SectionLabel>
-      <SegmentedButtons value={value} onValueChange={(v) => onChange(v as EntryDisplayType)} buttons={buttons} />
+      <SegmentedButtons
+        value={value === "course" ? "none" : value}
+        onValueChange={(v) => onChange(v as EntryDisplayType)}
+        buttons={buttons}
+      />
     </View>
   );
 }
@@ -85,8 +91,6 @@ export function CourseFields({
 }) {
   return (
     <View>
-      {/* ✅ Title is edited in EventEditorDrawer (shared Title). No redundant "Course Title" field here. */}
-
       <SectionLabel>Type</SectionLabel>
       <AutoGrowTextInput
         mode="outlined"
@@ -132,8 +136,6 @@ export function PartyFields({
 }) {
   return (
     <View>
-      {/* ✅ Title is edited in EventEditorDrawer (shared Title). No redundant "Event Title" field here. */}
-
       <SectionLabel>Location</SectionLabel>
       <AutoGrowTextInput
         mode="outlined"

@@ -20,6 +20,7 @@ import { saveCalendar } from "@/src/server/calendar";
 import { toISO, makeIcalMetaKey } from "@/src/timetable/utils/date";
 import { saveIcalMeta, saveLocalEvents } from "@/src/timetable/utils/storage";
 import { mapEventToDto } from "@/src/timetable/utils/mapping";
+import { DEFAULT_COLORS, getDefaultColorForEditorForm } from "@/src/timetable/utils/defaultColors";
 
 type Params = {
   userId: string;
@@ -49,16 +50,12 @@ function toBaseForm(form: EventEditorForm): EventEditorFormBase {
     from: form.from ?? "",
     until: form.until ?? "",
     note: form.note ?? "",
-    color: form.color ?? "#4dabf7",
+    color: form.color ?? DEFAULT_COLORS.none,
     displayType: normalizeDisplayType(form.displayType),
   };
 }
 
-function toCourseForm(
-  base: EventEditorFormBase,
-  prev?: EventEditorForm,
-  ev?: EvWithMeta,
-): CourseEditorForm {
+function toCourseForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): CourseEditorForm {
   const p: any = prev ?? {};
 
   const groupsStr =
@@ -77,11 +74,7 @@ function toCourseForm(
   };
 }
 
-function toPartyForm(
-  base: EventEditorFormBase,
-  prev?: EventEditorForm,
-  ev?: EvWithMeta,
-): PartyEditorForm {
+function toPartyForm(base: EventEditorFormBase, prev?: EventEditorForm, ev?: EvWithMeta): PartyEditorForm {
   const p: any = prev ?? {};
   const invitedGroupsStr =
     p.invitedGroups ??
@@ -119,7 +112,7 @@ function snapshotComparable(form: EventEditorForm | null) {
     groups: f.groups ?? "",
 
     eventName: f.eventName ?? "",
-    location2: f.location ?? "", // keep stable key for party location too
+    location2: f.location ?? "",
     createdBy: f.createdBy ?? "",
     entryFee: f.entryFee ?? "",
     invitedGroups: f.invitedGroups ?? "",
@@ -172,7 +165,7 @@ export function useTimetableEditor({
         from: toISO(ev.start),
         until: toISO(ev.end),
         note: ev.note ?? "",
-        color: ev.color ?? "#4dabf7",
+        color: ev.color ?? DEFAULT_COLORS.none,
         displayType: normalizeDisplayType(ev.displayType),
       };
 
@@ -213,7 +206,8 @@ export function useTimetableEditor({
   }, []);
 
   /**
-   * ✅ When user switches type, convert the form shape so Course/Event fields become editable.
+   * ✅ If the current color equals the OLD default and the user changes type,
+   * automatically switch color to the NEW default.
    */
   const setDisplayType = useCallback(
     (nextType: EntryDisplayType) => {
@@ -221,13 +215,23 @@ export function useTimetableEditor({
         if (!prev) return prev;
         if (!editingEvent) return prev;
 
+        const prevType = normalizeDisplayType(prev.displayType);
         const next = normalizeDisplayType(nextType);
+
+        // Compute old/new defaults using the current form content
+        const oldDefault = getDefaultColorForEditorForm(prev as any, prevType);
+        const newDefault = getDefaultColorForEditorForm(prev as any, next);
+
+        const shouldAutoUpdateColor =
+          String((prev as any).color ?? "").toLowerCase() === String(oldDefault).toLowerCase();
+
         const base = toBaseForm({ ...(prev as any), displayType: next } as any);
+        const baseWithColor = shouldAutoUpdateColor ? { ...base, color: newDefault } : base;
 
-        if (next === "course") return toCourseForm(base, prev, editingEvent);
-        if (next === "event") return toPartyForm(base, prev, editingEvent);
+        if (next === "course") return toCourseForm(baseWithColor, prev, editingEvent);
+        if (next === "event") return toPartyForm(baseWithColor, prev, editingEvent);
 
-        return { ...base, displayType: "none" };
+        return { ...baseWithColor, displayType: "none" };
       });
     },
     [editingEvent],
@@ -314,7 +318,6 @@ export function useTimetableEditor({
     const isIcal = editingEvent.source === "ical";
 
     const nextDisplayType = normalizeDisplayType(editorForm.displayType);
-
     const f: any = editorForm;
 
     const nextCourse =
@@ -367,7 +370,6 @@ export function useTimetableEditor({
           isTitleAbbrCustom: hasCustomTitleAbbr,
           displayType: nextDisplayType,
           hidden: !!editingEvent.hidden,
-
           course: nextCourse,
           party: nextParty,
         },
@@ -387,7 +389,6 @@ export function useTimetableEditor({
                 color: editorForm.color || e.color,
                 isTitleAbbrCustom: hasCustomTitleAbbr,
                 displayType: nextDisplayType,
-
                 course: nextCourse,
                 party: nextParty,
               }
@@ -472,12 +473,13 @@ export function useTimetableEditor({
       const startISO = toISO(ev.start);
       const endISO = toISO(ev.end);
 
+      // ✅ New items default to "Entry" (none) + purple
       const newEvent: EvWithMeta = {
         id: Math.random().toString(36).slice(2),
         title: "",
         start: { dateTime: startISO },
         end: { dateTime: endISO },
-        color: "#4dabf7",
+        color: DEFAULT_COLORS.none,
         fullTitle: "",
         titleAbbr: "",
         isTitleAbbrCustom: false,

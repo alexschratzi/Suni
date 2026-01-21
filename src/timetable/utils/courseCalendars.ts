@@ -1,8 +1,17 @@
 // src/timetable/utils/courseCalendars.ts
-import { getICalSubscriptions, updateICal, deleteICalSubscription } from "@/src/server/calendar";
+import {
+  getICalSubscriptions,
+  updateICal,
+  deleteICalSubscription,
+} from "@/src/server/calendar";
 import { notifyICalChanged } from "@/src/utils/calendarSyncEvents";
-import { lockCourseIcalSubscriptionId, unlockCourseIcalSubscriptionId } from "@/src/timetable/utils/storage";
+import {
+  lockCourseIcalSubscriptionId,
+  unlockCourseIcalSubscriptionId,
+} from "@/src/timetable/utils/storage";
 import type { EntryDisplayTypeDTO, ICalSubscriptionDTO } from "@/src/dto/calendarDTO";
+
+import { DEFAULT_COLORS } from "@/src/timetable/utils/defaultColors";
 
 /**
  * TODO: replace with real auth.
@@ -16,7 +25,10 @@ function normalizeForExactCompare(s: string): string {
   return String(s ?? "").trim();
 }
 
-async function findSubscriptionByUrl(userId: string, url: string): Promise<ICalSubscriptionDTO | null> {
+async function findSubscriptionByUrl(
+  userId: string,
+  url: string,
+): Promise<ICalSubscriptionDTO | null> {
   const target = normalizeForExactCompare(url);
   if (!target) return null;
 
@@ -25,27 +37,34 @@ async function findSubscriptionByUrl(userId: string, url: string): Promise<ICalS
   return match ?? null;
 }
 
-// TODO: Rename to addCalender ..  and use type
 /**
  * Adds an iCal subscription that is considered "course-managed" (locked in UI).
  * If the URL already exists (exact string match after trim), returns the existing id.
+ *
+ * ✅ Change: course calendars should use the default COURSE color (blue), not grey.
  */
-export async function addCourseCalender(universityName: string, icalUrl: string, type: EntryDisplayTypeDTO): Promise<string> {
+export async function addCourseCalender(
+  universityName: string,
+  icalUrl: string,
+  type: EntryDisplayTypeDTO,
+): Promise<string> {
   const userId = DEFAULT_USER_ID;
 
   const name = String(universityName || "").trim() || "Course Calendar";
   const url = normalizeForExactCompare(icalUrl);
   if (!url) throw new Error("IcalURL must not be empty.");
 
-  // 1) If already exists -> lock + (optionally update metadata) + return id
+  // default color for course calendars
+  const defaultCourseColor = DEFAULT_COLORS.course;
+
+  // 1) If already exists -> update metadata + lock + return id
   const existing = await findSubscriptionByUrl(userId, url);
   if (existing?.id) {
-    // Optional: keep metadata fresh (safe even if updateICal is an upsert)
     await updateICal({
       userId,
       name,
       url,
-      color: "#9E9E9E",
+      color: defaultCourseColor, // ✅ was "#9E9E9E"
       defaultDisplayType: "course",
     });
 
@@ -60,7 +79,7 @@ export async function addCourseCalender(universityName: string, icalUrl: string,
     userId,
     name,
     url,
-    color: "#9E9E9E",
+    color: defaultCourseColor, // ✅ was "#9E9E9E"
     defaultDisplayType: "course",
   });
 

@@ -1,5 +1,5 @@
 // components/timetable/editor/EditorContent.tsx
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Divider, type MD3Theme } from "react-native-paper";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -16,7 +16,20 @@ import type {
 import { AutoGrowTextInput, ColorRow } from "./EditorCommon";
 import { CourseFields, DateTimeFields, PartyFields, TypeSelector } from "./EditorFields";
 
-const COLOR_OPTIONS = ["#4dabf7", "#f783ac", "#ffd43b", "#69db7c", "#845ef7", "#ffa94d"];
+import {
+  DEFAULT_COLORS,
+  getDefaultColorForEditorForm,
+  withDefaultFirst,
+} from "@/src/timetable/utils/defaultColors";
+
+const BASE_COLOR_OPTIONS = [
+  DEFAULT_COLORS.course, // blue
+  DEFAULT_COLORS.assessment, // yellow
+  DEFAULT_COLORS.none, // purple
+  DEFAULT_COLORS.event, // green
+  DEFAULT_COLORS.assignment, // orange (future)
+  "#f783ac",
+] as const;
 
 type Props = {
   paper: MD3Theme;
@@ -60,10 +73,27 @@ export function EditorContent({
   onDelete,
   onSave,
 }: Props) {
+  // ✅ Default color for this entry type (yellow override if assessment keywords present)
+  const defaultColor = useMemo(
+    () => getDefaultColorForEditorForm(form, entryType),
+    [form, entryType],
+  );
+
+  // ✅ Default color as first option in the palette
+  const colorOptions = useMemo(
+    () => withDefaultFirst([...BASE_COLOR_OPTIONS], defaultColor),
+    [defaultColor],
+  );
+
   return (
     <>
-      <TypeSelector value={entryType} onChange={onSelectDisplayType} />
-      <Divider style={{ marginVertical: 10 }} />
+      {/* ✅ Hide type selector entirely for courses (your requirement) */}
+      {entryType !== "course" && (
+        <>
+          <TypeSelector value={entryType} onChange={onSelectDisplayType} />
+          <Divider style={{ marginVertical: 10 }} />
+        </>
+      )}
 
       {entryType === "none" && (
         <>
@@ -85,7 +115,7 @@ export function EditorContent({
             numberOfLines={3}
           />
 
-          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={colorOptions} />
         </>
       )}
 
@@ -113,7 +143,7 @@ export function EditorContent({
             numberOfLines={3}
           />
 
-          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={colorOptions} />
         </>
       )}
 
@@ -141,7 +171,7 @@ export function EditorContent({
             numberOfLines={3}
           />
 
-          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={COLOR_OPTIONS} />
+          <ColorRow paper={paper} value={form.color} onSelect={onSelectColor} options={colorOptions} />
         </>
       )}
 
