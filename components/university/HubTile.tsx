@@ -36,18 +36,18 @@ export default function HubTile({
 
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
-      style={({ pressed }) => [
-        styles.tile,
-        shadowStyle,
-        {
-          backgroundColor: surface,
-          borderColor: border,
-          opacity: disabled ? 0.5 : 1,
-          transform: pressed ? [{ scale: 0.99 }] : undefined,
-        },
-      ]}
-    >
+        onPress={disabled ? undefined : onPress}
+        style={({ pressed }) => [
+          styles.tile,
+          shadowStyle,
+          {
+            backgroundColor: surface,
+            borderColor: border,
+            opacity: disabled ? 0.5 : 1,
+            transform: [{ scale: pressed ? 0.99 : 1 }],
+          },
+        ]}
+      >
       <View style={styles.left}>
         {icon ? (
           <MaterialCommunityIcons
