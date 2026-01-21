@@ -317,7 +317,7 @@ export default function LinkHub() {
             </Card>
           }
           ListFooterComponent={
-            false ? (
+            __DEV__ ? (
               <View style={styles.devSection}>
                 <HubTile
                   title="DEV: Cookies anzeigen"

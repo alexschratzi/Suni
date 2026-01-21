@@ -24,6 +24,10 @@ import {
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+
+import { useResetOnboarding } from "@/components/university/useResetOnboarding";
+import { useUniversity } from "@/components/university/UniversityContext";
+
 type LanguageCode = "de" | "en";
 type SectionKey =
   | "general"
@@ -79,6 +83,41 @@ export default function SettingsScreen() {
     }),
     [scale]
   );
+
+   const handleUniLogout = async () => {
+    if (uniLogoutBusy) return;
+
+    Alert.alert(
+      "Uni Logout",
+      "Möchtest du dich wirklich von der Uni abmelden?",
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            setUniLogoutBusy(true);
+            try {
+              // optional: clear selected university in app state (if available)
+              try {
+                setUniversity?.(null as any);
+              } catch {}
+
+              await resetOnboarding({ clearCookies: true });
+            } catch (err) {
+              console.error("Uni logout failed:", err);
+            } finally {
+              setUniLogoutBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+    const resetOnboarding = useResetOnboarding();
+    const { setUniversity } = useUniversity(); // if your context exposes this
+    const [uniLogoutBusy, setUniLogoutBusy] = useState(false);
 
   const SECTION_META: { key: SectionKey; label: string }[] = [
     { key: "general", label: t("settings.sections.general") },
@@ -1105,24 +1144,19 @@ export default function SettingsScreen() {
             </List.Subheader>
 
             <List.Item
-              title={t("settings.uniSection.degree")}
-              description="Auswahl"
+              title="Logout"
+              description="Logout Uni Account"
               {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
-            />
-            <Divider />
-            <List.Item
-              title={t("settings.uniSection.faculty")}
-              description="Auswahl"
-              {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
-            />
-            <Divider />
-            <List.Item
-              title={t("settings.uniSection.newsPush")}
-              description="An/Aus"
-              {...listItemTextStyles}
-              right={() => <TodoTag scale={scale} />}
+              onPress={handleUniLogout}
+              right={() =>
+                uniLogoutBusy ? (
+                  <ActivityIndicator />
+                ) : (
+                  <Button mode="contained-tonal" onPress={handleUniLogout}>
+                    Logout
+                  </Button>
+                )
+              }
             />
           </List.Section>
         </Surface>
