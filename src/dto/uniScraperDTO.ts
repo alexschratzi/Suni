@@ -9,6 +9,7 @@ export interface UniCourse {
     try_nr?: number,
     semester?: string
 }
+
 export interface  StudyProgram {
     university_id: string,
     title: string,

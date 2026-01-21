@@ -558,6 +558,15 @@ export default function ChatScreen() {
       { key: "salzburg", title: t("chat.rooms.salzburg.title"), subtitle: t("chat.rooms.salzburg.subtitle") },
       { key: "oesterreich", title: t("chat.rooms.oesterreich.title"), subtitle: t("chat.rooms.oesterreich.subtitle") },
       { key: "wirtschaft", title: t("chat.rooms.wirtschaft.title"), subtitle: t("chat.rooms.wirtschaft.subtitle") },
+      { key: "Applied AI Lab", title: "Applied AI Lab", subtitle: "Applied AI Lab" },
+      { key: "Deep Learning for Image Analysis", title: "Deep Learning for Image Analysis", subtitle: "Deep Learning for Image Analysis" },
+      { key: "Ethik Nachhaltigkeit", title: "Ethik Nachhaltigkeit", subtitle: "Ethik Nachhaltigkeit" },
+      { key: "Intercultural Communication Skills", title: "Intercultural Communication Skills", subtitle: "Intercultural Communication Skills" },
+      { key: "Language Technologies Applications", title: "Language Technologies Applications", subtitle: "Language Technologies Applications" },
+      { key: "Masterseminar Masterexposé", title: "Masterseminar Masterexposé", subtitle: "Masterseminar Masterexposé" },
+      { key: "Projekt 2", title: "Projekt 2", subtitle: "Projekt 2" },
+      { key: "Reinforcement Learning for Intelligent Agents", title: "Reinforcement Learning for Intelligent Agents", subtitle: "Reinforcement Learning for Intelligent Agents" },
+      { key: "Unternehmensführung -gründung", title: "Unternehmensführung -gründung", subtitle: "Unternehmensführung -gründung" },
     ];
 
     const q = search.trim().toLowerCase();

@@ -10,7 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "./EmptyState";
 import { useTranslation } from "react-i18next";
 
-export type RoomKey = "salzburg" | "oesterreich" | "wirtschaft";
+export type RoomKey = "salzburg" | "oesterreich" | "wirtschaft" | "Applied AI Lab"| "Deep Learning for Image Analysis"| "Ethik Nachhaltigkeit"| "Intercultural Communication Skills"| "Language Technologies Applications"| "Masterseminar Masterexposé"| "Projekt 2"| "Reinforcement Learning for Intelligent Agents"| "Unternehmensführung -gründung";
 
 export type RoomItem = {
   key: RoomKey;
