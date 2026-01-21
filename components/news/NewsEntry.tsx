@@ -1,291 +1,218 @@
-// components/news/NewsEntry.tsx
-import React, { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, Share, StyleSheet, View } from "react-native";
-import {
-  Card,
-  Text,
-  useTheme,
-  Button,
-  IconButton,
-  Avatar,
-} from "react-native-paper";
-import { Ionicons } from "@expo/vector-icons";
+import React, { useMemo } from "react";
+import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Surface, Text, useTheme } from "react-native-paper";
+import { FontAwesome } from "@expo/vector-icons";
+import dayjs from "dayjs";
+import "dayjs/locale/de";
 
-export type NewsEntryProps = {
+dayjs.locale("de");
+
+type AttachedEvent = {
+  title: string;
+  startIso: string;
+  endIso: string;
+  location?: string;
+};
+
+type Props = {
+  id: string;
   profileName: string;
   source: string;
   profileImage: any;
-  imageSource: any;
+  image: any;
   text: string;
 
-  // NEW:
-  publishedAt: number; // epoch ms
-  now: number; // epoch ms (passed from screen to allow refresh/update)
+  publishedAt?: string;
+
+  attachedEvent?: AttachedEvent;
+  eventAdded?: boolean;
+  onPressAddToCalendar?: () => void;
+  onPressShowEvent?: () => void;
 };
 
-const MAX_WIDE = 21 / 9; // crop super-wide panoramas
-const MAX_TALL = 9 / 21; // crop super-tall portraits
+function formatRelativeTime(iso?: string): string | null {
+  if (!iso) return null;
+  const d = dayjs(iso);
+  if (!d.isValid()) return null;
 
-function clampAspectRatio(ar: number) {
-  if (!Number.isFinite(ar) || ar <= 0) return 1;
-  if (ar > MAX_WIDE) return MAX_WIDE;
-  if (ar < MAX_TALL) return MAX_TALL;
-  return ar;
+  const now = dayjs();
+  const seconds = Math.max(0, now.diff(d, "second"));
+  if (seconds < 60) return `vor ${seconds} Sekunden`;
+
+  const minutes = now.diff(d, "minute");
+  if (minutes < 60) return `vor ${minutes} Minuten`;
+
+  const hours = now.diff(d, "hour");
+  if (hours < 24) return `vor ${hours} Stunden`;
+
+  const days = now.diff(d, "day");
+  if (days < 7) return `vor ${days} Tagen`;
+
+  const weeks = now.diff(d, "week");
+  if (weeks < 5) return `vor ${weeks} Wochen`;
+
+  const months = now.diff(d, "month");
+  if (months < 12) return `vor ${months} Monaten`;
+
+  const years = now.diff(d, "year");
+  return `vor ${years} Jahren`;
 }
 
-function formatRelativeGerman(nowMs: number, publishedMs: number): string {
-  const diffMs = Math.max(0, nowMs - publishedMs);
-  const sec = Math.floor(diffMs / 1000);
-
-  if (sec < 60) {
-    return `vor ${sec} Sekunde${sec === 1 ? "" : "n"}`;
-  }
-
-  const min = Math.floor(sec / 60);
-  if (min < 60) {
-    return `vor ${min} Minute${min === 1 ? "" : "n"}`;
-  }
-
-  const hour = Math.floor(min / 60);
-  if (hour < 24) {
-    return `vor ${hour} Stunde${hour === 1 ? "" : "n"}`;
-  }
-
-  const day = Math.floor(hour / 24);
-  if (day < 7) {
-    return `vor ${day} Tag${day === 1 ? "" : "en"}`;
-  }
-
-  const week = Math.floor(day / 7);
-  if (week < 4) {
-    return `vor ${week} Woche${week === 1 ? "" : "n"}`;
-  }
-
-  const month = Math.floor(day / 30);
-  if (month < 12) {
-    return `vor ${month} Monat${month === 1 ? "" : "en"}`;
-  }
-
-  const year = Math.floor(day / 365);
-  return `vor ${year} Jahr${year === 1 ? "" : "en"}`;
-}
-
-export function NewsEntry({
-  profileName,
-  source,
-  profileImage,
-  imageSource,
-  text,
-  publishedAt,
-  now,
-}: NewsEntryProps) {
+export function NewsEntry(props: Props) {
   const theme = useTheme();
+  const {
+    profileName,
+    source,
+    profileImage,
+    image,
+    text,
+    publishedAt,
+    attachedEvent,
+    eventAdded,
+    onPressAddToCalendar,
+    onPressShowEvent,
+  } = props;
 
-  const [expanded, setExpanded] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [following, setFollowing] = useState(false);
+  const relTime = useMemo(() => formatRelativeTime(publishedAt), [publishedAt]);
 
-  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const eventDateLine = useMemo(() => {
+    if (!attachedEvent?.startIso) return "";
+    const d = dayjs(attachedEvent.startIso);
+    return `${d.format("dd, DD.MM.YYYY")} • ${d.format("HH:mm")}`;
+  }, [attachedEvent?.startIso]);
 
-  const toggleExpanded = () => setExpanded((v) => !v);
-  const toggleLiked = () => setLiked((v) => !v);
-  const toggleFollowing = () => setFollowing((v) => !v);
+  // 🎨 requested colors
+  const addBtnBg = "#ffa94d"; // orange
+  const showBtnBg = "#b2f2bb"; // light green
 
-  const onShare = useCallback(async () => {
-    try {
-      await Share.share({ message: text });
-    } catch {}
-  }, [text]);
+  const iconColor = "#1f2937"; // dark icon
 
-  const likeIcon = useMemo(
-    () => (liked ? "heart" : "heart-outline"),
-    [liked]
-  );
+  const iconName: React.ComponentProps<typeof FontAwesome>["name"] = eventAdded
+    ? "calendar-check-o"
+    : "calendar-plus-o";
 
-  const aspectRatio = useMemo(() => {
-    const src = Image.resolveAssetSource(imageSource);
-    const w = src?.width ?? 0;
-    const h = src?.height ?? 0;
-    const natural = w > 0 && h > 0 ? w / h : 1;
-    return clampAspectRatio(natural);
-  }, [imageSource]);
-
-  const imageHeight = useMemo(() => {
-    if (!containerWidth) return 200;
-    return Math.round(containerWidth / aspectRatio);
-  }, [containerWidth, aspectRatio]);
-
-  const relativeTime = useMemo(() => {
-    return formatRelativeGerman(now, publishedAt);
-  }, [now, publishedAt]);
+  const onPress = eventAdded ? onPressShowEvent : onPressAddToCalendar;
+  const bg = eventAdded ? showBtnBg : addBtnBg;
 
   return (
-    <Card style={styles.card} mode="elevated">
-      {/* ─────────── Top Bar ─────────── */}
-      <View style={styles.topBar}>
-        <View style={styles.profileLeft}>
-          <Avatar.Image size={40} source={profileImage} />
-
-          <View style={styles.profileTextWrap}>
-            <Text
-              variant="titleSmall"
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              style={styles.profileName}
-            >
+    <Surface mode="flat" elevation={0} style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Image source={profileImage} style={styles.avatar} />
+          <View style={{ flex: 1 }}>
+            <Text variant="titleSmall" style={{ fontWeight: "700" }}>
               {profileName}
             </Text>
-
-            <Text
-              variant="labelSmall"
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              style={{ color: theme.colors.onSurfaceVariant }}
-            >
+            <Text variant="labelSmall" style={{ opacity: 0.75 }}>
               {source}
             </Text>
           </View>
         </View>
+      </View>
 
-        <Button
-          mode={following ? "outlined" : "contained"}
-          onPress={toggleFollowing}
-          icon={({ size, color }) => (
-            <Ionicons
-              name={(following ? "checkmark-outline" : "person-add-outline") as any}
-              size={size}
-              color={color}
-            />
-          )}
-          compact
+      {/* Image */}
+      <Image source={image} style={styles.hero} />
+
+      {/* Attached event bar */}
+      {attachedEvent ? (
+        <View
+          style={[
+            styles.eventBar,
+            {
+              borderColor: theme.colors.outlineVariant,
+              backgroundColor: theme.colors.surfaceVariant,
+            },
+          ]}
         >
-          {following ? "Gefolgt" : "Folgen"}
-        </Button>
-      </View>
-
-      {/* ─────────── Image (explicit width + height) ─────────── */}
-      <View
-        style={[styles.imageClip, { backgroundColor: theme.colors.surfaceVariant }]}
-        onLayout={(e) => {
-          const w = Math.round(e.nativeEvent.layout.width);
-          if (w && w !== containerWidth) setContainerWidth(w);
-        }}
-      >
-        <Image
-          source={imageSource}
-          resizeMode="cover"
-          style={{
-            width: containerWidth || "100%",
-            height: imageHeight,
-          }}
-        />
-      </View>
-
-      {/* ─────────── Text + Bottom Row ─────────── */}
-      <Card.Content style={styles.content}>
-        <Pressable onPress={toggleExpanded}>
-          <Text variant="bodyMedium" numberOfLines={expanded ? undefined : 4}>
-            {text}
-          </Text>
-
-          <Text
-            variant="labelSmall"
-            style={[styles.moreLess, { color: theme.colors.primary }]}
-          >
-            {expanded ? "Weniger anzeigen" : "Mehr anzeigen"}
-          </Text>
-        </Pressable>
-
-        {/* Bottom actions + time */}
-        <View style={styles.bottomRow}>
-          <View style={styles.actionsRow}>
-            <IconButton
-              onPress={toggleLiked}
-              icon={({ size, color }) => (
-                <Ionicons name={likeIcon as any} size={size} color={color} />
-              )}
-              iconColor={liked ? theme.colors.primary : theme.colors.onSurface}
-            />
-
-            <IconButton
-              onPress={onShare}
-              icon={({ size, color }) => (
-                <Ionicons
-                  name={"share-social-outline" as any}
-                  size={size}
-                  color={color}
-                />
-              )}
-            />
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text variant="labelLarge" style={{ fontWeight: "800" }} numberOfLines={1}>
+              {attachedEvent.title}
+            </Text>
+            <Text variant="labelSmall" style={{ opacity: 0.8 }}>
+              {eventDateLine}
+            </Text>
           </View>
 
-          <Text
-            variant="labelSmall"
-            style={[styles.timeText, { color: theme.colors.onSurfaceVariant }]}
+          <Pressable
+            onPress={onPress}
+            style={({ pressed }) => [
+              styles.iconBtn,
+              { backgroundColor: bg },
+              pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={eventAdded ? "Show event" : "Add to calendar"}
+            hitSlop={8}
           >
-            {relativeTime}
-          </Text>
+            <FontAwesome name={iconName} size={18} color={iconColor} />
+          </Pressable>
         </View>
-      </Card.Content>
-    </Card>
+      ) : null}
+
+      {/* Text */}
+      <View style={styles.body}>
+        <Text variant="bodyMedium" style={{ lineHeight: 20 }}>
+          {text}
+        </Text>
+
+        {relTime ? (
+          <View style={styles.publishedWrap}>
+            <Text variant="labelSmall" style={{ opacity: 0.6 }}>
+              {relTime}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </Surface>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    width: "100%",
-    marginBottom: 16,
+    borderRadius: 16,
     overflow: "hidden",
   },
-
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  header: {
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  profileLeft: {
+  headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    minWidth: 0,
-    marginRight: 10,
+    gap: 10,
   },
-  profileTextWrap: {
-    marginLeft: 10,
-    flexShrink: 1,
-    minWidth: 0,
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
-  profileName: {
-    fontWeight: "600",
-  },
-
-  imageClip: {
+  hero: {
     width: "100%",
-    overflow: "hidden",
+    height: 220,
+    resizeMode: "cover",
   },
-
-  content: {
-    paddingTop: 12,
-  },
-  moreLess: {
-    marginTop: 6,
-  },
-
-  bottomRow: {
-    marginTop: 6,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-
-  actionsRow: {
+  eventBar: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-
-  timeText: {
-    marginBottom: 10, // aligns visually with icon buttons
+  iconBtn: {
+    height: 36,
+    width: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  body: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  publishedWrap: {
+    marginTop: 10,
+    alignItems: "flex-end",
   },
 });
