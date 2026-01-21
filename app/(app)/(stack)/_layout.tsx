@@ -9,6 +9,8 @@ import { UniversityProvider } from "@/components/university/UniversityContext";
 
 import DefaultHeaderRight from "@/components/headers/DefaultHeaderRight";
 import { TimetableHeaderTitle, TimetableHeaderRight } from "@/components/headers/TimetableHeader";
+import { UniHeaderTitle } from "@/components/headers/UniHeaderTitle";
+
 
 import { useTimetableDisplayMode } from "@/src/timetable/utils/mode";
 import { useTimetableTheming } from "@/src/timetable/utils/useTimetableTheming";
@@ -52,7 +54,7 @@ export default function AppStackLayout() {
             backgroundColor: isPartyHeader ? partyHeaderBg : theme.colors.surface,
           },
           headerTintColor: theme.colors.onSurface,
-            headerTitleAlign: "center",
+          headerTitleAlign: "center",
           headerTitleStyle: { color: theme.colors.onSurface },
           contentStyle: { backgroundColor: theme.colors.surface },
           headerBackTitle: "Zurück",
@@ -71,6 +73,8 @@ export default function AppStackLayout() {
             headerTitle: () =>
               isTimetableFocused ? (
                 <TimetableHeaderTitle />
+              ) : currentTab === "uni" ? (
+                <UniHeaderTitle />
               ) : (
                 <Text variant="titleMedium" style={{ color: theme.colors.onSurface }}>
                   Amadeus
@@ -84,10 +88,10 @@ export default function AppStackLayout() {
                 currentTab === "news"
                   ? "news"
                   : currentTab === "uni"
-                  ? "uni"
-                  : currentTab === "chat"
-                  ? "chat"
-                  : undefined;
+                    ? "uni"
+                    : currentTab === "chat"
+                      ? "chat"
+                      : undefined;
 
               return <DefaultHeaderRight section={section} />;
             },
@@ -103,7 +107,7 @@ export default function AppStackLayout() {
         <Stack.Screen name="friends" options={{ title: "Freunde" }} />
         <Stack.Screen name="embedded-browser" options={{ headerShown: false }} />
         <Stack.Screen name="logout" options={{ headerShown: false }} />
-          <Stack.Screen name="event-overview" options={{ title: "Overview" }} />
+        <Stack.Screen name="event-overview" options={{ title: "Overview" }} />
       </Stack>
     </UniversityProvider>
   );

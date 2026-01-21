@@ -10,7 +10,6 @@ import {
 import { Card, Text, useTheme } from "react-native-paper";
 import { useRouter } from "expo-router";
 
-import Header from "../ui/Header";
 import { useUniversity } from "./UniversityContext";
 import {
   LinkHubLink,
@@ -264,7 +263,6 @@ export default function LinkHub() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <Header title={`${university?.name ?? "Uni"}`} />
 
       {loading ? (
         <View style={styles.section}>
