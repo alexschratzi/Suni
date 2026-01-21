@@ -36,7 +36,7 @@ type NewsItem = {
 const USER_ID = "1234";
 
 // ✅ Event: ÖH Semester Opening on 28.01.2026 (Europe/Vienna local time)
-const OH_EVENT_START = dayjs("2026-01-28T18:00:00"); // <-- change time here if you want
+const OH_EVENT_START = dayjs("2026-01-27T18:00:00"); // <-- change time here if you want
 const OH_EVENT_END = OH_EVENT_START.add(3, "hour");
 
 const NEWS: NewsItem[] = [
