@@ -1,6 +1,5 @@
-// components/university/HubTile.tsx
 import * as React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, Platform } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -22,19 +21,30 @@ export default function HubTile({
   rightChevron = true,
 }: Props) {
   const theme = useTheme();
+  const isDark = theme.dark;
 
-  const border = "rgba(255,255,255,0.10)";
-  const surface = "rgba(255,255,255,0.04)"; // subtle tile surface
+  // ✅ Use theme elevation colors instead of translucent white overlays in dark mode
+  const surface = isDark
+    ? (theme.colors.elevation?.level2 ?? theme.colors.surface)
+    : theme.colors.surface;
+
+  const border = isDark
+    ? (theme.colors.outlineVariant ?? "rgba(255,255,255,0.12)")
+    : (theme.colors.outlineVariant ?? "rgba(0,0,0,0.08)");
+
+  const shadowStyle = isDark ? styles.shadowDark : styles.shadowLight;
 
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.tile,
+        shadowStyle,
         {
           backgroundColor: surface,
           borderColor: border,
           opacity: disabled ? 0.5 : 1,
+          transform: pressed ? [{ scale: 0.99 }] : undefined,
         },
       ]}
     >
@@ -48,10 +58,15 @@ export default function HubTile({
           />
         ) : null}
 
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{title}</Text>
+        <View style={{ flex: 1, backgroundColor: "transparent" }}>
+          <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+            {title}
+          </Text>
           {subtitle ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <Text
+              style={[styles.subtitle, { color: theme.colors.onSurfaceVariant ?? theme.colors.onSurface }]}
+              numberOfLines={1}
+            >
               {subtitle}
             </Text>
           ) : null}
@@ -62,7 +77,7 @@ export default function HubTile({
         <MaterialCommunityIcons
           name="chevron-right"
           size={24}
-          color="rgba(255,255,255,0.55)"
+          color={theme.colors.onSurfaceVariant ?? (isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.35)")}
         />
       ) : null}
     </Pressable>
@@ -86,14 +101,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     paddingRight: 10,
+    backgroundColor: "transparent",
   },
-  title: {
-    fontSize: 15,
-    fontWeight: "600",
+  title: { fontSize: 15, fontWeight: "600" },
+  subtitle: { marginTop: 2, fontSize: 12, opacity: 0.85 },
+
+  shadowLight: {
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.10,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
-  subtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    opacity: 0.7,
+  shadowDark: {
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.18,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
   },
 });
