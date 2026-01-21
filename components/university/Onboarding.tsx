@@ -19,6 +19,8 @@ import { fetchCountries, fetchUniConfig, fetchUniversities, UniConfig } from "./
 import { Country, University, useUniversity } from "./UniversityContext";
 import { useResetOnboarding } from "./useResetOnboarding";
 import { checkLoginWithBackend } from "@/src/server/uniScraper";
+import { useRouter } from "expo-router";
+
 
 import {
   collectCookiesByOrigin,
@@ -44,6 +46,8 @@ export default function Onboarding() {
   } = useUniversity();
 
   const TOTAL_STEPS = 3;
+
+  const router = useRouter();
 
   const pagerPos = React.useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
@@ -113,8 +117,10 @@ export default function Onboarding() {
 
         if ("status" in result && result.status === 1 && result.authenticated) {
           stopPolling();
-          setBrowserUrl(null);
-          await acknowledgeLogin();
+          router.canGoBack() && router.back();
+          requestAnimationFrame(() => {
+            acknowledgeLogin();
+          });
         }
       } catch (e: any) {
         console.warn("Polling/check-login failed:", e?.message || String(e));
@@ -131,6 +137,7 @@ export default function Onboarding() {
     cookieDomains,
     acknowledgeLogin,
     stopPolling,
+    router,
   ]);
 
   // Ensure polling stops when component unmounts or browser closes
@@ -254,10 +261,17 @@ export default function Onboarding() {
     // reset browser
     setBrowserResetToken((x) => x + 1);
 
-    setBrowserUrl(uniCfg.loginUrl);
+    router.push({
+      pathname: "/(app)/(stack)/embedded-browser",
+      params: {
+        url: uniCfg.loginUrl,
+        title: "FH Login",
+        resetToken: String(browserResetToken + 1),
+      },
+    });
 
     startPolling();
-  }, [startPolling, uniCfg?.loginUrl]);
+  }, [router, startPolling, uniCfg?.loginUrl, browserResetToken]);
 
   return (
     <View style={styles.root}>
@@ -355,21 +369,6 @@ export default function Onboarding() {
       </View>
 
       <Divider />
-
-      <Modal
-        visible={!!browserUrl}
-        animationType="slide"
-        onRequestClose={() => setBrowserUrl(null)}
-      >
-        {browserUrl ? (
-          <EmbeddedBrowser
-            initialUrl={browserUrl}
-            title="FH Login"
-            onClose={() => setBrowserUrl(null)}
-            resetToken={browserResetToken}
-          />
-        ) : null}
-      </Modal>
     </View>
   );
 }
