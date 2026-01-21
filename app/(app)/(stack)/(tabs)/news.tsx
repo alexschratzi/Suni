@@ -1,7 +1,12 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { RefreshControl, ScrollView as RNScrollView, StyleSheet, View } from "react-native";
+import React from "react";
+import {
+  ScrollView as RNScrollView,
+  StyleSheet,
+  RefreshControl,
+  View,
+} from "react-native";
 import { Surface, useTheme } from "react-native-paper";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 
@@ -25,84 +30,119 @@ type NewsItem = {
   profileImage: any;
   image: any;
   text: string;
+  publishedAt: number; // epoch ms
 
-  // optional (from your earlier requirement)
-  publishedAt?: string;
-
-  // ✅ NEW
+  // ✅ NEW (optional)
   attachedEvent?: NewsAttachedEvent;
 };
 
 const USER_ID = "1234";
 
-// ✅ Event: ÖH Semester Opening on 28.01.2026 (Europe/Vienna local time)
-const OH_EVENT_START = dayjs("2026-01-27T18:00:00"); // <-- change time here if you want
+// ÖH Semester Opening on 28.01.2026
+const OH_EVENT_START = dayjs("2026-01-28T18:00:00");
 const OH_EVENT_END = OH_EVENT_START.add(3, "hour");
 
-const NEWS: NewsItem[] = [
-  {
-    id: "2",
-    profileName: "FH-Salzburg",
-    source: "Instagram",
-    profileImage: require("@/assets/example_profiles/2.png"),
-    image: require("@/assets/example_news/2.png"),
-    text:
-      "Semesterstart heißt auch: Netzwerken! 🤝\n\n" +
-      "Komm vorbei und lerne neue Leute kennen – wir freuen uns auf dich!",
-    // keep if you already use it elsewhere
-    publishedAt: dayjs().subtract(2, "hour").toISOString(),
+// Helper: create stable demo publish dates
+function buildInitialNews(): NewsItem[] {
+  const now = Date.now();
+  return [
+    {
+      id: "2",
+      profileName: "FH-Salzburg",
+      source: "Instagram",
+      profileImage: require("@/assets/example_profiles/2.png"),
+      image: require("@/assets/example_news/2.png"),
+      text:
+        "Semesterstart heißt auch: Netzwerken! 🤝 Diese Woche finden mehrere Einführungsveranstaltungen, " +
+        "Info-Sessions und Get-togethers statt. Nutzt die Gelegenheit, Lehrende und Mitstudierende kennenzulernen. " +
+        "Alle Termine findet ihr wie immer im offiziellen Kalender.",
+      publishedAt: now - 20 * 1000,
 
-    // ✅ NEW: attached event
-    attachedEvent: {
-      title: "ÖH Semester Opening",
-      startIso: OH_EVENT_START.toISOString(),
-      endIso: OH_EVENT_END.toISOString(),
-      location: "FH Salzburg, Campus Urstein",
-
+      // ✅ NEW attached event
+      attachedEvent: {
+        title: "ÖH Semester Opening",
+        startIso: OH_EVENT_START.toISOString(),
+        endIso: OH_EVENT_END.toISOString(),
+        location: "FH Salzburg, Campus Urstein",
+      },
     },
-  },
-  {
-    id: "1",
-    profileName: "Uni Salzburg",
-    source: "Website",
-    profileImage: require("@/assets/example_profiles/1.png"),
-    image: require("@/assets/example_news/1.png"),
-    text: "Willkommen im neuen Semester! 🎓\n\nAlle Infos zu Fristen und Terminen findest du im Portal.",
-    publishedAt: dayjs().subtract(1, "day").toISOString(),
-  },
-  {
-    id: "3",
-    profileName: "ÖH Salzburg",
-    source: "Instagram",
-    profileImage: require("@/assets/example_profiles/3.png"),
-    image: require("@/assets/example_news/3.png"),
-    text: "Wir sind für euch da! 💬\n\nSchreib uns bei Fragen jederzeit.",
-    publishedAt: dayjs().subtract(5, "day").toISOString(),
-  },
-];
+    {
+      id: "3",
+      profileName: "ORF Salzburg",
+      source: "orf.at",
+      profileImage: require("@/assets/example_profiles/3.png"),
+      image: require("@/assets/example_news/3.png"),
+      text:
+        "Mehr Studierende, mehr Verkehr: 🚦 Mit dem Start des Sommersemesters rechnet die Stadt Salzburg " +
+        "wieder mit erhöhtem Verkehrsaufkommen rund um die Hochschulen. Öffentliche Verkehrsmittel werden empfohlen, " +
+        "zusätzliche Busse sind zu Stoßzeiten eingeplant.",
+      publishedAt: now - 12 * 60 * 1000,
+    },
+    {
+      id: "1",
+      profileName: "ÖH",
+      source: "Facebook",
+      profileImage: require("@/assets/example_profiles/1.png"),
+      image: require("@/assets/example_news/1.png"),
+      text:
+        "Willkommen zurück an der Uni! 🎓 Die ersten Vorlesungen starten, die Bibliothek füllt sich wieder " +
+        "und der Campus erwacht aus dem Winterschlaf. Checkt früh eure Kursanmeldungen und Stundenpläne – " +
+        "gerade in der ersten Woche gibt es oft noch Raum- und Zeitänderungen.",
+      publishedAt: now - 3 * 60 * 60 * 1000,
+    },
+  ];
+}
 
 export default function NewsScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const scrollRef = React.useRef<RNScrollView | null>(null);
 
-  // store “added to calendar” state per newsId
-  const [addedByNewsId, setAddedByNewsId] = useState<Record<string, { calendarEventId: string }>>({});
-  const [refreshing, setRefreshing] = useState(false);
+  // ✅ keeps your old “jump to top” behavior
+  const { scrollToTop } = useLocalSearchParams<{ scrollToTop?: string }>();
 
-  const onRefresh = useCallback(() => {
-    // you mentioned: when pulling at top, refresh & update “vor x …”
-    setRefreshing(true);
-    // no fetch here in dummy setup; just trigger rerender
-    requestAnimationFrame(() => setRefreshing(false));
+  const [news] = React.useState<NewsItem[]>(() => buildInitialNews());
+
+  // Force re-render so relative time updates
+  const [nowTick, setNowTick] = React.useState<number>(() => Date.now());
+
+  // Pull-to-refresh state
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // “Added to calendar” state per news id
+  const [addedByNewsId, setAddedByNewsId] = React.useState<Record<string, { calendarEventId: string }>>(
+    {},
+  );
+
+  React.useEffect(() => {
+    if (!scrollToTop) return;
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [scrollToTop]);
+
+  // Auto-update relative time every 30s
+  React.useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
   }, []);
 
-  const handleAddToCalendar = useCallback(
-    async (news: NewsItem) => {
-      const ev = news.attachedEvent;
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+
+    // In a real app: fetch latest news here.
+    // For now: just update "now" to refresh relative time display.
+    setNowTick(Date.now());
+
+    // small delay so the UI shows the refresh
+    await new Promise((r) => setTimeout(r, 300));
+    setRefreshing(false);
+  }, []);
+
+  const handleAddToCalendar = React.useCallback(
+    async (item: NewsItem) => {
+      const ev = item.attachedEvent;
       if (!ev) return;
 
-      // Already added -> jump directly
-      const existing = addedByNewsId[news.id];
+      const existing = addedByNewsId[item.id];
       if (existing?.calendarEventId) {
         router.push({
           pathname: "/(app)/(stack)/event-overview",
@@ -113,14 +153,14 @@ export default function NewsScreen() {
 
       try {
         const saved = await saveCalendarEntry({
-          id: "", // let server generate
+          id: "",
           user_id: USER_ID,
           title: ev.title,
           title_short: ev.title.slice(0, 10),
           date: new Date(ev.startIso) as any,
           end_date: new Date(ev.endIso) as any,
-          note: `Aus News-Eintrag: ${news.profileName}`,
-          color: "#69db7c", // ✅ default green for Event
+          note: `Aus News-Eintrag: ${item.profileName}${ev.location ? `\nOrt: ${ev.location}` : ""}`,
+          color: "#69db7c",
           display_type: "event",
         } as any);
 
@@ -143,7 +183,7 @@ export default function NewsScreen() {
           displayType: "event",
         });
 
-        setAddedByNewsId((prev) => ({ ...prev, [news.id]: { calendarEventId: saved.id } }));
+        setAddedByNewsId((prev) => ({ ...prev, [item.id]: { calendarEventId: saved.id } }));
       } catch (e) {
         console.warn("Failed to add attached news event to calendar:", e);
       }
@@ -151,7 +191,7 @@ export default function NewsScreen() {
     [addedByNewsId, router],
   );
 
-  const handleShowEvent = useCallback(
+  const handleShowEvent = React.useCallback(
     (newsId: string) => {
       const id = addedByNewsId[newsId]?.calendarEventId;
       if (!id) return;
@@ -164,45 +204,49 @@ export default function NewsScreen() {
     [addedByNewsId, router],
   );
 
-  const rendered = useMemo(() => {
-    return NEWS.map((n) => {
-      const added = !!addedByNewsId[n.id]?.calendarEventId;
-
-      return (
-        <View key={n.id} style={styles.cardWrap}>
-          <NewsEntry
-            {...n}
-            attachedEvent={n.attachedEvent}
-            eventAdded={added}
-            onPressAddToCalendar={() => handleAddToCalendar(n)}
-            onPressShowEvent={() => handleShowEvent(n.id)}
-          />
-        </View>
-      );
-    });
-  }, [addedByNewsId, handleAddToCalendar, handleShowEvent]);
-
   return (
-    <Surface style={[styles.root, { backgroundColor: theme.colors.background }]} mode="flat" elevation={0}>
+    <Surface style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <RNScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ref={scrollRef}
+        contentContainerStyle={{ paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+          />
+        }
       >
-        {rendered}
+        {news.map((item) => {
+          const eventAdded = !!addedByNewsId[item.id]?.calendarEventId;
+
+          return (
+            <View key={item.id} style={{ marginBottom: 16 }}>
+              <NewsEntry
+                profileName={item.profileName}
+                source={item.source}
+                profileImage={item.profileImage}
+                imageSource={item.image}
+                text={item.text}
+                publishedAt={item.publishedAt}
+                now={nowTick}
+                // ✅ event attachment
+                attachedEvent={item.attachedEvent}
+                eventAdded={eventAdded}
+                onPressAddToCalendar={() => handleAddToCalendar(item)}
+                onPressShowEvent={() => handleShowEvent(item.id)}
+              />
+            </View>
+          );
+        })}
       </RNScrollView>
     </Surface>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    gap: 12,
-  },
-  cardWrap: {
-    borderRadius: 16,
-    overflow: "hidden",
+  container: {
+    flex: 1,
+    padding: 10,
   },
 });
