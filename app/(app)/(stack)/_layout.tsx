@@ -20,7 +20,8 @@ type TabName = "news" | "uni" | "timetable" | "chat";
 function tabFromSegments(segments: string[]): TabName | null {
   // segments e.g. ["(app)","(stack)","(tabs)","timetable"]
   const last = segments[segments.length - 1];
-  if (last === "news" || last === "uni" || last === "timetable" || last === "chat") return last;
+  if (last === "news" || last === "uni" || last === "timetable" || last === "chat")
+    return last;
   return null;
 }
 
@@ -103,7 +104,9 @@ export default function AppStackLayout() {
         <Stack.Screen name="grades" options={{ title: "Grades" }} />
         <Stack.Screen name="global_settings" options={{ title: "Einstellungen" }} />
         <Stack.Screen name="settings/timetable" options={{ title: "Kalender verwalten" }} />
-        <Stack.Screen name="reply" options={{ title: "Antwort", headerShown: false }} />
+        <Stack.Screen name="chat" options={{ title: "Chat" }} />
+        <Stack.Screen name="room" options={{ title: "Thread" }} />
+        <Stack.Screen name="reply" options={{ title: "Antworten" }} />
         <Stack.Screen name="friends" options={{ title: "Freunde" }} />
         <Stack.Screen name="embedded-browser" options={{ headerShown: false }} />
         <Stack.Screen name="logout" options={{ headerShown: false }} />

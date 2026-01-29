@@ -66,46 +66,6 @@ export default function ReplyMessageList({
           const downActive = vote.myVote === -1;
           return (
             <View style={styles.threadRow}>
-              <View style={styles.voteColumn}>
-                <TouchableOpacity
-                  onPress={() => handleVote(item.id, 1)}
-                  style={styles.voteButton}
-                >
-                  <Ionicons
-                    name="chevron-up"
-                    size={20}
-                    color={
-                      upActive ? theme.colors.primary : theme.colors.onSurfaceVariant
-                    }
-                  />
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    styles.voteScore,
-                    {
-                      color: upActive
-                        ? theme.colors.primary
-                        : downActive
-                        ? theme.colors.error
-                        : theme.colors.onSurfaceVariant,
-                    },
-                  ]}
-                >
-                  {vote.score}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => handleVote(item.id, -1)}
-                  style={styles.voteButton}
-                >
-                  <Ionicons
-                    name="chevron-down"
-                    size={20}
-                    color={
-                      downActive ? theme.colors.error : theme.colors.onSurfaceVariant
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
               <Surface
                 style={[
                   styles.threadCard,
@@ -169,6 +129,46 @@ export default function ReplyMessageList({
                   </TouchableOpacity>
                 )}
               </Surface>
+              <View style={styles.voteColumn}>
+                <TouchableOpacity
+                  onPress={() => handleVote(item.id, 1)}
+                  style={styles.voteButton}
+                >
+                  <Ionicons
+                    name="chevron-up"
+                    size={20}
+                    color={
+                      upActive ? theme.colors.primary : theme.colors.onSurfaceVariant
+                    }
+                  />
+                </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.voteScore,
+                    {
+                      color: upActive
+                        ? theme.colors.primary
+                        : downActive
+                        ? theme.colors.error
+                        : theme.colors.onSurfaceVariant,
+                    },
+                  ]}
+                >
+                  {vote.score}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => handleVote(item.id, -1)}
+                  style={styles.voteButton}
+                >
+                  <Ionicons
+                    name="chevron-down"
+                    size={20}
+                    color={
+                      downActive ? theme.colors.error : theme.colors.onSurfaceVariant
+                    }
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
           );
         }

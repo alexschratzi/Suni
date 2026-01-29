@@ -49,7 +49,7 @@ export const styles = StyleSheet.create({
   voteColumn: {
     width: 34,
     alignItems: "center",
-    marginRight: 6,
+    marginLeft: 6,
     paddingTop: 6,
   },
   voteButton: {

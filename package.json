@@ -41,6 +41,7 @@
     "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.8",
     "expo-localization": "~17.0.7",
+    "expo-notifications": "~0.32.14",
     "expo-router": "~6.0.10",
     "expo-secure-store": "~15.0.7",
     "expo-splash-screen": "~31.0.10",

@@ -1,5 +1,5 @@
 // app/(app)/_layout.tsx
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { View } from "react-native";
 import { Drawer } from "expo-router/drawer";
 import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
@@ -7,6 +7,11 @@ import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
+import {
+  ensurePushEnabledAsync,
+  getLocalNotificationsEnabled,
+} from "@/src/lib/pushNotifications";
 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -71,6 +76,27 @@ function AppDrawerContent(props: any) {
 
 export default function AppDrawerLayout() {
   const theme = useTheme();
+  const userId = useSupabaseUserId();
+  const didRegisterRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!userId || didRegisterRef.current) return;
+
+    const bootstrap = async () => {
+      const enabled = await getLocalNotificationsEnabled();
+      if (!enabled || cancelled) return;
+      await ensurePushEnabledAsync(userId);
+      if (!cancelled) didRegisterRef.current = true;
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -10,16 +10,9 @@ import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
-import {
-  pickAttachment,
-  uploadAttachment,
-} from "@/src/lib/chatAttachments";
-import type { AttachmentDraft } from "@/src/lib/chatAttachments";
-
 import ChatHeader from "./ChatHeader";
-import RoomsList, { RoomItem, RoomKey } from "./RoomsList";
+import RoomsList, { RoomItem } from "./RoomsList";
 import DirectList, { Direct } from "./DirectList";
-import RoomMessages from "./RoomMessages";
 
 type TabKey = "rooms" | "direct";
 
@@ -40,25 +33,14 @@ type RawDirect = {
 export default function ChatScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const userId = useSupabaseUserId();
-
-  const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
 
   const [tab, setTab] = useState<TabKey>("rooms");
   const [search, setSearch] = useState("");
 
   const [username, setUsername] = useState("");
-  const [room, setRoom] = useState<RoomKey | null>(null);
-  const [blocked, setBlocked] = useState<string[]>([]);
   const [chatColor, setChatColor] = useState<string | null>(null);
-
-  const [messages, setMessages] = useState<any[]>([]);
-  const [loadingMsgs, setLoadingMsgs] = useState(false);
-
-  const [input, setInput] = useState("");
-  const [inputHeight, setInputHeight] = useState(40);
-  const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
 
   const [rawDirects, setRawDirects] = useState<RawDirect[]>([]);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
@@ -69,7 +51,6 @@ export default function ChatScreen() {
     if (!userId) {
       setUsername("");
       setPendingCount(0);
-      setBlocked([]);
       setChatColor(null);
       return;
     }
@@ -110,25 +91,8 @@ export default function ChatScreen() {
       setPendingCount(count ?? 0);
     };
 
-    const loadBlocked = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.blocks)
-        .select(COLUMNS.blocks.blockedId)
-        .eq(COLUMNS.blocks.blockerId, userId);
-
-      if (error) {
-        console.error("Chat blocked load error:", error.message);
-        return;
-      }
-      if (cancelled) return;
-      const ids = (data || []).map(
-        (row: any) => row?.[COLUMNS.blocks.blockedId]
-      );
-      setBlocked(ids.filter(Boolean));
-    };
-
     const loadAll = async () => {
-      await Promise.all([loadProfile(), loadPending(), loadBlocked()]);
+      await Promise.all([loadProfile(), loadPending()]);
     };
 
     loadAll();
@@ -148,16 +112,6 @@ export default function ChatScreen() {
       .on(
         "postgres_changes",
         {
-          event: "*",
-          schema: "public",
-          table: TABLES.blocks,
-          filter: `${COLUMNS.blocks.blockerId}=eq.${userId}`,
-        },
-        loadBlocked
-      )
-      .on(
-        "postgres_changes",
-        {
           event: "UPDATE",
           schema: "public",
           table: TABLES.profiles,
@@ -172,79 +126,6 @@ export default function ChatScreen() {
       supabase.removeChannel(channel);
     };
   }, [userId]);
-
-  useEffect(() => {
-    if (!room) return;
-
-    setLoadingMsgs(true);
-    let cancelled = false;
-
-    const loadMessages = async () => {
-      const { data, error } = await supabase
-        .from(TABLES.roomMessages)
-        .select(
-          [
-            COLUMNS.roomMessages.id,
-            COLUMNS.roomMessages.senderId,
-            COLUMNS.roomMessages.username,
-            COLUMNS.roomMessages.text,
-            COLUMNS.roomMessages.createdAt,
-            COLUMNS.roomMessages.attachmentPath,
-            COLUMNS.roomMessages.attachmentName,
-            COLUMNS.roomMessages.attachmentMime,
-            COLUMNS.roomMessages.attachmentSize,
-          ].join(",")
-        )
-        .eq(COLUMNS.roomMessages.roomKey, room)
-        .order(COLUMNS.roomMessages.createdAt, { ascending: false });
-
-      if (error) {
-        console.error("Room load error:", error.message);
-        if (!cancelled) {
-          setMessages([]);
-          setLoadingMsgs(false);
-        }
-        return;
-      }
-
-      if (cancelled) return;
-      const msgs =
-        (data || []).map((row: any) => ({
-          id: row?.[COLUMNS.roomMessages.id],
-          sender: row?.[COLUMNS.roomMessages.senderId],
-          username: row?.[COLUMNS.roomMessages.username],
-          text: row?.[COLUMNS.roomMessages.text] ?? "",
-          timestamp: row?.[COLUMNS.roomMessages.createdAt],
-          attachmentPath: row?.[COLUMNS.roomMessages.attachmentPath] ?? null,
-          attachmentName: row?.[COLUMNS.roomMessages.attachmentName] ?? null,
-          attachmentMime: row?.[COLUMNS.roomMessages.attachmentMime] ?? null,
-          attachmentSize: row?.[COLUMNS.roomMessages.attachmentSize] ?? null,
-        })) || [];
-      setMessages(msgs);
-      setLoadingMsgs(false);
-    };
-
-    loadMessages();
-
-    const channel = supabase
-      .channel(`room-${room}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: TABLES.roomMessages,
-          filter: `${COLUMNS.roomMessages.roomKey}=eq.${room}`,
-        },
-        loadMessages
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, [room]);
 
   useEffect(() => {
     if (!userId) {
@@ -588,98 +469,6 @@ export default function ChatScreen() {
     return directs.filter((d) => !d.hidden && match(d));
   }, [directs, search]);
 
-  // Hide blocked senders
-  const visibleMessages = useMemo(
-    () =>
-      messages.filter((m) => {
-        const sender = (m as any).sender as string | undefined;
-        if (!sender) return true;
-        return !blocked.includes(sender);
-      }),
-    [messages, blocked]
-  );
-
-  const handlePickAttachment = async () => {
-    const next = await pickAttachment();
-    if (next) setAttachment(next);
-  };
-
-  const clearAttachment = () => {
-    setAttachment(null);
-  };
-
-  // Send message
-  const sendMessage = async () => {
-    const messageText = input.trim();
-    if ((!messageText && !attachment) || !room || !username || !userId) return;
-
-    try {
-      const now = new Date().toISOString();
-      let uploaded = null;
-
-      if (attachment) {
-        uploaded = await uploadAttachment(attachment, `rooms/${room}`);
-      }
-
-      const payload: Record<string, any> = {
-        [COLUMNS.roomMessages.roomKey]: room,
-        [COLUMNS.roomMessages.senderId]: userId,
-        [COLUMNS.roomMessages.username]: username,
-        [COLUMNS.roomMessages.text]: messageText,
-        [COLUMNS.roomMessages.createdAt]: now,
-      };
-
-      if (uploaded) {
-        payload[COLUMNS.roomMessages.attachmentPath] = uploaded.path;
-        payload[COLUMNS.roomMessages.attachmentName] = uploaded.name;
-        payload[COLUMNS.roomMessages.attachmentMime] = uploaded.mimeType;
-        payload[COLUMNS.roomMessages.attachmentSize] = uploaded.size;
-      }
-
-      const { data, error } = await supabase
-        .from(TABLES.roomMessages)
-        .insert(payload)
-        .select(
-          [
-            COLUMNS.roomMessages.id,
-            COLUMNS.roomMessages.senderId,
-            COLUMNS.roomMessages.username,
-            COLUMNS.roomMessages.text,
-            COLUMNS.roomMessages.createdAt,
-            COLUMNS.roomMessages.attachmentPath,
-            COLUMNS.roomMessages.attachmentName,
-            COLUMNS.roomMessages.attachmentMime,
-            COLUMNS.roomMessages.attachmentSize,
-          ].join(",")
-        )
-        .single();
-      if (error) throw error;
-
-      if (data) {
-        const entry = {
-          id: (data as any)?.[COLUMNS.roomMessages.id],
-          sender: (data as any)?.[COLUMNS.roomMessages.senderId],
-          username: (data as any)?.[COLUMNS.roomMessages.username],
-          text: (data as any)?.[COLUMNS.roomMessages.text] ?? "",
-          timestamp: (data as any)?.[COLUMNS.roomMessages.createdAt],
-          attachmentPath: (data as any)?.[COLUMNS.roomMessages.attachmentPath] ?? null,
-          attachmentName: (data as any)?.[COLUMNS.roomMessages.attachmentName] ?? null,
-          attachmentMime: (data as any)?.[COLUMNS.roomMessages.attachmentMime] ?? null,
-          attachmentSize: (data as any)?.[COLUMNS.roomMessages.attachmentSize] ?? null,
-        };
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === entry.id)) return prev;
-          return [entry, ...prev];
-        });
-      }
-
-      setInput("");
-      setInputHeight(40);
-      setAttachment(null);
-    } catch (err) {
-      console.error("Room message send failed:", err);
-    }
-  };
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -691,7 +480,23 @@ export default function ChatScreen() {
         unreadDirectCount={unreadDirectCount}
       />
 
-      {tab === "rooms" && !room && <RoomsList rooms={filteredRooms} onSelect={setRoom} />}
+      {tab === "rooms" && (
+        <RoomsList
+          rooms={filteredRooms}
+          onSelect={(roomKey) => {
+            const roomItem = filteredRooms.find((item) => item.key === roomKey);
+            router.push({
+              pathname: "/(app)/(stack)/room",
+              params: {
+                room: roomKey,
+                roomTitle: roomItem?.title ?? roomKey,
+                accentColor: chatColor ?? "",
+                username: username ?? "",
+              },
+            });
+          }}
+        />
+      )}
 
       {tab === "direct" && (
         <DirectList
@@ -730,27 +535,6 @@ export default function ChatScreen() {
         />
       )}
 
-      {tab === "rooms" && room && (
-        <RoomMessages
-          room={room}
-          locale={locale}
-          messages={visibleMessages}
-          loading={loadingMsgs}
-          input={input}
-          setInput={setInput}
-          inputHeight={inputHeight}
-          setInputHeight={setInputHeight}
-          sendMessage={sendMessage}
-          onBack={() => setRoom(null)}
-          t={t}
-          theme={theme}
-          accentColor={chatColor || theme.colors.primary}
-          router={router}
-          uploadAttachment={handlePickAttachment}
-          attachment={attachment}
-          clearAttachment={clearAttachment}
-        />
-      )}
     </View>
   );
 }

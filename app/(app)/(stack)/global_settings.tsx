@@ -24,6 +24,12 @@ import {
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import {
+  disablePushNotificationsAsync,
+  ensurePushEnabledAsync,
+  getCachedPushToken,
+  setLocalNotificationsEnabled,
+} from "@/src/lib/pushNotifications";
 
 import { useResetOnboarding } from "@/components/university/useResetOnboarding";
 import { useUniversity } from "@/components/university/UniversityContext";
@@ -149,6 +155,7 @@ export default function SettingsScreen() {
 
   const [loadingPrefs, setLoadingPrefs] = useState(false);
   const [chatColor, setChatColor] = useState<string | null>(null);
+  const settingsSnapshotRef = useRef<Record<string, any> | null>(null);
 
   const [eventsEnabled, setEventsEnabled] = useState(true);
   const [eventSettingsOpen, setEventSettingsOpen] = useState(false);
@@ -302,7 +309,16 @@ export default function SettingsScreen() {
         const settings = (data as any)?.[COLUMNS.profiles.settings] || {};
         const notif = settings.notifications || {};
 
-        if (typeof notif.global === "boolean") setNotifGlobal(notif.global);
+        settingsSnapshotRef.current = settings;
+
+        if (typeof notif.global === "boolean") {
+          setNotifGlobal(notif.global);
+          try {
+            await setLocalNotificationsEnabled(notif.global);
+          } catch (err) {
+            console.warn("Failed to update local notification toggle", err);
+          }
+        }
         if (typeof notif.chat === "boolean") setNotifChat(notif.chat);
         if (typeof notif.mention === "boolean") setNotifMention(notif.mention);
         if (typeof notif.direct === "boolean") setNotifDirect(notif.direct);
@@ -541,6 +557,7 @@ export default function SettingsScreen() {
   }) => {
     if (!userId) return;
 
+    const prevGlobal = notifGlobal;
     const newGlobal = next.global ?? notifGlobal;
     const newChat = next.chat ?? notifChat;
     const newMention = next.mention ?? notifMention;
@@ -557,6 +574,33 @@ export default function SettingsScreen() {
 
     const newTextScale = next.textScale ?? textScale;
 
+    const existingSettings = settingsSnapshotRef.current ?? {};
+    const existingNotifications =
+      (existingSettings.notifications as Record<string, any>) || {};
+    const existingEventPrefs =
+      (existingSettings.eventPrefs as Record<string, any>) || {};
+
+    const nextSettings = {
+      ...existingSettings,
+      notifications: {
+        ...existingNotifications,
+        global: newGlobal,
+        chat: newChat,
+        mention: newMention,
+        direct: newDirect,
+        rooms: newRooms,
+      },
+      chatThemeColor: newColor,
+      eventPrefs: {
+        ...existingEventPrefs,
+        enabled: newEventsEnabled,
+        categories: newCats,
+      },
+      textScale: newTextScale,
+    };
+
+    settingsSnapshotRef.current = nextSettings;
+
     setNotifGlobal(newGlobal);
     setNotifChat(newChat);
     setNotifMention(newMention);
@@ -571,27 +615,43 @@ export default function SettingsScreen() {
       const { error } = await supabase
         .from(TABLES.profiles)
         .update({
-          [COLUMNS.profiles.settings]: {
-            notifications: {
-              global: newGlobal,
-              chat: newChat,
-              mention: newMention,
-              direct: newDirect,
-              rooms: newRooms,
-            },
-            chatThemeColor: newColor,
-            eventPrefs: {
-              enabled: newEventsEnabled,
-              categories: newCats,
-            },
-            textScale: newTextScale,
-          },
+          [COLUMNS.profiles.settings]: nextSettings,
         })
         .eq(COLUMNS.profiles.id, userId);
 
       if (error) throw error;
     } catch (err) {
       console.error("Failed to save notification settings", err);
+    }
+
+    if (next.global !== undefined && newGlobal !== prevGlobal) {
+      try {
+        if (newGlobal) {
+          await setLocalNotificationsEnabled(true);
+          const token = await ensurePushEnabledAsync(userId);
+          if (token) {
+            const current = settingsSnapshotRef.current ?? {};
+            const existingTokens = Array.isArray(current.expoPushTokens)
+              ? current.expoPushTokens.filter(Boolean)
+              : [];
+            const mergedTokens = Array.from(new Set([...existingTokens, token]));
+            settingsSnapshotRef.current = { ...current, expoPushTokens: mergedTokens };
+          }
+        } else {
+          const cachedToken = await getCachedPushToken();
+          await disablePushNotificationsAsync(userId);
+          if (cachedToken) {
+            const current = settingsSnapshotRef.current ?? {};
+            const existingTokens = Array.isArray(current.expoPushTokens)
+              ? current.expoPushTokens.filter(Boolean)
+              : [];
+            const nextTokens = existingTokens.filter((value) => value !== cachedToken);
+            settingsSnapshotRef.current = { ...current, expoPushTokens: nextTokens };
+          }
+        }
+      } catch (err) {
+        console.warn("Push toggle failed:", err);
+      }
     }
   };
 

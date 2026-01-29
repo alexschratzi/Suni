@@ -25,7 +25,7 @@ import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCach
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 import { initials } from "@/utils/utils";
 
-type RoomKey = "salzburg" | "oesterreich" | "wirtschaft";
+import type { RoomKey } from "./RoomsList";
 
 type Message = {
   id: string;
@@ -39,6 +39,11 @@ type Message = {
   attachmentSize?: number | null;
 };
 
+type VoteStats = Record<string, { score: number; myVote: number }>;
+
+const voteCache: Record<string, VoteStats> = {};
+const avatarCache: Record<string, Record<string, string | null>> = {};
+
 type Props = {
   room: RoomKey;
   locale: string;
@@ -49,7 +54,7 @@ type Props = {
   inputHeight: number;
   setInputHeight: (h: number) => void;
   sendMessage: () => void;
-  onBack: () => void;
+  onBack?: () => void;
   t: (key: string) => string;
   theme: any;
   router: Router;
@@ -57,6 +62,8 @@ type Props = {
   uploadAttachment?: () => void;
   attachment?: AttachmentDraft | null;
   clearAttachment?: () => void;
+  showHeader?: boolean;
+  roomTitle?: string;
 };
 
 type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
@@ -80,23 +87,33 @@ export default function RoomMessages(props: Props) {
     uploadAttachment,
     attachment,
     clearAttachment,
+    showHeader = true,
+    roomTitle,
   } = props;
   const userId = useSupabaseUserId();
   const [sortOrder, setSortOrder] = React.useState<SortOrder>("newest");
   const [sortMenuVisible, setSortMenuVisible] = React.useState(false);
-  const [voteStats, setVoteStats] = React.useState<
-    Record<string, { score: number; myVote: number }>
-  >({});
+  const [voteStats, setVoteStats] = React.useState<VoteStats>(
+    () => voteCache[room] ?? {}
+  );
   const [avatarUrls, setAvatarUrls] = React.useState<Record<string, string | null>>(
-    {}
+    () => avatarCache[room] ?? {}
   );
 
-  const roomTitle =
-    room === "salzburg"
+  const resolvedRoomTitle =
+    roomTitle ||
+    (room === "salzburg"
       ? t("chat.rooms.salzburg.title")
       : room === "oesterreich"
       ? t("chat.rooms.oesterreich.title")
-      : t("chat.rooms.wirtschaft.title");
+      : room === "wirtschaft"
+      ? t("chat.rooms.wirtschaft.title")
+      : String(room));
+
+  React.useEffect(() => {
+    setVoteStats(voteCache[room] ?? {});
+    setAvatarUrls(avatarCache[room] ?? {});
+  }, [room]);
 
   const toDate = (value: any) => {
     if (!value) return null;
@@ -213,7 +230,10 @@ export default function RoomMessages(props: Props) {
 
     const loadVotes = async () => {
       if (!userId || messageIds.length === 0) {
-        setVoteStats({});
+        if (messageIds.length === 0) {
+          setVoteStats({});
+          voteCache[room] = {};
+        }
         return;
       }
 
@@ -251,6 +271,7 @@ export default function RoomMessages(props: Props) {
       });
 
       setVoteStats(next);
+      voteCache[room] = next;
     };
 
     loadVotes();
@@ -274,7 +295,11 @@ export default function RoomMessages(props: Props) {
       const mapped = Object.fromEntries(
         Object.entries(cached).map(([id, entry]) => [id, entry.avatarUrl ?? null])
       );
-      setAvatarUrls((prev) => ({ ...prev, ...mapped }));
+      setAvatarUrls((prev) => {
+        const next = { ...prev, ...mapped };
+        avatarCache[room] = next;
+        return next;
+      });
     }
 
     const loadAvatars = async () => {
@@ -283,10 +308,11 @@ export default function RoomMessages(props: Props) {
       const mapped = Object.fromEntries(
         Object.entries(profiles).map(([id, entry]) => [id, entry.avatarUrl ?? null])
       );
-      setAvatarUrls((prev) => ({
-        ...prev,
-        ...mapped,
-      }));
+      setAvatarUrls((prev) => {
+        const next = { ...prev, ...mapped };
+        avatarCache[room] = next;
+        return next;
+      });
     };
 
     loadAvatars();
@@ -295,6 +321,9 @@ export default function RoomMessages(props: Props) {
       cancelled = true;
     };
   }, [messages, avatarUrls]);
+
+  const showLoadingHeader = loading && messages.length > 0;
+  const showEmptyLoading = loading && messages.length === 0;
 
   const handleVote = async (messageId: string, value: 1 | -1) => {
     if (!userId) return;
@@ -356,21 +385,25 @@ export default function RoomMessages(props: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={110}
     >
-      <View
-        style={[
-          styles.roomHeader,
-          { borderBottomColor: theme.colors.outlineVariant },
-        ]}
-      >
-        <View style={styles.roomHeaderLeft}>
-          <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={24} color={accentColor} />
-          </TouchableOpacity>
-          <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
-            {roomTitle}
-          </Text>
+      {showHeader && (
+        <View
+          style={[
+            styles.roomHeader,
+            { borderBottomColor: theme.colors.outlineVariant },
+          ]}
+        >
+          <View style={styles.roomHeaderLeft}>
+            {onBack && (
+              <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
+                <Ionicons name="arrow-back" size={24} color={accentColor} />
+              </TouchableOpacity>
+            )}
+            <Text style={[styles.roomTitle, { color: theme.colors.onSurface }]}>
+              {resolvedRoomTitle}
+            </Text>
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={styles.sortRow}>
         <Menu
@@ -419,79 +452,48 @@ export default function RoomMessages(props: Props) {
       </Menu>
     </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text
-            style={{
-              marginTop: 8,
-              color: theme.colors.onSurfaceVariant,
-            }}
-          >
-            {t("chat.loadingMessages")}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={sortedMessages}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{
-            paddingHorizontal: 12,
-            paddingTop: 12,
-            paddingBottom: 12,
-          }}
-          renderItem={({ item }) => {
-            const timeLabel = formatTimestamp(item.timestamp);
-            const nameLabel = item.username || "???";
-            const hasText = !!item.text;
+      <FlatList
+        data={sortedMessages}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{
+          paddingHorizontal: 12,
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+        ListHeaderComponent={
+          showLoadingHeader ? (
+            <View style={styles.listHeaderLoading}>
+              <ActivityIndicator size="small" />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          showEmptyLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator />
+              <Text
+                style={{
+                  marginTop: 8,
+                  color: theme.colors.onSurfaceVariant,
+                }}
+              >
+                {t("chat.loadingMessages")}
+              </Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item }) => {
+          const timeLabel = formatTimestamp(item.timestamp);
+          const nameLabel = item.username || "???";
+          const hasText = !!item.text;
             const hasAttachment = !!item.attachmentPath;
             const vote = voteStats[item.id] ?? { score: 0, myVote: 0 };
             const upActive = vote.myVote === 1;
             const downActive = vote.myVote === -1;
             const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
 
-            return (
-              <View style={styles.messageRow}>
-                <View style={styles.voteColumn}>
-                  <TouchableOpacity
-                    onPress={() => handleVote(item.id, 1)}
-                    style={styles.voteButton}
-                  >
-                    <Ionicons
-                      name="chevron-up"
-                      size={20}
-                      color={
-                        upActive ? theme.colors.primary : theme.colors.onSurfaceVariant
-                      }
-                    />
-                  </TouchableOpacity>
-                  <Text
-                    style={[
-                      styles.voteScore,
-                      {
-                        color: upActive
-                          ? theme.colors.primary
-                          : downActive
-                          ? theme.colors.error
-                          : theme.colors.onSurfaceVariant,
-                      },
-                    ]}
-                  >
-                    {vote.score}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => handleVote(item.id, -1)}
-                    style={styles.voteButton}
-                  >
-                    <Ionicons
-                      name="chevron-down"
-                      size={20}
-                      color={
-                        downActive ? theme.colors.error : theme.colors.onSurfaceVariant
-                      }
-                    />
-                  </TouchableOpacity>
-                </View>
+          return (
+            <View style={styles.messageRow}>
                 <TouchableOpacity
                   onPress={() => openThread(item)}
                   activeOpacity={0.7}
@@ -566,11 +568,50 @@ export default function RoomMessages(props: Props) {
                     )}
                   </Surface>
                 </TouchableOpacity>
+                <View style={styles.voteColumn}>
+                  <TouchableOpacity
+                    onPress={() => handleVote(item.id, 1)}
+                    style={styles.voteButton}
+                  >
+                    <Ionicons
+                      name="chevron-up"
+                      size={20}
+                      color={
+                        upActive ? theme.colors.primary : theme.colors.onSurfaceVariant
+                      }
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.voteScore,
+                      {
+                        color: upActive
+                          ? theme.colors.primary
+                          : downActive
+                          ? theme.colors.error
+                          : theme.colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    {vote.score}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => handleVote(item.id, -1)}
+                    style={styles.voteButton}
+                  >
+                    <Ionicons
+                      name="chevron-down"
+                      size={20}
+                      color={
+                        downActive ? theme.colors.error : theme.colors.onSurfaceVariant
+                      }
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
-            );
-          }}
-        />
-      )}
+          );
+        }}
+      />
 
       <InputBar
         input={input}
@@ -640,7 +681,7 @@ const styles = StyleSheet.create({
   voteColumn: {
     width: 34,
     alignItems: "center",
-    marginRight: 6,
+    marginLeft: 6,
     paddingTop: 8,
   },
   voteButton: {
@@ -695,4 +736,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   center: { alignItems: "center", justifyContent: "center", paddingTop: 24 },
+  listHeaderLoading: { alignItems: "center", paddingVertical: 8 },
 });
