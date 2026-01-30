@@ -225,7 +225,7 @@ export default function ReplyMessageList({
                   ]}
                 >
                   {hasText && (
-                    <Text style={[styles.msgText, { color: textColor }]}>
+                    <Text style={[styles.dmText, { color: textColor }]}>
                       {item.text}
                     </Text>
                   )}
@@ -244,9 +244,11 @@ export default function ReplyMessageList({
                       </Text>
                     </TouchableOpacity>
                   )}
-                  <Text style={[styles.timeInline, { color: timeColor }]}>
-                    {timeLabel}
-                  </Text>
+                  <View style={styles.timeRow}>
+                    <Text style={[styles.timeText, { color: timeColor }]}>
+                      {timeLabel}
+                    </Text>
+                  </View>
                 </Surface>
                 {showTail && (
                   <View

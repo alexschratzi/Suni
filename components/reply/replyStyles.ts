@@ -96,16 +96,15 @@ export const styles = StyleSheet.create({
   bubbleWrap: {
     position: "relative",
     flexShrink: 1,
-    maxWidth: "92%",
+    maxWidth: "90%",
   },
   bubble: {
     maxWidth: "100%",
-    minWidth: 44,
-    paddingTop: 6,
-    paddingBottom: 16,
-    paddingHorizontal: 10,
-    paddingRight: 44,
-    borderRadius: 10,
+    minWidth: 56,
+    paddingTop: 8,
+    paddingBottom: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     flexShrink: 1,
   },
   bubbleShadow: {
@@ -129,7 +128,7 @@ export const styles = StyleSheet.create({
   },
   bubbleTail: {
     position: "absolute",
-    bottom: 4,
+    bottom: 6,
     width: 10,
     height: 10,
     borderRadius: 2,
@@ -156,6 +155,10 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
   },
+  dmText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
   attachmentRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -166,13 +169,14 @@ export const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 13,
   },
-  timeInline: {
-    position: "absolute",
-    right: 8,
-    bottom: 4,
+  timeRow: {
+    alignSelf: "flex-end",
+    marginTop: 4,
+    minWidth: 40,
+  },
+  timeText: {
     fontSize: 11,
     textAlign: "right",
-    minWidth: 34,
   },
   dmListContent: {
     paddingHorizontal: 10,
