@@ -76,6 +76,11 @@ export const getMemoryProfiles = (ids: string[]) => {
   return result;
 };
 
+export const getCachedProfile = async (id: string) => {
+  await hydrateCache();
+  return memoryCache.get(id) ?? null;
+};
+
 export const upsertProfilesCache = async (
   entries: Array<Partial<CachedProfile> & { id: string }>
 ) => {
@@ -137,20 +142,31 @@ export const fetchProfilesWithCache = async (
   });
 
   if (toFetch.length > 0) {
-    const { data, error } = await supabase
-      .from(TABLES.profiles)
-      .select(
-        [
-          COLUMNS.profiles.id,
-          COLUMNS.profiles.username,
-          COLUMNS.profiles.role,
-          COLUMNS.profiles.avatarPath,
-        ].join(",")
-      )
-      .in(COLUMNS.profiles.id, toFetch);
+    let data: any = null;
+    let error: any = null;
+    try {
+      const response = await supabase
+        .from(TABLES.profiles)
+        .select(
+          [
+            COLUMNS.profiles.id,
+            COLUMNS.profiles.username,
+            COLUMNS.profiles.role,
+            COLUMNS.profiles.avatarPath,
+          ].join(",")
+        )
+        .in(COLUMNS.profiles.id, toFetch);
+      data = response.data;
+      error = response.error;
+    } catch (err) {
+      console.error("Profile cache load error:", err);
+      error = err;
+    }
 
     if (error) {
-      console.error("Profile cache load error:", error.message);
+      if (error?.message) {
+        console.error("Profile cache load error:", error.message);
+      }
     } else {
       const seen = new Set<string>();
       const updates: CachedProfile[] = [];
@@ -192,12 +208,17 @@ export const fetchProfilesWithCache = async (
       const resolved = await Promise.all(
         updates.map(async (entry) => {
           if (entry.avatarPath && !entry.avatarUrl) {
-            const url = await createAvatarUrl(entry.avatarPath);
-            return {
-              ...entry,
-              avatarUrl: url,
-              avatarUrlExpiresAt: url ? timestamp + AVATAR_URL_TTL_MS : null,
-            };
+            try {
+              const url = await createAvatarUrl(entry.avatarPath);
+              return {
+                ...entry,
+                avatarUrl: url,
+                avatarUrlExpiresAt: url ? timestamp + AVATAR_URL_TTL_MS : null,
+              };
+            } catch (err) {
+              console.warn("Profile avatar URL load failed:", err);
+              return entry;
+            }
           }
           return entry;
         })
@@ -214,7 +235,12 @@ export const fetchProfilesWithCache = async (
       toRefreshAvatar.map(async (id) => {
         const entry = memoryCache.get(id);
         if (!entry?.avatarPath) return null;
-        const url = await createAvatarUrl(entry.avatarPath);
+        let url: string | null = null;
+        try {
+          url = await createAvatarUrl(entry.avatarPath);
+        } catch (err) {
+          console.warn("Profile avatar refresh failed:", err);
+        }
         return [
           id,
           {

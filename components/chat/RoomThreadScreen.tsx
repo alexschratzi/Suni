@@ -1,4 +1,11 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "react-native-paper";
@@ -37,6 +44,8 @@ type Props = {
   initialUsername?: string;
 };
 
+const ROOM_PAGE_SIZE = 40;
+
 export default function RoomThreadScreen({
   room,
   roomTitle,
@@ -62,6 +71,8 @@ export default function RoomThreadScreen({
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(40);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
@@ -71,6 +82,7 @@ export default function RoomThreadScreen({
     initialAccentColor?.trim() ? initialAccentColor : null
   );
   const networkLoadedRef = useRef(false);
+  const oldestTimestampRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: headerTitle });
@@ -168,22 +180,66 @@ export default function RoomThreadScreen({
     if (!room) return;
 
     setLoadingMsgs(true);
+    setHasMore(true);
+    setLoadingMore(false);
+    oldestTimestampRef.current = null;
+    setMessages([]);
     let cancelled = false;
     networkLoadedRef.current = false;
 
     const cached = getRoomMessagesCache(room);
     if (cached?.length) {
       setMessages(cached);
+      const oldestCached = cached[cached.length - 1]?.timestamp;
+      if (oldestCached) {
+        oldestTimestampRef.current = oldestCached;
+      }
     }
 
     loadRoomMessagesCache(room).then((stored) => {
       if (cancelled || networkLoadedRef.current) return;
       if (stored?.length) {
-        setMessages((prev) => (prev.length ? prev : stored));
+        setMessages((prev) => {
+          if (prev.length) return prev;
+          const oldestStored = stored[stored.length - 1]?.timestamp;
+          if (oldestStored) {
+            oldestTimestampRef.current = oldestStored;
+          }
+          return stored;
+        });
       }
     });
 
-    const loadMessages = async () => {
+    const mapRows = (rows: any[]) =>
+      (rows || [])
+        .map((row: any) => ({
+          id: row?.[COLUMNS.roomMessages.id],
+          sender: row?.[COLUMNS.roomMessages.senderId],
+          username: row?.[COLUMNS.roomMessages.username],
+          text: row?.[COLUMNS.roomMessages.text] ?? "",
+          timestamp: row?.[COLUMNS.roomMessages.createdAt],
+          attachmentPath: row?.[COLUMNS.roomMessages.attachmentPath] ?? null,
+          attachmentName: row?.[COLUMNS.roomMessages.attachmentName] ?? null,
+          attachmentMime: row?.[COLUMNS.roomMessages.attachmentMime] ?? null,
+          attachmentSize: row?.[COLUMNS.roomMessages.attachmentSize] ?? null,
+        }))
+        .filter((entry: any) => entry?.id);
+
+    const updateOldest = (rows: any[]) => {
+      let oldest: string | null = null;
+      rows.forEach((row) => {
+        const ts = row?.[COLUMNS.roomMessages.createdAt];
+        if (!ts) return;
+        if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+          oldest = ts;
+        }
+      });
+      if (oldest) {
+        oldestTimestampRef.current = oldest;
+      }
+    };
+
+    const loadLatestPage = async () => {
       const { data, error } = await supabase
         .from(TABLES.roomMessages)
         .select(
@@ -200,7 +256,8 @@ export default function RoomThreadScreen({
           ].join(",")
         )
         .eq(COLUMNS.roomMessages.roomKey, room)
-        .order(COLUMNS.roomMessages.createdAt, { ascending: false });
+        .order(COLUMNS.roomMessages.createdAt, { ascending: false })
+        .limit(ROOM_PAGE_SIZE);
 
       if (error) {
         console.error("Room load error:", error.message);
@@ -211,37 +268,45 @@ export default function RoomThreadScreen({
       }
 
       if (cancelled) return;
-      const msgs =
-        (data || []).map((row: any) => ({
-          id: row?.[COLUMNS.roomMessages.id],
-          sender: row?.[COLUMNS.roomMessages.senderId],
-          username: row?.[COLUMNS.roomMessages.username],
-          text: row?.[COLUMNS.roomMessages.text] ?? "",
-          timestamp: row?.[COLUMNS.roomMessages.createdAt],
-          attachmentPath: row?.[COLUMNS.roomMessages.attachmentPath] ?? null,
-          attachmentName: row?.[COLUMNS.roomMessages.attachmentName] ?? null,
-          attachmentMime: row?.[COLUMNS.roomMessages.attachmentMime] ?? null,
-          attachmentSize: row?.[COLUMNS.roomMessages.attachmentSize] ?? null,
-        })) || [];
+      const rows = data || [];
+      updateOldest(rows);
+      setHasMore(rows.length === ROOM_PAGE_SIZE);
+      const msgs = mapRows(rows);
       networkLoadedRef.current = true;
-      setMessages(msgs);
-      saveRoomMessagesCache(room, msgs);
+      setMessages((prev) => {
+        const incomingIds = new Set(msgs.map((entry) => entry.id));
+        const merged = [...msgs, ...prev.filter((entry) => !incomingIds.has(entry.id))];
+        saveRoomMessagesCache(room, merged);
+        return merged;
+      });
       setLoadingMsgs(false);
     };
 
-    loadMessages();
+    loadLatestPage();
 
     const channel = supabase
       .channel(`room-${room}`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: TABLES.roomMessages,
           filter: `${COLUMNS.roomMessages.roomKey}=eq.${room}`,
         },
-        loadMessages
+        (payload) => {
+          if (cancelled) return;
+          const mapped = mapRows([payload.new]).filter(Boolean);
+          if (mapped.length === 0) return;
+          setMessages((prev) => {
+            const existing = new Set(prev.map((entry) => entry.id));
+            const next = mapped.filter((entry) => !existing.has(entry.id));
+            if (!next.length) return prev;
+            const merged = [...next, ...prev];
+            saveRoomMessagesCache(room, merged);
+            return merged;
+          });
+        }
       )
       .subscribe();
 
@@ -250,6 +315,81 @@ export default function RoomThreadScreen({
       supabase.removeChannel(channel);
     };
   }, [room]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!room || loadingMore || !hasMore) return;
+    const before = oldestTimestampRef.current;
+    if (!before) return;
+
+    setLoadingMore(true);
+    const { data, error } = await supabase
+      .from(TABLES.roomMessages)
+      .select(
+        [
+          COLUMNS.roomMessages.id,
+          COLUMNS.roomMessages.senderId,
+          COLUMNS.roomMessages.username,
+          COLUMNS.roomMessages.text,
+          COLUMNS.roomMessages.createdAt,
+          COLUMNS.roomMessages.attachmentPath,
+          COLUMNS.roomMessages.attachmentName,
+          COLUMNS.roomMessages.attachmentMime,
+          COLUMNS.roomMessages.attachmentSize,
+        ].join(",")
+      )
+      .eq(COLUMNS.roomMessages.roomKey, room)
+      .lt(COLUMNS.roomMessages.createdAt, before)
+      .order(COLUMNS.roomMessages.createdAt, { ascending: false })
+      .limit(ROOM_PAGE_SIZE);
+
+    if (error) {
+      console.error("Room load more error:", error.message);
+      setLoadingMore(false);
+      return;
+    }
+
+    const rows = data || [];
+    if (rows.length < ROOM_PAGE_SIZE) {
+      setHasMore(false);
+    }
+
+    let oldest: string | null = null;
+    rows.forEach((row: any) => {
+      const ts = row?.[COLUMNS.roomMessages.createdAt];
+      if (!ts) return;
+      if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+        oldest = ts;
+      }
+    });
+    if (oldest) oldestTimestampRef.current = oldest;
+
+    const mapped = rows
+      .map((row: any) => ({
+        id: row?.[COLUMNS.roomMessages.id],
+        sender: row?.[COLUMNS.roomMessages.senderId],
+        username: row?.[COLUMNS.roomMessages.username],
+        text: row?.[COLUMNS.roomMessages.text] ?? "",
+        timestamp: row?.[COLUMNS.roomMessages.createdAt],
+        attachmentPath: row?.[COLUMNS.roomMessages.attachmentPath] ?? null,
+        attachmentName: row?.[COLUMNS.roomMessages.attachmentName] ?? null,
+        attachmentMime: row?.[COLUMNS.roomMessages.attachmentMime] ?? null,
+        attachmentSize: row?.[COLUMNS.roomMessages.attachmentSize] ?? null,
+      }))
+      .filter((entry: any) => entry?.id);
+
+    if (mapped.length > 0) {
+      setMessages((prev) => {
+        const existing = new Set(prev.map((entry) => entry.id));
+        const next = mapped.filter((entry) => !existing.has(entry.id));
+        if (!next.length) return prev;
+        const merged = [...prev, ...next];
+        saveRoomMessagesCache(room, merged);
+        return merged;
+      });
+    }
+
+    setLoadingMore(false);
+  }, [hasMore, loadingMore, room]);
 
   const visibleMessages = useMemo(
     () =>
@@ -363,6 +503,9 @@ export default function RoomThreadScreen({
       attachment={attachment}
       clearAttachment={clearAttachment}
       showHeader={false}
+      onLoadMore={loadOlderMessages}
+      loadingMore={loadingMore}
+      hasMore={hasMore}
     />
   );
 }

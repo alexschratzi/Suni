@@ -1,13 +1,22 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   KeyboardAvoidingView,
   Platform,
   View,
   Linking,
   TouchableOpacity,
+  Alert,
+  GestureResponderEvent,
 } from "react-native";
 import { Text, Surface, useTheme, Menu } from "react-native-paper";
 import { useNavigation } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -39,20 +48,25 @@ type Props = {
   messageId?: string;
   messageText?: string;
   messageUser?: string;
+  messageUserId?: string;
   messageAttachmentPath?: string;
   messageAttachmentName?: string;
 };
+
+const REPLY_PAGE_SIZE = 40;
 
 export default function ThreadReplyScreen({
   roomId,
   messageId,
   messageText,
   messageUser,
+  messageUserId,
   messageAttachmentPath,
   messageAttachmentName,
 }: Props) {
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
   const { t, i18n } = useTranslation();
   const userId = useSupabaseUserId();
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
@@ -63,8 +77,20 @@ export default function ThreadReplyScreen({
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const oldestTimestampRef = useRef<string | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [userMenuVisible, setUserMenuVisible] = useState(false);
+  const [userMenuAnchor, setUserMenuAnchor] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [userMenuUser, setUserMenuUser] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [userMenuIsFriend, setUserMenuIsFriend] = useState<boolean | null>(null);
+  const friendStatusCache = React.useRef<Record<string, boolean>>({});
   const [voteStats, setVoteStats] = useState<
     Record<string, { score: number; myVote: number }>
   >({});
@@ -77,6 +103,8 @@ export default function ThreadReplyScreen({
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       value
     );
+
+  const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
   useEffect(() => {
     if (!userId) {
@@ -165,7 +193,49 @@ export default function ThreadReplyScreen({
 
     let cancelled = false;
 
-    const loadRoomReplies = async () => {
+    const mapRows = (rows: any[]) =>
+      (rows || [])
+        .map((row: any) => ({
+          id: row?.[COLUMNS.roomReplies.id],
+          sender: row?.[COLUMNS.roomReplies.senderId],
+          username: row?.[COLUMNS.roomReplies.username],
+          text: row?.[COLUMNS.roomReplies.text] ?? "",
+          timestamp: row?.[COLUMNS.roomReplies.createdAt],
+          attachmentPath: row?.[COLUMNS.roomReplies.attachmentPath] ?? null,
+          attachmentName: row?.[COLUMNS.roomReplies.attachmentName] ?? null,
+          attachmentMime: row?.[COLUMNS.roomReplies.attachmentMime] ?? null,
+          attachmentSize: row?.[COLUMNS.roomReplies.attachmentSize] ?? null,
+        }))
+        .filter((entry: any) => entry?.id);
+
+    const filterBlocked = (rows: any[]) =>
+      rows.filter((row) => {
+        const sender = row?.sender as string | undefined;
+        if (!sender) return true;
+        return !blocked.includes(sender);
+      });
+
+    const updateOldest = (rows: any[]) => {
+      let oldest: string | null = null;
+      rows.forEach((row) => {
+        const ts = row?.[COLUMNS.roomReplies.createdAt];
+        if (!ts) return;
+        if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+          oldest = ts;
+        }
+      });
+      if (oldest) {
+        oldestTimestampRef.current = oldest;
+      }
+    };
+
+    setReplies([]);
+    setVoteStats({});
+    setHasMore(true);
+    setLoadingMore(false);
+    oldestTimestampRef.current = null;
+
+    const loadLatestPage = async () => {
       const { data, error } = await supabase
         .from(TABLES.roomReplies)
         .select(
@@ -182,7 +252,8 @@ export default function ThreadReplyScreen({
           ].join(",")
         )
         .eq(COLUMNS.roomReplies.roomMessageId, messageId)
-        .order(COLUMNS.roomReplies.createdAt, { ascending: true });
+        .order(COLUMNS.roomReplies.createdAt, { ascending: false })
+        .limit(REPLY_PAGE_SIZE);
 
       if (error) {
         console.error("Room replies load error:", error.message);
@@ -191,42 +262,42 @@ export default function ThreadReplyScreen({
       }
 
       if (cancelled) return;
-      const all =
-        (data || []).map((row: any) => ({
-          id: row?.[COLUMNS.roomReplies.id],
-          sender: row?.[COLUMNS.roomReplies.senderId],
-          username: row?.[COLUMNS.roomReplies.username],
-          text: row?.[COLUMNS.roomReplies.text] ?? "",
-          timestamp: row?.[COLUMNS.roomReplies.createdAt],
-          attachmentPath: row?.[COLUMNS.roomReplies.attachmentPath] ?? null,
-          attachmentName: row?.[COLUMNS.roomReplies.attachmentName] ?? null,
-          attachmentMime: row?.[COLUMNS.roomReplies.attachmentMime] ?? null,
-          attachmentSize: row?.[COLUMNS.roomReplies.attachmentSize] ?? null,
-        })) || [];
-      const filtered = all.filter((r) => {
-        const sender = (r as any).sender as string | undefined;
-        if (!sender) return true;
-        return !blocked.includes(sender);
-      });
+      const rows = data || [];
+      updateOldest(rows);
+      setHasMore(rows.length === REPLY_PAGE_SIZE);
+      const mapped = mapRows(rows).reverse();
+      const filtered = filterBlocked(mapped);
       setReplies(filtered);
       if (!cancelled) {
         await loadReplyVotes(filtered.map((item) => item.id));
       }
     };
 
-    loadRoomReplies();
+    loadLatestPage();
 
     const channel = supabase
       .channel(`room-replies-${messageId}`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: TABLES.roomReplies,
           filter: `${COLUMNS.roomReplies.roomMessageId}=eq.${messageId}`,
         },
-        loadRoomReplies
+        async (payload) => {
+          if (cancelled) return;
+          const mapped = mapRows([payload.new]).filter(Boolean);
+          if (mapped.length === 0) return;
+          const filtered = filterBlocked(mapped);
+          if (filtered.length === 0) return;
+          setReplies((prev) => {
+            const existing = new Set(prev.map((entry) => entry.id));
+            const next = filtered.filter((entry) => !existing.has(entry.id));
+            return next.length ? [...prev, ...next] : prev;
+          });
+          await loadReplyVotes(mapped.map((entry) => entry.id));
+        }
       )
       .subscribe();
 
@@ -235,6 +306,85 @@ export default function ThreadReplyScreen({
       supabase.removeChannel(channel);
     };
   }, [blocked, messageId, roomId]);
+
+  const loadOlderReplies = useCallback(async () => {
+    if (!messageId || loadingMore || !hasMore) return;
+    const before = oldestTimestampRef.current;
+    if (!before) return;
+
+    setLoadingMore(true);
+    const { data, error } = await supabase
+      .from(TABLES.roomReplies)
+      .select(
+        [
+          COLUMNS.roomReplies.id,
+          COLUMNS.roomReplies.senderId,
+          COLUMNS.roomReplies.username,
+          COLUMNS.roomReplies.text,
+          COLUMNS.roomReplies.createdAt,
+          COLUMNS.roomReplies.attachmentPath,
+          COLUMNS.roomReplies.attachmentName,
+          COLUMNS.roomReplies.attachmentMime,
+          COLUMNS.roomReplies.attachmentSize,
+        ].join(",")
+      )
+      .eq(COLUMNS.roomReplies.roomMessageId, messageId)
+      .lt(COLUMNS.roomReplies.createdAt, before)
+      .order(COLUMNS.roomReplies.createdAt, { ascending: false })
+      .limit(REPLY_PAGE_SIZE);
+
+    if (error) {
+      console.error("Room replies load more error:", error.message);
+      setLoadingMore(false);
+      return;
+    }
+
+    const rows = data || [];
+    if (rows.length < REPLY_PAGE_SIZE) {
+      setHasMore(false);
+    }
+
+    let oldest: string | null = null;
+    rows.forEach((row: any) => {
+      const ts = row?.[COLUMNS.roomReplies.createdAt];
+      if (!ts) return;
+      if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+        oldest = ts;
+      }
+    });
+    if (oldest) oldestTimestampRef.current = oldest;
+
+    const mapped = rows
+      .map((row: any) => ({
+        id: row?.[COLUMNS.roomReplies.id],
+        sender: row?.[COLUMNS.roomReplies.senderId],
+        username: row?.[COLUMNS.roomReplies.username],
+        text: row?.[COLUMNS.roomReplies.text] ?? "",
+        timestamp: row?.[COLUMNS.roomReplies.createdAt],
+        attachmentPath: row?.[COLUMNS.roomReplies.attachmentPath] ?? null,
+        attachmentName: row?.[COLUMNS.roomReplies.attachmentName] ?? null,
+        attachmentMime: row?.[COLUMNS.roomReplies.attachmentMime] ?? null,
+        attachmentSize: row?.[COLUMNS.roomReplies.attachmentSize] ?? null,
+      }))
+      .filter((entry: any) => entry?.id)
+      .reverse()
+      .filter((row) => {
+        const sender = row?.sender as string | undefined;
+        if (!sender) return true;
+        return !blocked.includes(sender);
+      });
+
+    if (mapped.length > 0) {
+      setReplies((prev) => {
+        const existing = new Set(prev.map((entry) => entry.id));
+        const next = mapped.filter((entry) => !existing.has(entry.id));
+        return next.length ? [...next, ...prev] : prev;
+      });
+      await loadReplyVotes(mapped.map((entry) => entry.id));
+    }
+
+    setLoadingMore(false);
+  }, [blocked, hasMore, loadingMore, messageId, userId]);
 
   useEffect(() => {
     const senderIds = Array.from(
@@ -274,7 +424,9 @@ export default function ThreadReplyScreen({
 
   const loadReplyVotes = async (replyIds: string[]) => {
     if (!userId || replyIds.length === 0) {
-      setVoteStats({});
+      if (replyIds.length === 0) {
+        setVoteStats({});
+      }
       return;
     }
 
@@ -310,7 +462,7 @@ export default function ThreadReplyScreen({
       }
     });
 
-    setVoteStats(next);
+    setVoteStats((prev) => ({ ...prev, ...next }));
   };
 
   const handleVote = async (replyId: string, value: 1 | -1) => {
@@ -389,6 +541,51 @@ export default function ThreadReplyScreen({
     setSortMenuVisible(false);
   }, []);
 
+  const closeUserMenu = React.useCallback(() => {
+    setUserMenuVisible(false);
+  }, []);
+
+  const loadFriendStatus = React.useCallback(
+    async (targetUid: string) => {
+      if (!userId) return false;
+      if (targetUid in friendStatusCache.current) {
+        return friendStatusCache.current[targetUid];
+      }
+      const [a, b] = pairFor(userId, targetUid);
+      const { data, error } = await supabase
+        .from(TABLES.friendships)
+        .select(COLUMNS.friendships.userId)
+        .eq(COLUMNS.friendships.userId, a)
+        .eq(COLUMNS.friendships.friendId, b)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Friendship check failed:", error.message);
+        return false;
+      }
+      const isFriend = !!data;
+      friendStatusCache.current[targetUid] = isFriend;
+      return isFriend;
+    },
+    [userId]
+  );
+
+  const openUserMenu = React.useCallback(
+    (event: GestureResponderEvent, targetUid?: string, targetName?: string) => {
+      if (!targetUid || !userId || targetUid === userId) return;
+      const { pageX, pageY } = event.nativeEvent;
+      setUserMenuAnchor({ x: pageX, y: pageY });
+      setUserMenuUser({ id: targetUid, name: targetName || "???" });
+      const cached = friendStatusCache.current[targetUid];
+      setUserMenuIsFriend(typeof cached === "boolean" ? cached : null);
+      setUserMenuVisible(true);
+      loadFriendStatus(targetUid).then((isFriend) => {
+        setUserMenuIsFriend(isFriend);
+      });
+    },
+    [loadFriendStatus, userId]
+  );
+
   const handleSortSelect = React.useCallback(
     (next: SortOrder) => {
       setSortOrder(next);
@@ -396,6 +593,229 @@ export default function ThreadReplyScreen({
     },
     [closeSortMenu]
   );
+
+  const openDirectChat = async (targetUid: string, targetName: string) => {
+    if (!userId) return;
+    try {
+      const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.userIds, [userId, targetUid])
+        .limit(1);
+
+      if (error) throw error;
+
+      let threadId = Array.isArray(data) && data[0]
+        ? data[0]?.[COLUMNS.dmThreads.id]
+        : null;
+
+      if (!threadId) {
+        const { data: created, error: createErr } = await supabase
+          .from(TABLES.dmThreads)
+          .insert({
+            [COLUMNS.dmThreads.userIds]: [userId, targetUid],
+            [COLUMNS.dmThreads.lastMessage]: "",
+            [COLUMNS.dmThreads.lastTimestamp]: null,
+            [COLUMNS.dmThreads.hiddenBy]: [],
+          })
+          .select(COLUMNS.dmThreads.id)
+          .single();
+
+        if (createErr) throw createErr;
+        threadId = (created as any)?.[COLUMNS.dmThreads.id];
+      }
+
+      if (!threadId) {
+        throw new Error("Missing dm thread id");
+      }
+
+      router.push({
+        pathname: "/(app)/(stack)/reply",
+        params: {
+          dmId: threadId,
+          otherUid: targetUid,
+          otherName: targetName,
+        },
+      });
+    } catch (err) {
+      console.error("Open direct chat failed:", err);
+      Alert.alert("Chat oeffnen", "Konnte Chat nicht oeffnen.");
+    }
+  };
+
+  const sendFriendRequest = async (targetUid: string) => {
+    if (!userId) return;
+    if (targetUid === userId) {
+      Alert.alert(t("friends.snacks.self", "Du kannst dir selbst keine Anfrage senden."));
+      return;
+    }
+
+    try {
+      const [blockedByOther, blockedByMe, existingFriend, outgoingReq, incomingReq] =
+        await Promise.all([
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, targetUid)
+            .eq(COLUMNS.blocks.blockedId, userId)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, userId)
+            .eq(COLUMNS.blocks.blockedId, targetUid)
+            .maybeSingle(),
+          (() => {
+            const [a, b] = pairFor(userId, targetUid);
+            return supabase
+              .from(TABLES.friendships)
+              .select(COLUMNS.friendships.userId)
+              .eq(COLUMNS.friendships.userId, a)
+              .eq(COLUMNS.friendships.friendId, b)
+              .maybeSingle();
+          })(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, userId)
+            .eq(COLUMNS.friendRequests.toUser, targetUid)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, targetUid)
+            .eq(COLUMNS.friendRequests.toUser, userId)
+            .maybeSingle(),
+        ]);
+
+      if (blockedByOther.data) {
+        Alert.alert(
+          t("friends.snacks.blockedByOther", "Dieser Nutzer hat dich blockiert.")
+        );
+        return;
+      }
+      if (blockedByMe.data) {
+        Alert.alert(t("friends.snacks.youBlocked", "Du hast diesen Nutzer blockiert."));
+        return;
+      }
+      if (existingFriend.data) {
+        Alert.alert(t("friends.snacks.alreadyFriends", "Ihr seid bereits befreundet."));
+        return;
+      }
+      if (outgoingReq.data) {
+        Alert.alert(t("friends.snacks.pendingSent", "Anfrage bereits gesendet."));
+        return;
+      }
+      if (incomingReq.data) {
+        Alert.alert(
+          t("friends.snacks.pendingReceived", "Es gibt bereits eine Anfrage.")
+        );
+        return;
+      }
+
+      const { error } = await supabase.from(TABLES.friendRequests).insert({
+        [COLUMNS.friendRequests.fromUser]: userId,
+        [COLUMNS.friendRequests.toUser]: targetUid,
+      });
+      if (error) throw error;
+
+      Alert.alert(t("friends.snacks.sent", "Anfrage gesendet."));
+    } catch (err) {
+      console.error("Friend request failed:", err);
+      Alert.alert(t("friends.errors.send", "Anfrage konnte nicht gesendet werden."));
+    }
+  };
+
+  const blockUser = async (targetUid: string) => {
+    if (!userId) return;
+    try {
+      const { data: existingBlock } = await supabase
+        .from(TABLES.blocks)
+        .select("id")
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, targetUid)
+        .maybeSingle();
+
+      if (existingBlock) {
+        Alert.alert(t("friends.snacks.blocked", "Nutzer ist bereits blockiert."));
+        return;
+      }
+
+      const { error: blockErr } = await supabase.from(TABLES.blocks).insert({
+        [COLUMNS.blocks.blockerId]: userId,
+        [COLUMNS.blocks.blockedId]: targetUid,
+      });
+      if (blockErr) throw blockErr;
+
+      const [a, b] = pairFor(userId, targetUid);
+      await Promise.all([
+        supabase
+          .from(TABLES.friendships)
+          .delete()
+          .eq(COLUMNS.friendships.userId, a)
+          .eq(COLUMNS.friendships.friendId, b),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, userId)
+          .eq(COLUMNS.friendRequests.toUser, targetUid),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, targetUid)
+          .eq(COLUMNS.friendRequests.toUser, userId),
+      ]);
+
+      Alert.alert(t("friends.snacks.blocked", "Nutzer blockiert."));
+    } catch (err) {
+      console.error("Block failed:", err);
+      Alert.alert(t("friends.errors.block", "Blockieren fehlgeschlagen."));
+    }
+  };
+
+  const reportUser = () => {
+    Alert.alert("Melden", "Danke, wir pruefen das.");
+  };
+
+  const handleReport = () => {
+    closeUserMenu();
+    reportUser();
+  };
+
+  const handleFriendRequest = async () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    await sendFriendRequest(target.id);
+  };
+
+  const handleOpenChat = async () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    await openDirectChat(target.id, target.name);
+  };
+
+  const handleBlock = () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    Alert.alert(
+      "Blockieren",
+      `Moechtest du ${target.name} blockieren?`,
+      [
+        { text: t("common.cancel", "Abbrechen"), style: "cancel" },
+        {
+          text: "Blockieren",
+          style: "destructive",
+          onPress: () => {
+            blockUser(target.id);
+          },
+        },
+      ]
+    );
+  };
 
   const handlePickAttachment = async () => {
     const next = await pickAttachment();
@@ -525,9 +945,28 @@ export default function ThreadReplyScreen({
             { backgroundColor: theme.colors.elevation.level1 },
           ]}
         >
-          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            {String(messageUser ?? "")}
-          </Text>
+          {messageUserId ? (
+            <TouchableOpacity
+              onPress={(event) =>
+                openUserMenu(event, messageUserId, String(messageUser ?? ""))
+              }
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text
+                variant="labelSmall"
+                style={{ color: theme.colors.onSurfaceVariant }}
+              >
+                {String(messageUser ?? "")}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text
+              variant="labelSmall"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              {String(messageUser ?? "")}
+            </Text>
+          )}
           {!!String(messageText ?? "").trim() && (
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
               {String(messageText ?? "")}
@@ -597,6 +1036,24 @@ export default function ThreadReplyScreen({
           </Menu>
         </View>
 
+        {userMenuVisible && userMenuAnchor && (
+          <Menu
+            visible={userMenuVisible}
+            onDismiss={closeUserMenu}
+            anchor={userMenuAnchor}
+          >
+            <Menu.Item onPress={handleReport} title="Melden" />
+            {userMenuIsFriend === null ? (
+              <Menu.Item title="Lade..." disabled />
+            ) : userMenuIsFriend ? (
+              <Menu.Item onPress={handleOpenChat} title="Chat oeffnen" />
+            ) : (
+              <Menu.Item onPress={handleFriendRequest} title="Freundschaftsanfrage senden" />
+            )}
+            <Menu.Item onPress={handleBlock} title="Blockieren" />
+          </Menu>
+        )}
+
         <ReplyMessageList
           items={sortedReplies}
           isDirect={false}
@@ -610,6 +1067,10 @@ export default function ThreadReplyScreen({
           formatDateLabel={(value) => formatDateLabel(value, locale, t)}
           isSameDay={isSameDay}
           theme={theme}
+          onUserPress={openUserMenu}
+          onLoadMore={loadOlderReplies}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
         />
 
         <InputBar

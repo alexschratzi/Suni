@@ -4,6 +4,7 @@ import { Redirect } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 
 import { supabase } from "../src/lib/supabase";
+import { getCachedProfile, upsertProfilesCache } from "../src/lib/profileCache";
 
 type ProfileCheck = { id: string; username: string | null };
 
@@ -12,6 +13,10 @@ const AUTH_HOME = "/(auth)";
 
 async function loadProfileReady(userId: string) {
   try {
+    const cached = await getCachedProfile(userId);
+    const cachedName = cached?.username?.trim();
+    if (cachedName) return true;
+
     const { data: prof, error } = await supabase
       .from("profiles")
       .select("id, username")
@@ -21,6 +26,12 @@ async function loadProfileReady(userId: string) {
     if (error) {
       console.warn("profiles check error:", error.message);
       return false;
+    }
+
+    if (prof?.id) {
+      await upsertProfilesCache([
+        { id: prof.id, username: prof.username ?? null },
+      ]);
     }
 
     return !!prof?.username && prof.username.trim().length > 0;
@@ -53,11 +64,18 @@ export default function Index() {
     let cancelled = false;
 
     const boot = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) console.warn("getSession error:", error.message);
+      let sessionData: any = null;
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) console.warn("getSession error:", error.message);
+        sessionData = data;
+      } catch (err) {
+        console.warn("getSession error:", err);
+        sessionData = null;
+      }
       if (cancelled) return;
 
-      const userId = data.session?.user?.id ?? null;
+      const userId = sessionData?.session?.user?.id ?? null;
 
       if (!userId) {
         setHref(AUTH_HOME);

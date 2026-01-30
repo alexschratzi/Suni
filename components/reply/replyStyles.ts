@@ -182,6 +182,29 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 12,
+    flexGrow: 1,
+    justifyContent: "flex-end",
+  },
+  searchWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  searchClose: {
+    padding: 4,
   },
   threadListContent: {
     paddingHorizontal: 12,

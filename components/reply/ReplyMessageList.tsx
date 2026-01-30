@@ -1,5 +1,5 @@
 import React from "react";
-import { FlatList, View, TouchableOpacity } from "react-native";
+import { FlatList, View, TouchableOpacity, GestureResponderEvent } from "react-native";
 import { Text, Surface, Avatar } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -33,6 +33,15 @@ type Props = {
   formatDateLabel: (value: any) => string;
   isSameDay: (a: any, b: any) => boolean;
   theme: any;
+  onUserPress?: (
+    event: GestureResponderEvent,
+    userId?: string,
+    username?: string
+  ) => void;
+  autoScrollEnabled?: boolean;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
 };
 
 export default function ReplyMessageList({
@@ -48,12 +57,95 @@ export default function ReplyMessageList({
   formatDateLabel,
   isSameDay,
   theme,
+  onUserPress,
+  autoScrollEnabled = true,
+  onLoadMore,
+  loadingMore = false,
+  hasMore = false,
 }: Props) {
+  const listRef = React.useRef<FlatList<ReplyItem> | null>(null);
+  const hasAutoScrolledRef = React.useRef(false);
+  const isNearBottomRef = React.useRef(true);
+  const lastItemCountRef = React.useRef(0);
+  const hasUserScrolledRef = React.useRef(false);
+  const loadMoreTriggeredRef = React.useRef(false);
+
+  const scrollToBottom = React.useCallback((animated: boolean) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!isDirect || !autoScrollEnabled) return;
+    if (items.length === 0) return;
+    const prevCount = lastItemCountRef.current;
+    lastItemCountRef.current = items.length;
+
+    if (!hasAutoScrolledRef.current) {
+      scrollToBottom(false);
+      hasAutoScrolledRef.current = true;
+      return;
+    }
+
+    const appended = items.length > prevCount;
+    if (appended && isNearBottomRef.current) {
+      scrollToBottom(true);
+    }
+  }, [isDirect, items.length, scrollToBottom]);
+
+  const handleContentSizeChange = React.useCallback(() => {
+    if (!isDirect || !autoScrollEnabled) return;
+    if (hasAutoScrolledRef.current || items.length === 0) return;
+    scrollToBottom(false);
+    hasAutoScrolledRef.current = true;
+  }, [autoScrollEnabled, isDirect, items.length, scrollToBottom]);
+
+  const handleScrollBeginDrag = React.useCallback(() => {
+    hasUserScrolledRef.current = true;
+  }, []);
+
+  const handleScroll = React.useCallback(
+    (event: any) => {
+      const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent || {};
+      const offsetY = contentOffset?.y ?? 0;
+      const visibleHeight = layoutMeasurement?.height ?? 0;
+      const contentHeight = contentSize?.height ?? 0;
+
+      if (isDirect && autoScrollEnabled) {
+        const distanceFromBottom = contentHeight - (offsetY + visibleHeight);
+        isNearBottomRef.current = distanceFromBottom < 80;
+      }
+
+      if (
+        onLoadMore &&
+        hasMore &&
+        !loadingMore &&
+        hasUserScrolledRef.current
+      ) {
+        if (offsetY < 60) {
+          if (!loadMoreTriggeredRef.current) {
+            loadMoreTriggeredRef.current = true;
+            onLoadMore();
+          }
+        } else if (offsetY > 140) {
+          loadMoreTriggeredRef.current = false;
+        }
+      }
+    },
+    [autoScrollEnabled, hasMore, isDirect, loadingMore, onLoadMore]
+  );
+
   return (
     <FlatList
+      ref={listRef}
       data={items}
       keyExtractor={(i) => i.id}
       contentContainerStyle={isDirect ? styles.dmListContent : styles.threadListContent}
+      onContentSizeChange={isDirect ? handleContentSizeChange : undefined}
+      onScroll={handleScroll}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      scrollEventThrottle={16}
       renderItem={({ item, index }) => {
         const avatarUrl = item.sender ? avatarUrls[item.sender] : null;
 
@@ -91,15 +183,34 @@ export default function ReplyMessageList({
                         style={{ backgroundColor: theme.colors.primary }}
                       />
                     )}
-                    <Text
-                      style={[
-                        styles.metaUser,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.username || "???"}
-                    </Text>
+                    {onUserPress && item.sender ? (
+                      <TouchableOpacity
+                        onPress={(event) =>
+                          onUserPress(event, item.sender, item.username)
+                        }
+                        hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                      >
+                        <Text
+                          style={[
+                            styles.metaUser,
+                            { color: theme.colors.onSurfaceVariant },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.username || "???"}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.metaUser,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {item.username || "???"}
+                      </Text>
+                    )}
                   </View>
                   <Text
                     style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}

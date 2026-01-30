@@ -5,18 +5,12 @@
 
 import React from "react";
 import { View, FlatList, TouchableOpacity, StyleSheet } from "react-native";
-import {
-  Button,
-  Avatar,
-  useTheme,
-  Text,
-  Surface,
-  IconButton,
-} from "react-native-paper";
+import { Button, Avatar, useTheme, Text, Surface } from "react-native-paper";
 import { Router } from "expo-router";
 import EmptyState from "./EmptyState";
 import { initials } from "../../utils/utils";
 import { useTranslation } from "react-i18next";
+import { Ionicons } from "@expo/vector-icons";
 
 export type Direct = {
   id: string;
@@ -65,7 +59,8 @@ export default function DirectList({
         mode="contained-tonal"
         compact
         icon="account-multiple"
-        style={{ alignSelf: "flex-start", marginHorizontal: 12, marginVertical: 10 }}
+        contentStyle={{ justifyContent: "flex-start" }}
+        style={styles.requestsButton}
         onPress={() => router.push("/(app)/(stack)/friends")}
       >
         {pendingCount > 0
@@ -129,39 +124,61 @@ export default function DirectList({
                   />
                 )}
                 <View style={styles.main}>
-                  <Text style={[styles.name, { color: theme.colors.onSurface }]}>
-                    {item.displayName}
-                  </Text>
-                  <Text
-                    style={[styles.preview, { color: theme.colors.onSurfaceVariant }]}
-                    numberOfLines={1}
-                  >
-                    {previewText}
-                  </Text>
-                </View>
-                <View style={styles.meta}>
-                  {unreadCount > 0 && (
-                    <View style={[styles.badge, { backgroundColor: accentColor }]}>
-                      <Text style={[styles.badgeText, { color: theme.colors.onPrimary }]}>
-                        {unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                  {!!timeLabel && (
-                    <Text style={[styles.time, { color: theme.colors.onSurfaceVariant }]}>
-                      {timeLabel}
+                  <View style={styles.headerRow}>
+                    <Text style={[styles.name, { color: theme.colors.onSurface }]}>
+                      {item.displayName}
                     </Text>
-                  )}
-                  <IconButton
-                    icon={hideIcon}
-                    size={18}
-                    onPress={() => onToggleHidden(item.id, !item.hidden)}
-                    iconColor={theme.colors.onSurfaceVariant}
-                    style={styles.hideButton}
-                  />
-                  <Text style={[styles.hideLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    {hideLabel}
-                  </Text>
+                    <View style={styles.headerMeta}>
+                      {!!timeLabel && (
+                        <Text
+                          style={[styles.time, { color: theme.colors.onSurfaceVariant }]}
+                        >
+                          {timeLabel}
+                        </Text>
+                      )}
+                      {unreadCount > 0 && (
+                        <View style={[styles.badge, { backgroundColor: accentColor }]}>
+                          <Text
+                            style={[styles.badgeText, { color: theme.colors.onPrimary }]}
+                          >
+                            {unreadCount}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text
+                      style={[styles.preview, { color: theme.colors.onSurfaceVariant }]}
+                      numberOfLines={1}
+                    >
+                      {previewText}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => onToggleHidden(item.id, !item.hidden)}
+                      style={[
+                        styles.hideChip,
+                        {
+                          borderColor: theme.colors.outlineVariant,
+                          backgroundColor: theme.colors.surfaceVariant,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={hideIcon}
+                        size={14}
+                        color={theme.colors.onSurfaceVariant}
+                      />
+                      <Text
+                        style={[
+                          styles.hideChipText,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                      >
+                        {hideLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </TouchableOpacity>
             </Surface>
@@ -180,36 +197,49 @@ export default function DirectList({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
+  },
+  requestsButton: {
+    alignSelf: "stretch",
+    marginHorizontal: 12,
+    marginVertical: 8,
+    borderRadius: 12,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 12,
+    gap: 12,
   },
   main: {
     flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
   },
   name: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 2,
+    flexShrink: 1,
+  },
+  headerMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   preview: {
     fontSize: 13,
-  },
-  meta: {
-    alignItems: "flex-end",
-    justifyContent: "center",
+    flex: 1,
   },
   badge: {
     minWidth: 20,
@@ -218,7 +248,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
   },
   badgeText: {
     fontSize: 11,
@@ -226,12 +255,24 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: 12,
-    marginBottom: 2,
   },
-  hideButton: {
-    margin: 0,
+  previewRow: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  hideLabel: {
-    fontSize: 10,
+  hideChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  hideChipText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
 });

@@ -10,6 +10,7 @@ export default function ReplyScreen() {
     messageId,
     messageText,
     messageUser,
+    messageUserId,
     dmId,
     otherUid,
     otherName,
@@ -23,6 +24,7 @@ export default function ReplyScreen() {
   const messageIdValue = toSingle(messageId);
   const otherUidValue = toSingle(otherUid);
   const otherNameValue = toSingle(otherName);
+  const messageUserIdValue = toSingle(messageUserId);
   const messageAttachmentPathValue = toSingle(messageAttachmentPath);
   const messageAttachmentNameValue = toSingle(messageAttachmentName);
 
@@ -42,6 +44,7 @@ export default function ReplyScreen() {
       messageId={messageIdValue}
       messageText={toSingle(messageText)}
       messageUser={toSingle(messageUser)}
+      messageUserId={messageUserIdValue}
       messageAttachmentPath={messageAttachmentPathValue}
       messageAttachmentName={messageAttachmentNameValue}
     />

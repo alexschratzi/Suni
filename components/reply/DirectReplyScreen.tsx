@@ -1,8 +1,25 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, Alert, View, Linking } from "react-native";
-import { useTheme } from "react-native-paper";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  View,
+  Linking,
+  TextInput,
+  TouchableOpacity,
+} from "react-native";
+import { useTheme, Menu, IconButton } from "react-native-paper";
 import { useNavigation } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 
 import InputBar from "@/components/chat/InputBar";
 import ReplyMessageList from "@/components/reply/ReplyMessageList";
@@ -30,6 +47,8 @@ type Props = {
   otherName?: string;
 };
 
+const DM_PAGE_SIZE = 40;
+
 export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) {
   const theme = useTheme();
   const navigation = useNavigation();
@@ -41,15 +60,72 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
   const [dmPartnerName, setDmPartnerName] = useState(otherName || "");
+  const [dmPartnerId, setDmPartnerId] = useState<string | null>(
+    otherUid || null
+  );
   const [inputHeight, setInputHeight] = useState(40);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const searchInputRef = useRef<TextInput | null>(null);
+  const oldestTimestampRef = useRef<string | null>(null);
 
   const headerTitle = dmPartnerName || t("chat.directTitle", "Chat");
+  const muteKey = dmId ? `dm.muted.${dmId}` : null;
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: headerTitle });
-  }, [headerTitle, navigation]);
+    navigation.setOptions({
+      title: headerTitle,
+      headerRight: () => (
+        <IconButton
+          icon="dots-vertical"
+          size={22}
+          onPress={(event) => {
+            const { pageX, pageY } = event.nativeEvent;
+            setMenuAnchor({ x: pageX, y: pageY });
+            setMenuVisible(true);
+          }}
+          iconColor={theme.colors.onSurface}
+        />
+      ),
+    });
+  }, [headerTitle, navigation, theme.colors.onSurface]);
+
+  const openSearch = () => {
+    setSearchVisible(true);
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+  };
+
+  const closeSearch = () => {
+    setSearchQuery("");
+    setSearchVisible(false);
+  };
+
+  useEffect(() => {
+    if (!muteKey) {
+      setMuted(false);
+      return;
+    }
+    let cancelled = false;
+    AsyncStorage.getItem(muteKey)
+      .then((value) => {
+        if (!cancelled) setMuted(value === "1");
+      })
+      .catch((err) => console.warn("Mute load failed:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [muteKey]);
 
   useEffect(() => {
     if (!userId) {
@@ -134,6 +210,9 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
     if (otherName) {
       setDmPartnerName(otherName);
     }
+    if (otherUid) {
+      setDmPartnerId(otherUid);
+    }
 
     let cancelled = false;
 
@@ -174,6 +253,9 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
         return;
       }
 
+      if (!cancelled) {
+        setDmPartnerId(otherId);
+      }
       await loadFromProfile(otherId);
     };
 
@@ -197,7 +279,48 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
     if (!dmId) return;
     let cancelled = false;
 
-    const loadDmReplies = async () => {
+    const mapRows = (rows: any[]) =>
+      (rows || [])
+        .map((row: any) => ({
+          id: row?.[COLUMNS.dmMessages.id],
+          sender: row?.[COLUMNS.dmMessages.senderId],
+          username: row?.[COLUMNS.dmMessages.username],
+          text: row?.[COLUMNS.dmMessages.text] ?? "",
+          timestamp: row?.[COLUMNS.dmMessages.createdAt],
+          attachmentPath: row?.[COLUMNS.dmMessages.attachmentPath] ?? null,
+          attachmentName: row?.[COLUMNS.dmMessages.attachmentName] ?? null,
+          attachmentMime: row?.[COLUMNS.dmMessages.attachmentMime] ?? null,
+          attachmentSize: row?.[COLUMNS.dmMessages.attachmentSize] ?? null,
+        }))
+        .filter((entry: any) => entry?.id);
+
+    const filterBlocked = (rows: any[]) =>
+      rows.filter((row) => {
+        const sender = row?.sender as string | undefined;
+        if (!sender) return true;
+        return !blocked.includes(sender);
+      });
+
+    const updateOldest = (rows: any[]) => {
+      let oldest: string | null = null;
+      rows.forEach((row) => {
+        const ts = row?.[COLUMNS.dmMessages.createdAt];
+        if (!ts) return;
+        if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+          oldest = ts;
+        }
+      });
+      if (oldest) {
+        oldestTimestampRef.current = oldest;
+      }
+    };
+
+    setReplies([]);
+    setHasMore(true);
+    setLoadingMore(false);
+    oldestTimestampRef.current = null;
+
+    const loadLatestPage = async () => {
       const { data, error } = await supabase
         .from(TABLES.dmMessages)
         .select(
@@ -214,7 +337,8 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
           ].join(",")
         )
         .eq(COLUMNS.dmMessages.threadId, dmId)
-        .order(COLUMNS.dmMessages.createdAt, { ascending: true });
+        .order(COLUMNS.dmMessages.createdAt, { ascending: false })
+        .limit(DM_PAGE_SIZE);
 
       if (error) {
         console.error("DM replies load error:", error.message);
@@ -223,39 +347,38 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       }
 
       if (cancelled) return;
-      const all =
-        (data || []).map((row: any) => ({
-          id: row?.[COLUMNS.dmMessages.id],
-          sender: row?.[COLUMNS.dmMessages.senderId],
-          username: row?.[COLUMNS.dmMessages.username],
-          text: row?.[COLUMNS.dmMessages.text] ?? "",
-          timestamp: row?.[COLUMNS.dmMessages.createdAt],
-          attachmentPath: row?.[COLUMNS.dmMessages.attachmentPath] ?? null,
-          attachmentName: row?.[COLUMNS.dmMessages.attachmentName] ?? null,
-          attachmentMime: row?.[COLUMNS.dmMessages.attachmentMime] ?? null,
-          attachmentSize: row?.[COLUMNS.dmMessages.attachmentSize] ?? null,
-        })) || [];
-      const filtered = all.filter((r) => {
-        const sender = (r as any).sender as string | undefined;
-        if (!sender) return true;
-        return !blocked.includes(sender);
-      });
+      const rows = data || [];
+      updateOldest(rows);
+      setHasMore(rows.length === DM_PAGE_SIZE);
+      const mapped = mapRows(rows).reverse();
+      const filtered = filterBlocked(mapped);
       setReplies(filtered);
     };
 
-    loadDmReplies();
+    loadLatestPage();
 
     const channel = supabase
       .channel(`dm-replies-${dmId}`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: TABLES.dmMessages,
           filter: `${COLUMNS.dmMessages.threadId}=eq.${dmId}`,
         },
-        loadDmReplies
+        (payload) => {
+          if (cancelled) return;
+          const mapped = mapRows([payload.new]).filter(Boolean);
+          if (mapped.length === 0) return;
+          const filtered = filterBlocked(mapped);
+          if (filtered.length === 0) return;
+          setReplies((prev) => {
+            const existing = new Set(prev.map((entry) => entry.id));
+            const next = filtered.filter((entry) => !existing.has(entry.id));
+            return next.length ? [...prev, ...next] : prev;
+          });
+        }
       )
       .subscribe();
 
@@ -264,6 +387,84 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       supabase.removeChannel(channel);
     };
   }, [blocked, dmId]);
+
+  const loadOlderReplies = useCallback(async () => {
+    if (!dmId || loadingMore || !hasMore) return;
+    const before = oldestTimestampRef.current;
+    if (!before) return;
+
+    setLoadingMore(true);
+    const { data, error } = await supabase
+      .from(TABLES.dmMessages)
+      .select(
+        [
+          COLUMNS.dmMessages.id,
+          COLUMNS.dmMessages.senderId,
+          COLUMNS.dmMessages.username,
+          COLUMNS.dmMessages.text,
+          COLUMNS.dmMessages.createdAt,
+          COLUMNS.dmMessages.attachmentPath,
+          COLUMNS.dmMessages.attachmentName,
+          COLUMNS.dmMessages.attachmentMime,
+          COLUMNS.dmMessages.attachmentSize,
+        ].join(",")
+      )
+      .eq(COLUMNS.dmMessages.threadId, dmId)
+      .lt(COLUMNS.dmMessages.createdAt, before)
+      .order(COLUMNS.dmMessages.createdAt, { ascending: false })
+      .limit(DM_PAGE_SIZE);
+
+    if (error) {
+      console.error("DM replies load more error:", error.message);
+      setLoadingMore(false);
+      return;
+    }
+
+    const rows = data || [];
+    if (rows.length < DM_PAGE_SIZE) {
+      setHasMore(false);
+    }
+
+    let oldest: string | null = null;
+    rows.forEach((row: any) => {
+      const ts = row?.[COLUMNS.dmMessages.createdAt];
+      if (!ts) return;
+      if (!oldest || new Date(ts).getTime() < new Date(oldest).getTime()) {
+        oldest = ts;
+      }
+    });
+    if (oldest) oldestTimestampRef.current = oldest;
+
+    const mapped = rows
+      .map((row: any) => ({
+        id: row?.[COLUMNS.dmMessages.id],
+        sender: row?.[COLUMNS.dmMessages.senderId],
+        username: row?.[COLUMNS.dmMessages.username],
+        text: row?.[COLUMNS.dmMessages.text] ?? "",
+        timestamp: row?.[COLUMNS.dmMessages.createdAt],
+        attachmentPath: row?.[COLUMNS.dmMessages.attachmentPath] ?? null,
+        attachmentName: row?.[COLUMNS.dmMessages.attachmentName] ?? null,
+        attachmentMime: row?.[COLUMNS.dmMessages.attachmentMime] ?? null,
+        attachmentSize: row?.[COLUMNS.dmMessages.attachmentSize] ?? null,
+      }))
+      .filter((entry: any) => entry?.id)
+      .reverse()
+      .filter((row) => {
+        const sender = row?.sender as string | undefined;
+        if (!sender) return true;
+        return !blocked.includes(sender);
+      });
+
+    if (mapped.length > 0) {
+      setReplies((prev) => {
+        const existing = new Set(prev.map((entry) => entry.id));
+        const next = mapped.filter((entry) => !existing.has(entry.id));
+        return next.length ? [...next, ...prev] : prev;
+      });
+    }
+
+    setLoadingMore(false);
+  }, [blocked, dmId, hasMore, loadingMore]);
 
   useEffect(() => {
     if (!dmId || !userId) return;
@@ -307,6 +508,132 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       console.error("Attachment open failed:", err);
     }
   };
+
+  const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
+
+  const toggleMute = async () => {
+    if (!muteKey) return;
+    const next = !muted;
+    setMuted(next);
+    try {
+      await AsyncStorage.setItem(muteKey, next ? "1" : "0");
+    } catch (err) {
+      console.warn("Mute save failed:", err);
+    }
+  };
+
+  const hideChatForMe = async () => {
+    if (!userId || !dmId) return;
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(COLUMNS.dmThreads.hiddenBy)
+        .eq(COLUMNS.dmThreads.id, dmId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const current = Array.isArray(data?.[COLUMNS.dmThreads.hiddenBy])
+        ? (data?.[COLUMNS.dmThreads.hiddenBy] as string[])
+        : [];
+      const next = Array.from(new Set([...current, userId]));
+
+      const { error: updateError } = await supabase
+        .from(TABLES.dmThreads)
+        .update({ [COLUMNS.dmThreads.hiddenBy]: next })
+        .eq(COLUMNS.dmThreads.id, dmId);
+      if (updateError) throw updateError;
+
+      navigation.goBack();
+    } catch (err) {
+      console.error("Chat delete failed:", err);
+      Alert.alert("Chat loeschen", "Chat konnte nicht geloescht werden.");
+    }
+  };
+
+  const blockUser = async (otherUidValue: string) => {
+    if (!userId) return;
+    try {
+      const { data: existingBlock } = await supabase
+        .from(TABLES.blocks)
+        .select(COLUMNS.blocks.blockedId)
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, otherUidValue)
+        .maybeSingle();
+
+      if (existingBlock) {
+        Alert.alert("Blockieren", "Nutzer ist bereits blockiert.");
+        return;
+      }
+
+      const { error: blockErr } = await supabase.from(TABLES.blocks).insert({
+        [COLUMNS.blocks.blockerId]: userId,
+        [COLUMNS.blocks.blockedId]: otherUidValue,
+      });
+      if (blockErr) throw blockErr;
+
+      const [a, b] = pairFor(userId, otherUidValue);
+      await Promise.all([
+        supabase
+          .from(TABLES.friendships)
+          .delete()
+          .eq(COLUMNS.friendships.userId, a)
+          .eq(COLUMNS.friendships.friendId, b),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, userId)
+          .eq(COLUMNS.friendRequests.toUser, otherUidValue),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, otherUidValue)
+          .eq(COLUMNS.friendRequests.toUser, userId),
+      ]);
+
+      setBlocked((prev) =>
+        prev.includes(otherUidValue) ? prev : [...prev, otherUidValue]
+      );
+      Alert.alert("Blockieren", "Nutzer wurde blockiert.");
+    } catch (err) {
+      console.error("Block failed:", err);
+      Alert.alert("Blockieren", "Blockieren fehlgeschlagen.");
+    }
+  };
+
+  const handleBlock = () => {
+    const targetId = dmPartnerId;
+    const name = dmPartnerName || "Nutzer";
+    if (!targetId) {
+      Alert.alert("Blockieren", "Nutzer nicht verfuegbar.");
+      return;
+    }
+    if (blocked.includes(targetId)) {
+      Alert.alert("Blockieren", "Nutzer ist bereits blockiert.");
+      return;
+    }
+    Alert.alert("Blockieren", `Moechtest du ${name} blockieren?`, [
+      { text: t("common.cancel", "Abbrechen"), style: "cancel" },
+      { text: "Blockieren", style: "destructive", onPress: () => blockUser(targetId) },
+    ]);
+  };
+
+  const handleDeleteChat = () => {
+    Alert.alert("Chat loeschen", "Moechtest du diesen Chat loeschen?", [
+      { text: t("common.cancel", "Abbrechen"), style: "cancel" },
+      { text: "Loeschen", style: "destructive", onPress: hideChatForMe },
+    ]);
+  };
+
+  const filteredReplies = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return replies;
+    return replies.filter((item) => {
+      const text = String(item.text || "").toLowerCase();
+      const name = String(item.attachmentName || "").toLowerCase();
+      return text.includes(q) || name.includes(q);
+    });
+  }, [replies, searchQuery]);
 
   const sendReply = async () => {
     const messageText = input.trim();
@@ -431,8 +758,80 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       keyboardVerticalOffset={110}
     >
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        {menuVisible && menuAnchor && (
+          <Menu
+            visible={menuVisible}
+            onDismiss={() => setMenuVisible(false)}
+            anchor={menuAnchor}
+          >
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                openSearch();
+              }}
+              title="Nachrichten durchsuchen"
+            />
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                toggleMute();
+              }}
+              title={muted ? "Stummschaltung aufheben" : "Stummschalten"}
+            />
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                handleDeleteChat();
+              }}
+              title="Chat loeschen"
+            />
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                handleBlock();
+              }}
+              title="Blockieren"
+              disabled={!dmPartnerId || blocked.includes(dmPartnerId)}
+            />
+          </Menu>
+        )}
+        {searchVisible && (
+          <View style={styles.searchWrap}>
+            <View
+              style={[
+                styles.searchBar,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+            >
+              <Ionicons
+                name="search"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <TextInput
+                ref={searchInputRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Nachrichten durchsuchen..."
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                style={[styles.searchInput, { color: theme.colors.onSurface }]}
+                returnKeyType="search"
+              />
+              <TouchableOpacity onPress={closeSearch} style={styles.searchClose}>
+                <Ionicons
+                  name="close"
+                  size={16}
+                  color={theme.colors.onSurfaceVariant}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         <ReplyMessageList
-          items={replies}
+          items={filteredReplies}
           isDirect
           userId={userId}
           avatarUrls={{}}
@@ -444,6 +843,10 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
           formatDateLabel={(value) => formatDateLabel(value, locale, t)}
           isSameDay={isSameDay}
           theme={theme}
+          autoScrollEnabled={!searchQuery.trim()}
+          onLoadMore={loadOlderReplies}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
         />
 
         <InputBar

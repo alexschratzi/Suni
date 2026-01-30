@@ -24,6 +24,7 @@ import {
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
 import {
   disablePushNotificationsAsync,
   ensurePushEnabledAsync,
@@ -168,6 +169,8 @@ export default function SettingsScreen() {
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const [blockedProfiles, setBlockedProfiles] = useState<Record<string, { username?: string }>>({});
   const [blockedLoading, setBlockedLoading] = useState(false);
+  const [blockedCount, setBlockedCount] = useState(0);
+  const blockedLoadedRef = useRef(false);
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
   const [hiddenThreads, setHiddenThreads] = useState<HiddenThread[]>([]);
   const [hiddenProfiles, setHiddenProfiles] = useState<Record<string, { username?: string }>>({});
@@ -176,29 +179,27 @@ export default function SettingsScreen() {
   const [deletingAccount, setDeletingAccount] = useState(false);
 
   const hiddenDisplayName = React.useMemo(
-    () => (uid: string) => hiddenProfiles[uid]?.username || uid,
+    () => (uid: string) => hiddenProfiles[uid]?.username || "...",
     [hiddenProfiles]
   );
   const blockedDisplayName = React.useMemo(
-    () => (uid: string) => blockedProfiles[uid]?.username || uid,
+    () => (uid: string) => blockedProfiles[uid]?.username || "...",
     [blockedProfiles]
   );
   const fetchUsernames = React.useCallback(async (ids: string[]) => {
     let remaining = ids;
     const profileMap: Record<string, { username?: string }> = {};
 
-    const { data: profileData, error: profileError } = await supabase
-      .from(TABLES.profiles)
-      .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
-      .in(COLUMNS.profiles.id, remaining);
+    const cached = getMemoryProfiles(remaining);
+    Object.entries(cached).forEach(([id, entry]) => {
+      if (entry?.username) profileMap[id] = { username: entry.username ?? undefined };
+    });
+    remaining = remaining.filter((uid) => !profileMap[uid]?.username);
 
-    if (profileError) {
-      console.error("Profiles load error:", profileError.message);
-    } else {
-      (profileData || []).forEach((row: any) => {
-        const id = row?.[COLUMNS.profiles.id];
-        const username = row?.[COLUMNS.profiles.username];
-        if (id) profileMap[id] = { username };
+    if (remaining.length > 0) {
+      const profiles = await fetchProfilesWithCache(remaining);
+      Object.entries(profiles).forEach(([id, entry]) => {
+        if (entry?.username) profileMap[id] = { username: entry.username ?? undefined };
       });
       remaining = remaining.filter((uid) => !profileMap[uid]?.username);
     }
@@ -352,20 +353,12 @@ export default function SettingsScreen() {
     loadPrefs();
   }, [setTextScale, userId]);
 
-  useEffect(() => {
-    if (!userId) {
-      setBlockedUsers([]);
-      setBlockedProfiles({});
-      setBlockedLoading(false);
-      return;
-    }
+  const loadBlockedUsers = React.useCallback(
+    async (options?: { showLoader?: boolean; force?: boolean }) => {
+      if (!userId) return;
+      if (blockedLoadedRef.current && !options?.force) return;
 
-    if (!blockedExpanded) return;
-
-    let cancelled = false;
-
-    const loadBlockedUsers = async () => {
-      setBlockedLoading(true);
+      if (options?.showLoader) setBlockedLoading(true);
       const { data, error } = await supabase
         .from(TABLES.blocks)
         .select(COLUMNS.blocks.blockedId)
@@ -373,28 +366,43 @@ export default function SettingsScreen() {
 
       if (error) {
         console.error("Blocked users load error:", error.message);
-        if (!cancelled) {
-          setBlockedUsers([]);
-          setBlockedLoading(false);
-        }
+        if (options?.showLoader) setBlockedLoading(false);
         return;
       }
 
-      if (cancelled) return;
       const ids =
         (data || [])
           .map((row: any) => row?.[COLUMNS.blocks.blockedId])
           .filter(Boolean) || [];
       setBlockedUsers(ids);
+      setBlockedCount(ids.length);
+      blockedLoadedRef.current = true;
+      if (options?.showLoader) setBlockedLoading(false);
+    },
+    [userId]
+  );
+
+  useEffect(() => {
+    blockedLoadedRef.current = false;
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setBlockedUsers([]);
+      setBlockedProfiles({});
       setBlockedLoading(false);
-    };
+      setBlockedCount(0);
+      return;
+    }
 
-    loadBlockedUsers();
+    if (!blockedExpanded) return;
+    loadBlockedUsers({ showLoader: true });
+  }, [blockedExpanded, loadBlockedUsers, userId]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [blockedExpanded, userId]);
+  useEffect(() => {
+    if (!userId) return;
+    loadBlockedUsers({ showLoader: false });
+  }, [loadBlockedUsers, userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -534,7 +542,11 @@ export default function SettingsScreen() {
 
       if (error) throw error;
 
-      setBlockedUsers((prev) => prev.filter((id) => id !== blockedId));
+      setBlockedUsers((prev) => {
+        const next = prev.filter((id) => id !== blockedId);
+        setBlockedCount(next.length);
+        return next;
+      });
     } catch (err) {
       console.error("Blocked user unblock error:", err);
     }
@@ -1120,7 +1132,7 @@ export default function SettingsScreen() {
             />
             <Divider />
             <List.Accordion
-              title={`${t("settings.friendsSection.blocked")} (${blockedUsers.length})`}
+              title={`${t("settings.friendsSection.blocked")} (${blockedCount})`}
               description={t("settings.friendsSection.blockedDesc")}
               expanded={blockedExpanded}
               onPress={() => setBlockedExpanded((v) => !v)}

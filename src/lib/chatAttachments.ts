@@ -1,5 +1,7 @@
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import * as FileSystemLegacy from "expo-file-system/legacy";
+import { Platform } from "react-native";
 
 import { supabase } from "@/src/lib/supabase";
 
@@ -23,6 +25,7 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 const sanitizeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, "_");
 const normalizePrefix = (prefix: string) => prefix.replace(/\/+$/g, "");
+const normalizeBaseUrl = (value: string) => value.replace(/\/+$/g, "");
 const base64ToUint8Array = (value: string) => {
   const atobFn = (globalThis as any).atob;
   if (typeof atobFn !== "function") {
@@ -42,7 +45,7 @@ const readFileBody = async (uri: string, mimeType?: string | null) => {
       encoding: FileSystem.EncodingType.Base64,
     });
     const bytes = base64ToUint8Array(base64);
-    if (typeof Blob !== "undefined") {
+    if (Platform.OS === "web" && typeof Blob !== "undefined") {
       return new Blob([bytes], { type: mimeType || "application/octet-stream" });
     }
     return bytes;
@@ -84,8 +87,114 @@ export async function uploadAttachment(
   const fileName = `${Date.now()}-${randomSuffix}-${safeName}`;
   const path = `${normalizePrefix(pathPrefix)}/${fileName}`;
 
-  const body = await readFileBody(attachment.uri, attachment.mimeType);
+  const uploadType =
+    (FileSystemLegacy as any).FileSystemUploadType?.BINARY_CONTENT ??
+    (FileSystemLegacy as any).UploadType?.BINARY_CONTENT ??
+    0;
+  const mimeType = attachment.mimeType || "application/octet-stream";
 
+  const trySignedNativeUpload = async () => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(CHAT_ATTACHMENTS_BUCKET)
+        .createSignedUploadUrl(path);
+
+      if (error || !data?.signedUrl) {
+        console.warn(
+          "Attachment signed upload URL failed:",
+          error?.message || "missing signed URL"
+        );
+        return false;
+      }
+
+      const result = await FileSystemLegacy.uploadAsync(
+        data.signedUrl,
+        attachment.uri,
+        {
+          httpMethod: "PUT",
+          uploadType,
+          headers: {
+            "Content-Type": mimeType,
+            "x-upsert": "false",
+          },
+        }
+      );
+
+      if (result.status >= 400) {
+        console.warn(
+          "Attachment signed upload failed:",
+          result.status,
+          result.body?.slice(0, 300) || ""
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn("Attachment signed upload error:", err);
+      return false;
+    }
+  };
+
+  const tryNativeUpload = async () => {
+    const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!baseUrl || !anonKey) return false;
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn("Attachment upload session error:", error.message);
+      return false;
+    }
+    const token = data.session?.access_token;
+    if (!token) return false;
+
+    const url = `${normalizeBaseUrl(baseUrl)}/storage/v1/object/${CHAT_ATTACHMENTS_BUCKET}/${path}`;
+
+    const result = await FileSystemLegacy.uploadAsync(url, attachment.uri, {
+      httpMethod: "POST",
+      uploadType,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+        "Content-Type": mimeType,
+        "x-upsert": "false",
+      },
+    });
+
+    if (result.status >= 400) {
+      console.warn(
+        "Attachment upload failed:",
+        result.status,
+        result.body?.slice(0, 300) || ""
+      );
+      return false;
+    }
+    return true;
+  };
+
+  if (Platform.OS !== "web") {
+    const signedOk = await trySignedNativeUpload();
+    if (signedOk) {
+      return {
+        path,
+        name: attachment.name || safeName,
+        mimeType: attachment.mimeType || null,
+        size: typeof attachment.size === "number" ? attachment.size : null,
+      };
+    }
+
+    const nativeOk = await tryNativeUpload();
+    if (nativeOk) {
+      return {
+        path,
+        name: attachment.name || safeName,
+        mimeType: attachment.mimeType || null,
+        size: typeof attachment.size === "number" ? attachment.size : null,
+      };
+    }
+  }
+
+  const body = await readFileBody(attachment.uri, attachment.mimeType);
   const { error } = await supabase.storage
     .from(CHAT_ATTACHMENTS_BUCKET)
     .upload(path, body, {
@@ -104,10 +213,15 @@ export async function uploadAttachment(
 }
 
 export async function createAttachmentUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage
-    .from(CHAT_ATTACHMENTS_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  try {
+    const { data, error } = await supabase.storage
+      .from(CHAT_ATTACHMENTS_BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
-  if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  } catch (err) {
+    console.warn("Attachment signed URL request failed:", err);
+    return null;
+  }
 }

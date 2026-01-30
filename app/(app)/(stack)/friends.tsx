@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
 type SearchResult = { username: string; uid: string };
@@ -43,8 +44,8 @@ export default function FriendsScreen() {
   const [profiles, setProfiles] = useState<ProfileMap>({});
   const [threadsByFriend, setThreadsByFriend] = useState<Record<string, string>>({});
   const [loadingLists, setLoadingLists] = useState(true);
-  const [friendsExpanded, setFriendsExpanded] = useState(true);
-  const [requestsExpanded, setRequestsExpanded] = useState(true);
+  const [friendsExpanded, setFriendsExpanded] = useState(false);
+  const [requestsExpanded, setRequestsExpanded] = useState(false);
   const [blockedExpanded, setBlockedExpanded] = useState(false);
 
   useEffect(() => {
@@ -199,28 +200,34 @@ export default function FriendsScreen() {
     if (!missing.length) return;
 
     (async () => {
-      const { data, error } = await supabase
-        .from(TABLES.profiles)
-        .select(`${COLUMNS.profiles.id},${COLUMNS.profiles.username}`)
-        .in(COLUMNS.profiles.id, missing);
-
-      if (error) {
-        console.error("Friend profiles load error:", error.message);
-        return;
+      const cached = getMemoryProfiles(missing);
+      if (Object.keys(cached).length > 0) {
+        const entries: Array<[string, { username: string }]> = [];
+        Object.entries(cached).forEach(([id, entry]) => {
+          if (entry?.username) {
+            entries.push([id, { username: entry.username }]);
+          }
+        });
+        if (entries.length > 0) {
+          setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+        }
       }
 
-      const entries =
-        (data || []).map((row: any) => {
-          const id = row?.[COLUMNS.profiles.id];
-          const username = row?.[COLUMNS.profiles.username];
-          return [id, { username }] as const;
-        }) || [];
-      setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      const profilesMap = await fetchProfilesWithCache(missing);
+      const entries: Array<[string, { username: string }]> = [];
+      Object.entries(profilesMap).forEach(([id, entry]) => {
+        if (entry?.username) {
+          entries.push([id, { username: entry.username }]);
+        }
+      });
+      if (entries.length > 0) {
+        setProfiles((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      }
     })();
   }, [incoming, outgoing, blocked, friends, profiles]);
 
   const displayName = useMemo(
-    () => (uid: string) => profiles[uid]?.username || uid,
+    () => (uid: string) => profiles[uid]?.username || "...",
     [profiles]
   );
   const requestCount = incoming.length + outgoing.length;

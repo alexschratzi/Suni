@@ -114,14 +114,20 @@ export async function createAvatarUrl(
   path?: string | null
 ): Promise<string | null> {
   if (!path) return null;
-  const { data, error } = await supabase.storage
-    .from(AVATAR_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  try {
+    const { data, error } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
-  if (error || !data?.signedUrl) {
-    console.warn("Avatar signed URL failed:", error?.message ?? error);
+    if (error || !data?.signedUrl) {
+      console.warn("Avatar signed URL failed:", error?.message ?? error);
+      const fallback = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+      return fallback?.data?.publicUrl ?? null;
+    }
+    return data.signedUrl;
+  } catch (err) {
+    console.warn("Avatar signed URL request failed:", err);
     const fallback = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
     return fallback?.data?.publicUrl ?? null;
   }
-  return data.signedUrl;
 }

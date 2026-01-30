@@ -12,6 +12,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Linking,
+  Alert,
+  GestureResponderEvent,
 } from "react-native";
 import { ActivityIndicator, Text, Menu, Surface, Avatar } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,6 +66,9 @@ type Props = {
   clearAttachment?: () => void;
   showHeader?: boolean;
   roomTitle?: string;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
 };
 
 type SortOrder = "newest" | "oldest" | "popular" | "unpopular";
@@ -89,10 +94,25 @@ export default function RoomMessages(props: Props) {
     clearAttachment,
     showHeader = true,
     roomTitle,
+    onLoadMore,
+    loadingMore = false,
+    hasMore = false,
   } = props;
   const userId = useSupabaseUserId();
   const [sortOrder, setSortOrder] = React.useState<SortOrder>("newest");
   const [sortMenuVisible, setSortMenuVisible] = React.useState(false);
+  const [userMenuVisible, setUserMenuVisible] = React.useState(false);
+  const [userMenuAnchor, setUserMenuAnchor] = React.useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [userMenuUser, setUserMenuUser] = React.useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [userMenuIsFriend, setUserMenuIsFriend] = React.useState<boolean | null>(
+    null
+  );
+  const friendStatusCache = React.useRef<Record<string, boolean>>({});
+  const hasUserScrolledRef = React.useRef(false);
   const [voteStats, setVoteStats] = React.useState<VoteStats>(
     () => voteCache[room] ?? {}
   );
@@ -126,6 +146,8 @@ export default function RoomMessages(props: Props) {
     return null;
   };
 
+  const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
+
   const formatTimestamp = (value: any) => {
     const dateValue = toDate(value);
     if (!dateValue) return t("chat.justNow");
@@ -146,6 +168,7 @@ export default function RoomMessages(props: Props) {
         messageId: message.id,
         messageText: message.text,
         messageUser: message.username ?? "???",
+        messageUserId: message.sender ?? "",
         messageAttachmentPath: message.attachmentPath ?? "",
         messageAttachmentName: message.attachmentName ?? "",
       },
@@ -212,9 +235,65 @@ export default function RoomMessages(props: Props) {
     setSortMenuVisible(true);
   }, [sortMenuVisible]);
 
+  const handleScrollBeginDrag = React.useCallback(() => {
+    hasUserScrolledRef.current = true;
+  }, []);
+
+  const handleEndReached = React.useCallback(() => {
+    if (!onLoadMore || !hasMore || loadingMore || !hasUserScrolledRef.current) {
+      return;
+    }
+    onLoadMore();
+  }, [hasMore, loadingMore, onLoadMore]);
+
   const closeSortMenu = React.useCallback(() => {
     setSortMenuVisible(false);
   }, []);
+
+  const closeUserMenu = React.useCallback(() => {
+    setUserMenuVisible(false);
+  }, []);
+
+  const loadFriendStatus = React.useCallback(
+    async (targetUid: string) => {
+      if (!userId) return false;
+      if (targetUid in friendStatusCache.current) {
+        return friendStatusCache.current[targetUid];
+      }
+      const [a, b] = pairFor(userId, targetUid);
+      const { data, error } = await supabase
+        .from(TABLES.friendships)
+        .select(COLUMNS.friendships.userId)
+        .eq(COLUMNS.friendships.userId, a)
+        .eq(COLUMNS.friendships.friendId, b)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Friendship check failed:", error.message);
+        return false;
+      }
+      const isFriend = !!data;
+      friendStatusCache.current[targetUid] = isFriend;
+      return isFriend;
+    },
+    [userId]
+  );
+
+  const openUserMenu = React.useCallback(
+    (event: GestureResponderEvent, targetUid?: string, targetName?: string) => {
+      if (!targetUid || !userId || targetUid === userId) return;
+      const { pageX, pageY } = event.nativeEvent;
+      setUserMenuAnchor({ x: pageX, y: pageY });
+      setUserMenuUser({ id: targetUid, name: targetName || "???" });
+      const cached = friendStatusCache.current[targetUid];
+      setUserMenuIsFriend(typeof cached === "boolean" ? cached : null);
+      setUserMenuVisible(true);
+      loadFriendStatus(targetUid).then((isFriend) => {
+        setUserMenuIsFriend(isFriend);
+      });
+    },
+    [loadFriendStatus, userId]
+  );
 
   const handleSortSelect = React.useCallback(
     (next: SortOrder) => {
@@ -223,6 +302,229 @@ export default function RoomMessages(props: Props) {
     },
     [closeSortMenu]
   );
+
+  const sendFriendRequest = async (targetUid: string) => {
+    if (!userId) return;
+    if (targetUid === userId) {
+      Alert.alert(t("friends.snacks.self", "Du kannst dir selbst keine Anfrage senden."));
+      return;
+    }
+
+    try {
+      const [blockedByOther, blockedByMe, existingFriend, outgoingReq, incomingReq] =
+        await Promise.all([
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, targetUid)
+            .eq(COLUMNS.blocks.blockedId, userId)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.blocks)
+            .select("id")
+            .eq(COLUMNS.blocks.blockerId, userId)
+            .eq(COLUMNS.blocks.blockedId, targetUid)
+            .maybeSingle(),
+          (() => {
+            const [a, b] = pairFor(userId, targetUid);
+            return supabase
+              .from(TABLES.friendships)
+              .select(COLUMNS.friendships.userId)
+              .eq(COLUMNS.friendships.userId, a)
+              .eq(COLUMNS.friendships.friendId, b)
+              .maybeSingle();
+          })(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, userId)
+            .eq(COLUMNS.friendRequests.toUser, targetUid)
+            .maybeSingle(),
+          supabase
+            .from(TABLES.friendRequests)
+            .select("id")
+            .eq(COLUMNS.friendRequests.fromUser, targetUid)
+            .eq(COLUMNS.friendRequests.toUser, userId)
+            .maybeSingle(),
+        ]);
+
+      if (blockedByOther.data) {
+        Alert.alert(
+          t("friends.snacks.blockedByOther", "Dieser Nutzer hat dich blockiert.")
+        );
+        return;
+      }
+      if (blockedByMe.data) {
+        Alert.alert(t("friends.snacks.youBlocked", "Du hast diesen Nutzer blockiert."));
+        return;
+      }
+      if (existingFriend.data) {
+        Alert.alert(t("friends.snacks.alreadyFriends", "Ihr seid bereits befreundet."));
+        return;
+      }
+      if (outgoingReq.data) {
+        Alert.alert(t("friends.snacks.pendingSent", "Anfrage bereits gesendet."));
+        return;
+      }
+      if (incomingReq.data) {
+        Alert.alert(
+          t("friends.snacks.pendingReceived", "Es gibt bereits eine Anfrage.")
+        );
+        return;
+      }
+
+      const { error } = await supabase.from(TABLES.friendRequests).insert({
+        [COLUMNS.friendRequests.fromUser]: userId,
+        [COLUMNS.friendRequests.toUser]: targetUid,
+      });
+      if (error) throw error;
+
+      Alert.alert(t("friends.snacks.sent", "Anfrage gesendet."));
+    } catch (err) {
+      console.error("Friend request failed:", err);
+      Alert.alert(t("friends.errors.send", "Anfrage konnte nicht gesendet werden."));
+    }
+  };
+
+  const openDirectChat = async (targetUid: string, targetName: string) => {
+    if (!userId) return;
+    try {
+      const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
+      const { data, error } = await supabase
+        .from(TABLES.dmThreads)
+        .select(columns)
+        .contains(COLUMNS.dmThreads.userIds, [userId, targetUid])
+        .limit(1);
+
+      if (error) throw error;
+
+      let threadId = Array.isArray(data) && data[0]
+        ? data[0]?.[COLUMNS.dmThreads.id]
+        : null;
+
+      if (!threadId) {
+        const { data: created, error: createErr } = await supabase
+          .from(TABLES.dmThreads)
+          .insert({
+            [COLUMNS.dmThreads.userIds]: [userId, targetUid],
+            [COLUMNS.dmThreads.lastMessage]: "",
+            [COLUMNS.dmThreads.lastTimestamp]: null,
+            [COLUMNS.dmThreads.hiddenBy]: [],
+          })
+          .select(COLUMNS.dmThreads.id)
+          .single();
+
+        if (createErr) throw createErr;
+        threadId = (created as any)?.[COLUMNS.dmThreads.id];
+      }
+
+      if (!threadId) {
+        throw new Error("Missing dm thread id");
+      }
+
+      router.push({
+        pathname: "/(app)/(stack)/reply",
+        params: {
+          dmId: threadId,
+          otherUid: targetUid,
+          otherName: targetName,
+        },
+      });
+    } catch (err) {
+      console.error("Open direct chat failed:", err);
+      Alert.alert("Chat oeffnen", "Konnte Chat nicht oeffnen.");
+    }
+  };
+
+  const blockUser = async (targetUid: string) => {
+    if (!userId) return;
+    try {
+      const { data: existingBlock } = await supabase
+        .from(TABLES.blocks)
+        .select("id")
+        .eq(COLUMNS.blocks.blockerId, userId)
+        .eq(COLUMNS.blocks.blockedId, targetUid)
+        .maybeSingle();
+
+      if (existingBlock) {
+        Alert.alert(t("friends.snacks.blocked", "Nutzer ist bereits blockiert."));
+        return;
+      }
+
+      const { error: blockErr } = await supabase.from(TABLES.blocks).insert({
+        [COLUMNS.blocks.blockerId]: userId,
+        [COLUMNS.blocks.blockedId]: targetUid,
+      });
+      if (blockErr) throw blockErr;
+
+      const [a, b] = pairFor(userId, targetUid);
+      await Promise.all([
+        supabase
+          .from(TABLES.friendships)
+          .delete()
+          .eq(COLUMNS.friendships.userId, a)
+          .eq(COLUMNS.friendships.friendId, b),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, userId)
+          .eq(COLUMNS.friendRequests.toUser, targetUid),
+        supabase
+          .from(TABLES.friendRequests)
+          .delete()
+          .eq(COLUMNS.friendRequests.fromUser, targetUid)
+          .eq(COLUMNS.friendRequests.toUser, userId),
+      ]);
+
+      Alert.alert(t("friends.snacks.blocked", "Nutzer blockiert."));
+    } catch (err) {
+      console.error("Block failed:", err);
+      Alert.alert(t("friends.errors.block", "Blockieren fehlgeschlagen."));
+    }
+  };
+
+  const reportUser = () => {
+    Alert.alert("Melden", "Danke, wir pruefen das.");
+  };
+
+  const handleReport = () => {
+    closeUserMenu();
+    reportUser();
+  };
+
+  const handleFriendRequest = async () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    await sendFriendRequest(target.id);
+  };
+
+  const handleOpenChat = async () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    await openDirectChat(target.id, target.name);
+  };
+
+  const handleBlock = () => {
+    const target = userMenuUser;
+    closeUserMenu();
+    if (!target) return;
+    Alert.alert(
+      "Blockieren",
+      `Moechtest du ${target.name} blockieren?`,
+      [
+        { text: t("common.cancel", "Abbrechen"), style: "cancel" },
+        {
+          text: "Blockieren",
+          style: "destructive",
+          onPress: () => {
+            blockUser(target.id);
+          },
+        },
+      ]
+    );
+  };
 
   React.useEffect(() => {
     let cancelled = false;
@@ -406,6 +708,9 @@ export default function RoomMessages(props: Props) {
       )}
 
       <View style={styles.sortRow}>
+        <Text style={[styles.sortLabel, { color: theme.colors.onSurfaceVariant }]}>
+          {t("chat.sort.label")}
+        </Text>
         <Menu
           visible={sortMenuVisible}
           onDismiss={closeSortMenu}
@@ -423,7 +728,7 @@ export default function RoomMessages(props: Props) {
             >
               <Ionicons name="swap-vertical" size={16} color={accentColor} />
               <Text style={[styles.sortText, { color: theme.colors.onSurface }]}>
-                {t("chat.sort.label")}: {sortLabel}
+                {sortLabel}
               </Text>
               <Ionicons
                 name="chevron-down"
@@ -433,33 +738,54 @@ export default function RoomMessages(props: Props) {
             </TouchableOpacity>
           }
         >
-        <Menu.Item
-          onPress={() => handleSortSelect("newest")}
-          title={t("chat.sort.newest")}
-        />
-        <Menu.Item
-          onPress={() => handleSortSelect("oldest")}
-          title={t("chat.sort.oldest")}
-        />
-        <Menu.Item
-          onPress={() => handleSortSelect("popular")}
-          title={t("chat.sort.popular")}
-        />
-        <Menu.Item
-          onPress={() => handleSortSelect("unpopular")}
-          title={t("chat.sort.unpopular")}
-        />
-      </Menu>
-    </View>
+          <Menu.Item
+            onPress={() => handleSortSelect("newest")}
+            title={t("chat.sort.newest")}
+          />
+          <Menu.Item
+            onPress={() => handleSortSelect("oldest")}
+            title={t("chat.sort.oldest")}
+          />
+          <Menu.Item
+            onPress={() => handleSortSelect("popular")}
+            title={t("chat.sort.popular")}
+          />
+          <Menu.Item
+            onPress={() => handleSortSelect("unpopular")}
+            title={t("chat.sort.unpopular")}
+          />
+        </Menu>
+      </View>
+
+      {userMenuVisible && userMenuAnchor && (
+        <Menu
+          visible={userMenuVisible}
+          onDismiss={closeUserMenu}
+          anchor={userMenuAnchor}
+        >
+          <Menu.Item onPress={handleReport} title="Melden" />
+          {userMenuIsFriend === null ? (
+            <Menu.Item title="Lade..." disabled />
+          ) : userMenuIsFriend ? (
+            <Menu.Item onPress={handleOpenChat} title="Chat oeffnen" />
+          ) : (
+            <Menu.Item onPress={handleFriendRequest} title="Freundschaftsanfrage senden" />
+          )}
+          <Menu.Item onPress={handleBlock} title="Blockieren" />
+        </Menu>
+      )}
 
       <FlatList
         data={sortedMessages}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           paddingHorizontal: 12,
-          paddingTop: 12,
-          paddingBottom: 12,
+          paddingTop: 10,
+          paddingBottom: 24,
         }}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.2}
         ListHeaderComponent={
           showLoadingHeader ? (
             <View style={styles.listHeaderLoading}>
@@ -494,22 +820,23 @@ export default function RoomMessages(props: Props) {
 
           return (
             <View style={styles.messageRow}>
+              <Surface
+                style={[
+                  styles.threadWrap,
+                  {
+                    backgroundColor: theme.colors.surfaceVariant,
+                    borderColor: theme.colors.outlineVariant,
+                    borderLeftColor: accentColor,
+                  },
+                ]}
+                mode="elevated"
+              >
                 <TouchableOpacity
                   onPress={() => openThread(item)}
                   activeOpacity={0.7}
                   style={styles.messageTap}
                 >
-                  <Surface
-                    style={[
-                      styles.threadCard,
-                      {
-                        backgroundColor: theme.colors.surfaceVariant,
-                        borderColor: theme.colors.outlineVariant,
-                        borderLeftColor: accentColor,
-                      },
-                    ]}
-                    mode="elevated"
-                  >
+                  <View style={styles.threadCard}>
                     <View style={styles.metaRow}>
                       <View style={styles.metaLeft}>
                         {avatarUrl ? (
@@ -526,15 +853,34 @@ export default function RoomMessages(props: Props) {
                             style={{ backgroundColor: accentColor }}
                           />
                         )}
-                        <Text
-                          style={[
-                            styles.metaUser,
-                            { color: theme.colors.onSurfaceVariant },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {nameLabel}
-                        </Text>
+                        {item.sender ? (
+                          <TouchableOpacity
+                            onPress={(event) =>
+                              openUserMenu(event, item.sender, nameLabel)
+                            }
+                            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                          >
+                            <Text
+                              style={[
+                                styles.metaUser,
+                                { color: theme.colors.onSurfaceVariant },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {nameLabel}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.metaUser,
+                              { color: theme.colors.onSurfaceVariant },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {nameLabel}
+                          </Text>
+                        )}
                       </View>
                       <Text
                         style={[styles.metaTime, { color: theme.colors.onSurfaceVariant }]}
@@ -566,9 +912,17 @@ export default function RoomMessages(props: Props) {
                         </Text>
                       </TouchableOpacity>
                     )}
-                  </Surface>
+                  </View>
                 </TouchableOpacity>
-                <View style={styles.voteColumn}>
+                <View
+                  style={[
+                    styles.voteColumn,
+                    {
+                      backgroundColor: theme.colors.surfaceVariant,
+                      borderColor: theme.colors.outlineVariant,
+                    },
+                  ]}
+                >
                   <TouchableOpacity
                     onPress={() => handleVote(item.id, 1)}
                     style={styles.voteButton}
@@ -608,7 +962,8 @@ export default function RoomMessages(props: Props) {
                     />
                   </TouchableOpacity>
                 </View>
-              </View>
+              </Surface>
+            </View>
           );
         }}
       />
@@ -652,68 +1007,83 @@ const styles = StyleSheet.create({
   },
   sortRow: {
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sortLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
   sortAnchor: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    borderRadius: 999,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 6,
     gap: 6,
   },
   sortText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
   },
   messageRow: {
-    marginBottom: 12,
+    marginBottom: 8,
     paddingHorizontal: 4,
-    flexDirection: "row",
-    alignItems: "flex-start",
   },
   messageTap: {
     flex: 1,
   },
+  threadWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 4,
+    overflow: "hidden",
+  },
   voteColumn: {
-    width: 34,
+    width: 40,
     alignItems: "center",
-    marginLeft: 6,
-    paddingTop: 8,
+    justifyContent: "center",
+    paddingVertical: 6,
+    borderLeftWidth: StyleSheet.hairlineWidth,
   },
   voteButton: {
     paddingVertical: 2,
+    paddingHorizontal: 6,
   },
   voteScore: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
     marginVertical: 2,
   },
   threadCard: {
     flex: 1,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: 3,
+    paddingVertical: 10,
   },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   metaUser: {
     fontSize: 12,
-    fontWeight: "600",
-    marginLeft: 6,
+    fontWeight: "700",
+    marginLeft: 8,
     flexShrink: 1,
+    letterSpacing: 0.2,
   },
   metaTime: {
-    fontSize: 12,
+    fontSize: 10,
   },
   metaLeft: {
     flexDirection: "row",
@@ -722,18 +1092,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   msgText: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 19,
   },
   attachmentRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 6,
   },
   attachmentText: {
     flex: 1,
     marginLeft: 8,
-    fontSize: 13,
+    fontSize: 12,
   },
   center: { alignItems: "center", justifyContent: "center", paddingTop: 24 },
   listHeaderLoading: { alignItems: "center", paddingVertical: 8 },

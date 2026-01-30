@@ -241,8 +241,10 @@ export default function ChatScreen() {
     };
 
     const syncThreads = async () => {
-      await ensureThreadsForFriends();
       await loadThreads();
+      ensureThreadsForFriends()
+        .then(loadThreads)
+        .catch((err) => console.error("Direct threads sync error:", err?.message || err));
     };
 
     syncThreads();
@@ -399,15 +401,17 @@ export default function ChatScreen() {
   }, [rawDirects, userId]);
 
   useEffect(() => {
+    if (tab !== "direct") return;
     const cleanup = refreshUnreadCounts();
     return () => cleanup?.();
-  }, [refreshUnreadCounts]);
+  }, [refreshUnreadCounts, tab]);
 
   useFocusEffect(
     useCallback(() => {
+      if (tab !== "direct") return;
       const cleanup = refreshUnreadCounts();
       return () => cleanup?.();
-    }, [refreshUnreadCounts])
+    }, [refreshUnreadCounts, tab])
   );
 
   const directs: Direct[] = useMemo(

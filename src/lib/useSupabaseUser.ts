@@ -8,24 +8,34 @@ export function useSupabaseUserId() {
     let active = true;
 
     const load = async () => {
-      const { data: sessionData, error: sessionErr } =
-        await supabase.auth.getSession();
-      if (sessionErr) {
-        console.warn("useSupabaseUserId getSession error:", sessionErr.message);
-      }
-      const sessionUser = sessionData.session?.user;
-      if (sessionUser) {
-        if (!active) return;
-        setUserId(sessionUser.id ?? null);
-        return;
+      try {
+        const { data: sessionData, error: sessionErr } =
+          await supabase.auth.getSession();
+        if (sessionErr) {
+          console.warn("useSupabaseUserId getSession error:", sessionErr.message);
+        }
+        const sessionUser = sessionData.session?.user;
+        if (sessionUser) {
+          if (!active) return;
+          setUserId(sessionUser.id ?? null);
+          return;
+        }
+      } catch (err) {
+        console.warn("useSupabaseUserId getSession error:", err);
       }
 
-      const { data, error } = await supabase.auth.getUser();
-      if (error) {
-        console.warn("useSupabaseUserId getUser error:", error.message);
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          console.warn("useSupabaseUserId getUser error:", error.message);
+        }
+        if (!active) return;
+        setUserId(data.user?.id ?? null);
+      } catch (err) {
+        console.warn("useSupabaseUserId getUser error:", err);
+        if (!active) return;
+        setUserId(null);
       }
-      if (!active) return;
-      setUserId(data.user?.id ?? null);
     };
 
     load();
