@@ -34,6 +34,12 @@ import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
+import { getOrCreateDmThread } from "@/src/lib/dmThreads";
+import {
+  blockUser as blockFriend,
+  pairFor,
+  sendFriendRequest as sendFriendRequestHelper,
+} from "@/src/lib/friends";
 import {
   createAttachmentUrl,
   pickAttachment,
@@ -103,8 +109,6 @@ export default function ThreadReplyScreen({
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       value
     );
-
-  const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
   useEffect(() => {
     if (!userId) {
@@ -181,8 +185,8 @@ export default function ThreadReplyScreen({
   }, [userId]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: "Antworten" });
-  }, [navigation]);
+    navigation.setOptions({ title: t("chat.threadRepliesTitle") });
+  }, [navigation, t]);
 
   useEffect(() => {
     if (!roomId || !messageId) return;
@@ -597,34 +601,7 @@ export default function ThreadReplyScreen({
   const openDirectChat = async (targetUid: string, targetName: string) => {
     if (!userId) return;
     try {
-      const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
-      const { data, error } = await supabase
-        .from(TABLES.dmThreads)
-        .select(columns)
-        .contains(COLUMNS.dmThreads.userIds, [userId, targetUid])
-        .limit(1);
-
-      if (error) throw error;
-
-      let threadId = Array.isArray(data) && data[0]
-        ? data[0]?.[COLUMNS.dmThreads.id]
-        : null;
-
-      if (!threadId) {
-        const { data: created, error: createErr } = await supabase
-          .from(TABLES.dmThreads)
-          .insert({
-            [COLUMNS.dmThreads.userIds]: [userId, targetUid],
-            [COLUMNS.dmThreads.lastMessage]: "",
-            [COLUMNS.dmThreads.lastTimestamp]: null,
-            [COLUMNS.dmThreads.hiddenBy]: [],
-          })
-          .select(COLUMNS.dmThreads.id)
-          .single();
-
-        if (createErr) throw createErr;
-        threadId = (created as any)?.[COLUMNS.dmThreads.id];
-      }
+      const threadId = await getOrCreateDmThread(userId, targetUid);
 
       if (!threadId) {
         throw new Error("Missing dm thread id");
@@ -640,142 +617,67 @@ export default function ThreadReplyScreen({
       });
     } catch (err) {
       console.error("Open direct chat failed:", err);
-      Alert.alert("Chat oeffnen", "Konnte Chat nicht oeffnen.");
+      Alert.alert(t("chat.menu.openChat"), t("chat.alerts.openChatFailed"));
     }
   };
 
   const sendFriendRequest = async (targetUid: string) => {
     if (!userId) return;
     if (targetUid === userId) {
-      Alert.alert(t("friends.snacks.self", "Du kannst dir selbst keine Anfrage senden."));
+      Alert.alert(t("friends.snacks.self"));
       return;
     }
 
     try {
-      const [blockedByOther, blockedByMe, existingFriend, outgoingReq, incomingReq] =
-        await Promise.all([
-          supabase
-            .from(TABLES.blocks)
-            .select("id")
-            .eq(COLUMNS.blocks.blockerId, targetUid)
-            .eq(COLUMNS.blocks.blockedId, userId)
-            .maybeSingle(),
-          supabase
-            .from(TABLES.blocks)
-            .select("id")
-            .eq(COLUMNS.blocks.blockerId, userId)
-            .eq(COLUMNS.blocks.blockedId, targetUid)
-            .maybeSingle(),
-          (() => {
-            const [a, b] = pairFor(userId, targetUid);
-            return supabase
-              .from(TABLES.friendships)
-              .select(COLUMNS.friendships.userId)
-              .eq(COLUMNS.friendships.userId, a)
-              .eq(COLUMNS.friendships.friendId, b)
-              .maybeSingle();
-          })(),
-          supabase
-            .from(TABLES.friendRequests)
-            .select("id")
-            .eq(COLUMNS.friendRequests.fromUser, userId)
-            .eq(COLUMNS.friendRequests.toUser, targetUid)
-            .maybeSingle(),
-          supabase
-            .from(TABLES.friendRequests)
-            .select("id")
-            .eq(COLUMNS.friendRequests.fromUser, targetUid)
-            .eq(COLUMNS.friendRequests.toUser, userId)
-            .maybeSingle(),
-        ]);
-
-      if (blockedByOther.data) {
+      const status = await sendFriendRequestHelper(userId, targetUid);
+      if (status === "blockedByOther") {
         Alert.alert(
-          t("friends.snacks.blockedByOther", "Dieser Nutzer hat dich blockiert.")
+          t("friends.snacks.blockedByOther")
         );
         return;
       }
-      if (blockedByMe.data) {
-        Alert.alert(t("friends.snacks.youBlocked", "Du hast diesen Nutzer blockiert."));
+      if (status === "blockedByMe") {
+        Alert.alert(t("friends.snacks.youBlocked"));
         return;
       }
-      if (existingFriend.data) {
-        Alert.alert(t("friends.snacks.alreadyFriends", "Ihr seid bereits befreundet."));
+      if (status === "alreadyFriends") {
+        Alert.alert(t("friends.snacks.alreadyFriends"));
         return;
       }
-      if (outgoingReq.data) {
-        Alert.alert(t("friends.snacks.pendingSent", "Anfrage bereits gesendet."));
+      if (status === "pendingSent") {
+        Alert.alert(t("friends.snacks.pendingSent"));
         return;
       }
-      if (incomingReq.data) {
-        Alert.alert(
-          t("friends.snacks.pendingReceived", "Es gibt bereits eine Anfrage.")
-        );
+      if (status === "pendingReceived") {
+        Alert.alert(t("friends.snacks.pendingReceived"));
         return;
       }
 
-      const { error } = await supabase.from(TABLES.friendRequests).insert({
-        [COLUMNS.friendRequests.fromUser]: userId,
-        [COLUMNS.friendRequests.toUser]: targetUid,
-      });
-      if (error) throw error;
-
-      Alert.alert(t("friends.snacks.sent", "Anfrage gesendet."));
+      Alert.alert(t("friends.snacks.sent"));
     } catch (err) {
       console.error("Friend request failed:", err);
-      Alert.alert(t("friends.errors.send", "Anfrage konnte nicht gesendet werden."));
+      Alert.alert(t("friends.errors.send"));
     }
   };
 
   const blockUser = async (targetUid: string) => {
     if (!userId) return;
     try {
-      const { data: existingBlock } = await supabase
-        .from(TABLES.blocks)
-        .select("id")
-        .eq(COLUMNS.blocks.blockerId, userId)
-        .eq(COLUMNS.blocks.blockedId, targetUid)
-        .maybeSingle();
-
-      if (existingBlock) {
-        Alert.alert(t("friends.snacks.blocked", "Nutzer ist bereits blockiert."));
+      const status = await blockFriend(userId, targetUid);
+      if (status === "alreadyBlocked") {
+        Alert.alert(t("friends.snacks.blocked"));
         return;
       }
 
-      const { error: blockErr } = await supabase.from(TABLES.blocks).insert({
-        [COLUMNS.blocks.blockerId]: userId,
-        [COLUMNS.blocks.blockedId]: targetUid,
-      });
-      if (blockErr) throw blockErr;
-
-      const [a, b] = pairFor(userId, targetUid);
-      await Promise.all([
-        supabase
-          .from(TABLES.friendships)
-          .delete()
-          .eq(COLUMNS.friendships.userId, a)
-          .eq(COLUMNS.friendships.friendId, b),
-        supabase
-          .from(TABLES.friendRequests)
-          .delete()
-          .eq(COLUMNS.friendRequests.fromUser, userId)
-          .eq(COLUMNS.friendRequests.toUser, targetUid),
-        supabase
-          .from(TABLES.friendRequests)
-          .delete()
-          .eq(COLUMNS.friendRequests.fromUser, targetUid)
-          .eq(COLUMNS.friendRequests.toUser, userId),
-      ]);
-
-      Alert.alert(t("friends.snacks.blocked", "Nutzer blockiert."));
+      Alert.alert(t("friends.snacks.blocked"));
     } catch (err) {
       console.error("Block failed:", err);
-      Alert.alert(t("friends.errors.block", "Blockieren fehlgeschlagen."));
+      Alert.alert(t("friends.errors.block"));
     }
   };
 
   const reportUser = () => {
-    Alert.alert("Melden", "Danke, wir pruefen das.");
+    Alert.alert(t("chat.menu.report"), t("chat.alerts.reportThanks"));
   };
 
   const handleReport = () => {
@@ -802,12 +704,12 @@ export default function ThreadReplyScreen({
     closeUserMenu();
     if (!target) return;
     Alert.alert(
-      "Blockieren",
-      `Moechtest du ${target.name} blockieren?`,
+      t("chat.alerts.blockTitle"),
+      t("chat.alerts.blockConfirm", { name: target.name }),
       [
-        { text: t("common.cancel", "Abbrechen"), style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Blockieren",
+          text: t("chat.menu.block"),
           style: "destructive",
           onPress: () => {
             blockUser(target.id);
@@ -1042,15 +944,18 @@ export default function ThreadReplyScreen({
             onDismiss={closeUserMenu}
             anchor={userMenuAnchor}
           >
-            <Menu.Item onPress={handleReport} title="Melden" />
+            <Menu.Item onPress={handleReport} title={t("chat.menu.report")} />
             {userMenuIsFriend === null ? (
-              <Menu.Item title="Lade..." disabled />
+              <Menu.Item title={t("common.loading")} disabled />
             ) : userMenuIsFriend ? (
-              <Menu.Item onPress={handleOpenChat} title="Chat oeffnen" />
+              <Menu.Item onPress={handleOpenChat} title={t("chat.menu.openChat")} />
             ) : (
-              <Menu.Item onPress={handleFriendRequest} title="Freundschaftsanfrage senden" />
+              <Menu.Item
+                onPress={handleFriendRequest}
+                title={t("chat.menu.sendRequest")}
+              />
             )}
-            <Menu.Item onPress={handleBlock} title="Blockieren" />
+            <Menu.Item onPress={handleBlock} title={t("chat.menu.block")} />
           </Menu>
         )}
 

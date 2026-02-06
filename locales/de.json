@@ -175,10 +175,35 @@
     },
     "loadingMessages": "Lade Nachrichten…",
     "justNow": "Gerade eben",
+    "directTitle": "Chat",
+    "searchMessagesPlaceholder": "Nachrichten durchsuchen…",
+    "threadRepliesTitle": "Antworten",
+    "menu": {
+      "searchMessages": "Nachrichten durchsuchen",
+      "mute": "Stummschalten",
+      "unmute": "Stummschaltung aufheben",
+      "deleteChat": "Chat löschen",
+      "block": "Blockieren",
+      "report": "Melden",
+      "openChat": "Chat öffnen",
+      "sendRequest": "Freundschaftsanfrage senden"
+    },
+    "alerts": {
+      "reportThanks": "Danke, wir prüfen das.",
+      "deleteChatTitle": "Chat löschen",
+      "deleteChatConfirm": "Möchtest du diesen Chat löschen?",
+      "deleteChatFailed": "Chat konnte nicht gelöscht werden.",
+      "blockTitle": "Blockieren",
+      "blockConfirm": "Möchtest du {{name}} blockieren?",
+      "blockUnavailable": "Nutzer nicht verfügbar.",
+      "blockAlready": "Nutzer ist bereits blockiert.",
+      "blockedTitle": "Blockiert",
+      "openChatFailed": "Konnte Chat nicht öffnen."
+    },
     "inputPlaceholder": "Nachricht eingeben…",
     "send": "Senden",
     "direct": {
-      "addFriend": "Freund hinzufÇ¬gen",
+      "addFriend": "Freund hinzufügen",
       "showRequests": "Anfragen anzeigen",
       "hide": "Ausblenden",
       "unhide": "Einblenden"
@@ -196,6 +221,7 @@
     "title": "Freunde",
     "subtitle": "Suche Nutzer, schicke Anfragen und verwalte eingehende sowie gesendete Requests.",
     "searchLabel": "Freund finden",
+    "searchPlaceholder": "@username",
     "searchButton": "Suchen & Anfrage senden",
     "listTitle": "Freundesliste",
     "listEmpty": "Noch keine Freunde",
@@ -241,6 +267,43 @@
     }
   },
 
+  "friendRequests": {
+    "title": "Anfragen",
+    "empty": "Keine Anfragen",
+    "description": "Möchte mit dir befreundet sein"
+  },
+
+  "addFriends": {
+    "title": "Freund hinzufügen",
+    "label": "Benutzername",
+    "placeholder": "z. B. alex",
+    "searchButton": "Suchen",
+    "resultsTitle": "Suchergebnis",
+    "userFound": "User gefunden"
+  },
+
+  "profile": {
+    "title": "Profil",
+    "loading": "Profil wird geladen...",
+    "notLoggedIn": "Nicht eingeloggt",
+    "headerTitle": "Mein Profil",
+    "changeAvatar": "Profilbild ändern",
+    "email": "E-Mail",
+    "username": "Benutzername",
+    "role": "Rolle",
+    "editUsernameTitle": "Benutzernamen ändern",
+    "editUsernameLabel": "Neuer Benutzername",
+    "editUsernameAccessibility": "Benutzernamen bearbeiten",
+    "successTitle": "Erfolg",
+    "successUsername": "Benutzername erfolgreich geändert!",
+    "errors": {
+      "loadFailed": "Profil laden fehlgeschlagen.",
+      "enterUsername": "Bitte gib einen Benutzernamen ein.",
+      "needLogin": "Nicht eingeloggt.",
+      "usernameTaken": "Benutzername ist schon vergeben!"
+    }
+  },
+
   "auth": {
     "title": "Login",
     "loading": "Prüfe Login ...",
@@ -269,7 +332,12 @@
     "testSuccessMsg": "Du bist jetzt als Test-User eingeloggt!"
   },
   "common": {
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "loading": "Lade...",
+    "emptyValue": "-",
+    "error": "Fehler"
   }
 }
 

@@ -16,10 +16,13 @@ import { initials } from "@/utils/utils";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
+import { useTranslation } from "react-i18next";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+} from "@/src/lib/friends";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
-
-const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
 export default function FriendRequestsScreen() {
   const [requests, setRequests] = useState<string[]>([]);
@@ -29,6 +32,7 @@ export default function FriendRequestsScreen() {
 
   const theme = useTheme();
   const userId = useSupabaseUserId();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!userId) {
@@ -120,59 +124,16 @@ export default function FriendRequestsScreen() {
     if (!userId) return;
 
     try {
-      const [a, b] = pairFor(userId, otherUid);
-      const existing = await supabase
-        .from(TABLES.friendships)
-        .select("id")
-        .eq(COLUMNS.friendships.userId, a)
-        .eq(COLUMNS.friendships.friendId, b)
-        .maybeSingle();
-
-      if (existing.data) {
-        setSnack("Ihr seid bereits befreundet");
+      const status = await acceptFriendRequest(userId, otherUid);
+      if (status === "alreadyFriends") {
+        setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
 
-      const { error: insertErr } = await supabase.from(TABLES.friendships).insert({
-        [COLUMNS.friendships.userId]: a,
-        [COLUMNS.friendships.friendId]: b,
-      });
-      if (insertErr) throw insertErr;
-
-      const { error: deleteErr } = await supabase
-        .from(TABLES.friendRequests)
-        .delete()
-        .eq(COLUMNS.friendRequests.fromUser, otherUid)
-        .eq(COLUMNS.friendRequests.toUser, userId);
-      if (deleteErr) throw deleteErr;
-
-      const columns = [COLUMNS.dmThreads.id, COLUMNS.dmThreads.userIds].join(",");
-
-      const { data, error } = await supabase
-        .from(TABLES.dmThreads)
-        .select(columns)
-        .contains(COLUMNS.dmThreads.userIds, [userId]);
-
-      if (!error) {
-        const exists = (data || []).some((row: any) => {
-          const userIds = row?.[COLUMNS.dmThreads.userIds];
-          return Array.isArray(userIds) && userIds.includes(userId) && userIds.includes(otherUid);
-        });
-
-        if (!exists) {
-          await supabase.from(TABLES.dmThreads).insert({
-            [COLUMNS.dmThreads.userIds]: [userId, otherUid],
-            [COLUMNS.dmThreads.lastMessage]: "",
-            [COLUMNS.dmThreads.lastTimestamp]: null,
-            [COLUMNS.dmThreads.hiddenBy]: [],
-          });
-        }
-      }
-
-      setSnack("Freund hinzugef?gt!");
+      setSnack(t("friends.snacks.added"));
     } catch (err) {
       console.error("Fehler beim Annehmen:", err);
-      setSnack("Fehler beim Annehmen");
+      setSnack(t("friends.errors.accept"));
     }
   };
 
@@ -180,17 +141,11 @@ export default function FriendRequestsScreen() {
     if (!userId) return;
 
     try {
-      const { error } = await supabase
-        .from(TABLES.friendRequests)
-        .delete()
-        .eq(COLUMNS.friendRequests.fromUser, otherUid)
-        .eq(COLUMNS.friendRequests.toUser, userId);
-      if (error) throw error;
-
-      setSnack("Anfrage abgelehnt");
+      await declineFriendRequest(userId, otherUid);
+      setSnack(t("friends.snacks.declined"));
     } catch (err) {
       console.error("Fehler beim Ablehnen:", err);
-      setSnack("Fehler beim Ablehnen");
+      setSnack(t("friends.errors.decline"));
     }
   };
 
@@ -205,17 +160,19 @@ export default function FriendRequestsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Text variant="titleLarge" style={{ padding: 16 }}>
-        Anfragen
+        {t("friendRequests.title")}
       </Text>
       <Divider />
 
-      {requests.length === 0 && <Text style={{ padding: 16 }}>Keine Anfragen</Text>}
+      {requests.length === 0 && (
+        <Text style={{ padding: 16 }}>{t("friendRequests.empty")}</Text>
+      )}
 
       {requests.map((uid) => (
         <List.Item
           key={uid}
           title={displayName(uid)}
-          description="Möchte mit dir befreundet sein"
+          description={t("friendRequests.description")}
           left={(props) => (
             <Avatar.Text
               {...props}
@@ -227,9 +184,9 @@ export default function FriendRequestsScreen() {
           )}
           right={() => (
             <View style={{ flexDirection: "row" }}>
-              <Button onPress={() => accept(uid)}>Annehmen</Button>
+              <Button onPress={() => accept(uid)}>{t("friends.accept")}</Button>
               <Button onPress={() => decline(uid)} textColor="red">
-                Ablehnen
+                {t("friends.decline")}
               </Button>
             </View>
           )}

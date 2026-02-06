@@ -175,6 +175,31 @@
     },
     "loadingMessages": "Loading messages…",
     "justNow": "Just now",
+    "directTitle": "Chat",
+    "searchMessagesPlaceholder": "Search messages…",
+    "threadRepliesTitle": "Replies",
+    "menu": {
+      "searchMessages": "Search messages",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "deleteChat": "Delete chat",
+      "block": "Block",
+      "report": "Report",
+      "openChat": "Open chat",
+      "sendRequest": "Send friend request"
+    },
+    "alerts": {
+      "reportThanks": "Thanks, we will review this.",
+      "deleteChatTitle": "Delete chat",
+      "deleteChatConfirm": "Do you want to delete this chat?",
+      "deleteChatFailed": "Chat could not be deleted.",
+      "blockTitle": "Block",
+      "blockConfirm": "Do you want to block {{name}}?",
+      "blockUnavailable": "User not available.",
+      "blockAlready": "User is already blocked.",
+      "blockedTitle": "Blocked",
+      "openChatFailed": "Could not open chat."
+    },
     "inputPlaceholder": "Type a message…",
     "send": "Send",
     "direct": {
@@ -196,6 +221,7 @@
     "title": "Friends",
     "subtitle": "Search users, send requests, manage incoming/outgoing.",
     "searchLabel": "Friend finder",
+    "searchPlaceholder": "@username",
     "searchButton": "Search & send request",
     "listTitle": "Friends",
     "listEmpty": "No friends yet",
@@ -241,6 +267,43 @@
     }
   },
 
+  "friendRequests": {
+    "title": "Requests",
+    "empty": "No requests",
+    "description": "Wants to be friends with you"
+  },
+
+  "addFriends": {
+    "title": "Add friend",
+    "label": "Username",
+    "placeholder": "e.g. alex",
+    "searchButton": "Search",
+    "resultsTitle": "Search result",
+    "userFound": "User found"
+  },
+
+  "profile": {
+    "title": "Profile",
+    "loading": "Loading profile...",
+    "notLoggedIn": "Not logged in",
+    "headerTitle": "My profile",
+    "changeAvatar": "Change profile photo",
+    "email": "Email",
+    "username": "Username",
+    "role": "Role",
+    "editUsernameTitle": "Edit username",
+    "editUsernameLabel": "New username",
+    "editUsernameAccessibility": "Edit username",
+    "successTitle": "Success",
+    "successUsername": "Username updated successfully!",
+    "errors": {
+      "loadFailed": "Failed to load profile.",
+      "enterUsername": "Please enter a username.",
+      "needLogin": "Not logged in.",
+      "usernameTaken": "Username is already taken!"
+    }
+  },
+
   "auth": {
     "title": "Login",
     "loading": "Checking login ...",
@@ -269,7 +332,12 @@
     "testSuccessMsg": "You are now logged in as a test user!"
   },
   "common": {
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "loading": "Loading...",
+    "emptyValue": "-",
+    "error": "Error"
   }
 }
 

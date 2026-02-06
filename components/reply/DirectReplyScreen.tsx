@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { useTheme, Menu, IconButton } from "react-native-paper";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
@@ -55,6 +55,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
   const { t, i18n } = useTranslation();
   const userId = useSupabaseUserId();
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
+  const isFocused = useIsFocused();
 
   const [replies, setReplies] = useState<any[]>([]);
   const [input, setInput] = useState("");
@@ -75,10 +76,11 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
   const [muted, setMuted] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const searchInputRef = useRef<TextInput | null>(null);
   const oldestTimestampRef = useRef<string | null>(null);
 
-  const headerTitle = dmPartnerName || t("chat.directTitle", "Chat");
+  const headerTitle = dmPartnerName || t("chat.directTitle");
   const muteKey = dmId ? `dm.muted.${dmId}` : null;
 
   useLayoutEffect(() => {
@@ -467,7 +469,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
   }, [blocked, dmId, hasMore, loadingMore]);
 
   useEffect(() => {
-    if (!dmId || !userId) return;
+    if (!dmId || !userId || !isFocused || !isAtBottom) return;
     const now = new Date().toISOString();
     supabase
       .from(TABLES.dmReads)
@@ -484,7 +486,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
           console.error("DM read update error:", error.message);
         }
       });
-  }, [dmId, replies.length, userId]);
+  }, [dmId, isAtBottom, isFocused, replies.length, userId]);
 
   const handlePickAttachment = async () => {
     const next = await pickAttachment();
@@ -547,7 +549,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       navigation.goBack();
     } catch (err) {
       console.error("Chat delete failed:", err);
-      Alert.alert("Chat loeschen", "Chat konnte nicht geloescht werden.");
+      Alert.alert(t("chat.alerts.deleteChatTitle"), t("chat.alerts.deleteChatFailed"));
     }
   };
 
@@ -562,7 +564,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
         .maybeSingle();
 
       if (existingBlock) {
-        Alert.alert("Blockieren", "Nutzer ist bereits blockiert.");
+        Alert.alert(t("chat.alerts.blockTitle"), t("chat.alerts.blockAlready"));
         return;
       }
 
@@ -594,10 +596,10 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
       setBlocked((prev) =>
         prev.includes(otherUidValue) ? prev : [...prev, otherUidValue]
       );
-      Alert.alert("Blockieren", "Nutzer wurde blockiert.");
+      Alert.alert(t("chat.alerts.blockTitle"), t("friends.snacks.blocked"));
     } catch (err) {
       console.error("Block failed:", err);
-      Alert.alert("Blockieren", "Blockieren fehlgeschlagen.");
+      Alert.alert(t("chat.alerts.blockTitle"), t("friends.errors.block"));
     }
   };
 
@@ -605,23 +607,27 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
     const targetId = dmPartnerId;
     const name = dmPartnerName || "Nutzer";
     if (!targetId) {
-      Alert.alert("Blockieren", "Nutzer nicht verfuegbar.");
+      Alert.alert(t("chat.alerts.blockTitle"), t("chat.alerts.blockUnavailable"));
       return;
     }
     if (blocked.includes(targetId)) {
-      Alert.alert("Blockieren", "Nutzer ist bereits blockiert.");
+      Alert.alert(t("chat.alerts.blockTitle"), t("chat.alerts.blockAlready"));
       return;
     }
-    Alert.alert("Blockieren", `Moechtest du ${name} blockieren?`, [
-      { text: t("common.cancel", "Abbrechen"), style: "cancel" },
-      { text: "Blockieren", style: "destructive", onPress: () => blockUser(targetId) },
+    Alert.alert(t("chat.alerts.blockTitle"), t("chat.alerts.blockConfirm", { name }), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("chat.menu.block"),
+        style: "destructive",
+        onPress: () => blockUser(targetId),
+      },
     ]);
   };
 
   const handleDeleteChat = () => {
-    Alert.alert("Chat loeschen", "Moechtest du diesen Chat loeschen?", [
-      { text: t("common.cancel", "Abbrechen"), style: "cancel" },
-      { text: "Loeschen", style: "destructive", onPress: hideChatForMe },
+    Alert.alert(t("chat.alerts.deleteChatTitle"), t("chat.alerts.deleteChatConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("common.delete"), style: "destructive", onPress: hideChatForMe },
     ]);
   };
 
@@ -680,11 +686,14 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
         ]);
 
         if (myBlock.data) {
-          Alert.alert("Blockiert", "Du hast diesen Nutzer blockiert.");
+          Alert.alert(t("chat.alerts.blockedTitle"), t("friends.snacks.youBlocked"));
           return;
         }
         if (otherBlock.data) {
-          Alert.alert("Blockiert", "Dieser Nutzer hat dich blockiert.");
+          Alert.alert(
+            t("chat.alerts.blockedTitle"),
+            t("friends.snacks.blockedByOther")
+          );
           return;
         }
       }
@@ -769,28 +778,28 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
                 setMenuVisible(false);
                 openSearch();
               }}
-              title="Nachrichten durchsuchen"
+              title={t("chat.menu.searchMessages")}
             />
             <Menu.Item
               onPress={() => {
                 setMenuVisible(false);
                 toggleMute();
               }}
-              title={muted ? "Stummschaltung aufheben" : "Stummschalten"}
+              title={muted ? t("chat.menu.unmute") : t("chat.menu.mute")}
             />
             <Menu.Item
               onPress={() => {
                 setMenuVisible(false);
                 handleDeleteChat();
               }}
-              title="Chat loeschen"
+              title={t("chat.menu.deleteChat")}
             />
             <Menu.Item
               onPress={() => {
                 setMenuVisible(false);
                 handleBlock();
               }}
-              title="Blockieren"
+              title={t("chat.menu.block")}
               disabled={!dmPartnerId || blocked.includes(dmPartnerId)}
             />
           </Menu>
@@ -815,7 +824,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
                 ref={searchInputRef}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                placeholder="Nachrichten durchsuchen..."
+                placeholder={t("chat.searchMessagesPlaceholder")}
                 placeholderTextColor={theme.colors.onSurfaceVariant}
                 style={[styles.searchInput, { color: theme.colors.onSurface }]}
                 returnKeyType="search"
@@ -834,6 +843,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
           items={filteredReplies}
           isDirect
           userId={userId}
+          resetKey={dmId}
           avatarUrls={{}}
           voteStats={{}}
           handleVote={() => {}}
@@ -843,6 +853,7 @@ export default function DirectReplyScreen({ dmId, otherUid, otherName }: Props) 
           formatDateLabel={(value) => formatDateLabel(value, locale, t)}
           isSameDay={isSameDay}
           theme={theme}
+          onNearBottomChange={setIsAtBottom}
           autoScrollEnabled={!searchQuery.trim()}
           onLoadMore={loadOlderReplies}
           loadingMore={loadingMore}

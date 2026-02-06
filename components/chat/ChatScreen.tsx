@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "react-native-paper";
@@ -10,6 +10,7 @@ import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
+import { fetchUnreadDmCounts, getOrCreateDmThread } from "@/src/lib/dmThreads";
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem } from "./RoomsList";
 import DirectList, { Direct } from "./DirectList";
@@ -46,6 +47,7 @@ export default function ChatScreen() {
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [pendingCount, setPendingCount] = useState(0);
   const [unreadByThread, setUnreadByThread] = useState<Record<string, number>>({});
+  const syncThreadsRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -130,6 +132,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!userId) {
       setRawDirects([]);
+      syncThreadsRef.current = null;
       return;
     }
 
@@ -182,17 +185,15 @@ export default function ChatScreen() {
       const missing = uniqueFriends.filter((uid) => !existing.has(uid));
       if (missing.length === 0) return;
 
-      const inserts = missing.map((uid) => ({
-        [COLUMNS.dmThreads.userIds]: [userId, uid],
-        [COLUMNS.dmThreads.lastMessage]: "",
-        [COLUMNS.dmThreads.lastTimestamp]: null,
-        [COLUMNS.dmThreads.hiddenBy]: [],
-      }));
-
-      const { error: insertErr } = await supabase.from(TABLES.dmThreads).insert(inserts);
-      if (insertErr) {
-        console.error("Direct threads create error:", insertErr.message);
-      }
+      await Promise.all(
+        missing.map(async (uid) => {
+          try {
+            await getOrCreateDmThread(userId, uid);
+          } catch (err: any) {
+            console.error("Direct threads create error:", err?.message || err);
+          }
+        })
+      );
     };
 
     const loadThreads = async () => {
@@ -247,6 +248,7 @@ export default function ChatScreen() {
         .catch((err) => console.error("Direct threads sync error:", err?.message || err));
     };
 
+    syncThreadsRef.current = syncThreads;
     syncThreads();
 
     const channel = supabase
@@ -273,16 +275,28 @@ export default function ChatScreen() {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: TABLES.dmThreads },
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.dmThreads,
+          filter: `${COLUMNS.dmThreads.userIds}=cs.{${userId}}`,
+        },
         loadThreads
       )
       .subscribe();
 
     return () => {
       cancelled = true;
+      syncThreadsRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      syncThreadsRef.current?.();
+    }, [])
+  );
 
   // Fetch missing profiles for directs
   useEffect(() => {
@@ -345,52 +359,17 @@ export default function ChatScreen() {
         return;
       }
 
-      const { data: readRows, error: readErr } = await supabase
-        .from(TABLES.dmReads)
-        .select(`${COLUMNS.dmReads.threadId},${COLUMNS.dmReads.lastReadAt}`)
-        .eq(COLUMNS.dmReads.userId, userId)
-        .in(COLUMNS.dmReads.threadId, threadIds);
-
-      if (readErr) {
-        console.error("DM read state load error:", readErr.message);
-        return;
+      try {
+        const counts = await fetchUnreadDmCounts();
+        if (cancelled) return;
+        const map: Record<string, number> = {};
+        threadIds.forEach((threadId) => {
+          map[threadId] = counts[threadId] ?? 0;
+        });
+        setUnreadByThread(map);
+      } catch (err: any) {
+        console.error("DM unread count error:", err?.message || err);
       }
-
-      const lastReadByThread: Record<string, string | null> = {};
-      (readRows || []).forEach((row: any) => {
-        const threadId = row?.[COLUMNS.dmReads.threadId];
-        const lastRead = row?.[COLUMNS.dmReads.lastReadAt] ?? null;
-        if (threadId) lastReadByThread[threadId] = lastRead;
-      });
-
-      const counts = await Promise.all(
-        threadIds.map(async (threadId) => {
-          let query = supabase
-            .from(TABLES.dmMessages)
-            .select(COLUMNS.dmMessages.id, { count: "exact", head: true })
-            .eq(COLUMNS.dmMessages.threadId, threadId)
-            .neq(COLUMNS.dmMessages.senderId, userId);
-
-          const lastReadAt = lastReadByThread[threadId];
-          if (lastReadAt) {
-            query = query.gt(COLUMNS.dmMessages.createdAt, lastReadAt);
-          }
-
-          const { count, error } = await query;
-          if (error) {
-            console.error("DM unread count error:", error.message);
-            return { threadId, count: 0 };
-          }
-          return { threadId, count: count ?? 0 };
-        })
-      );
-
-      if (cancelled) return;
-      const map: Record<string, number> = {};
-      counts.forEach((entry) => {
-        map[entry.threadId] = entry.count ?? 0;
-      });
-      setUnreadByThread(map);
     };
 
     run();

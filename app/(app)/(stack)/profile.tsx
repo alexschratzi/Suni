@@ -28,6 +28,7 @@ import {
   getMemoryProfiles,
   upsertProfilesCache,
 } from "@/src/lib/profileCache";
+import { useTranslation } from "react-i18next";
 
 type ProfileRow = {
   id: string;
@@ -38,6 +39,7 @@ type ProfileRow = {
 
 export default function ProfileScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -117,7 +119,7 @@ export default function ProfileScreen() {
       }
     } catch (err: any) {
       console.log("Profil laden fehlgeschlagen:", err);
-      Alert.alert("Fehler", err?.message ?? String(err));
+      Alert.alert(t("common.error"), err?.message ?? t("profile.errors.loadFailed"));
       setEmail(null);
       setProfile(null);
     } finally {
@@ -169,12 +171,12 @@ export default function ProfileScreen() {
       const clean = newUsername.trim();
 
       if (!clean) {
-        Alert.alert("Fehler", "Bitte gib einen Benutzernamen ein.");
+        Alert.alert(t("common.error"), t("profile.errors.enterUsername"));
         return;
       }
 
       if (!profile) {
-        Alert.alert("Fehler", "Nicht eingeloggt.");
+        Alert.alert(t("common.error"), t("profile.errors.needLogin"));
         return;
       }
 
@@ -192,7 +194,7 @@ export default function ProfileScreen() {
         // Message differs by driver; keep it robust:
         const msg = (error.message || "").toLowerCase();
         if (msg.includes("duplicate") || msg.includes("unique")) {
-          Alert.alert("Fehler", "Benutzername ist schon vergeben!");
+          Alert.alert(t("common.error"), t("profile.errors.usernameTaken"));
           return;
         }
         throw error;
@@ -201,15 +203,15 @@ export default function ProfileScreen() {
       setProfile(mapProfileRow(data));
       setEditVisible(false);
       setNewUsername("");
-      Alert.alert("✅ Erfolg", "Benutzername erfolgreich geändert!");
+      Alert.alert(t("profile.successTitle"), t("profile.successUsername"));
     } catch (err: any) {
-      Alert.alert("Fehler", err?.message ?? String(err));
+      Alert.alert(t("common.error"), err?.message ?? String(err));
     }
   };
 
   const handlePickAvatar = async () => {
     if (!profile) {
-      Alert.alert("Fehler", "Nicht eingeloggt.");
+      Alert.alert(t("common.error"), t("profile.errors.needLogin"));
       return;
     }
 
@@ -252,7 +254,7 @@ export default function ProfileScreen() {
         }
       }
     } catch (err: any) {
-      Alert.alert("Fehler", err?.message ?? String(err));
+      Alert.alert(t("common.error"), err?.message ?? String(err));
     } finally {
       setAvatarBusy(false);
     }
@@ -262,7 +264,7 @@ export default function ProfileScreen() {
     return (
       <Surface style={styles.center}>
         <ActivityIndicator animating size="large" />
-        <Text style={{ marginTop: 8 }}>Profil wird geladen...</Text>
+        <Text style={{ marginTop: 8 }}>{t("profile.loading")}</Text>
       </Surface>
     );
   }
@@ -272,7 +274,7 @@ export default function ProfileScreen() {
       <Surface style={styles.center}>
         <Ionicons name="alert-circle-outline" size={60} color={theme.colors.error} />
         <Text variant="titleMedium" style={{ marginTop: 10 }}>
-          Nicht eingeloggt
+          {t("profile.notLoggedIn")}
         </Text>
       </Surface>
     );
@@ -311,7 +313,7 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
         <Text variant="headlineSmall" style={{ marginTop: 12 }}>
-          Mein Profil
+          {t("profile.headerTitle")}
         </Text>
         {avatarBusy && <ActivityIndicator style={{ marginTop: 8 }} />}
         <Button
@@ -321,14 +323,14 @@ export default function ProfileScreen() {
           onPress={handlePickAvatar}
           disabled={avatarBusy}
         >
-          Profilbild andern
+          {t("profile.changeAvatar")}
         </Button>
       </Surface>
 
       {/* E-Mail (replaces phone) */}
       <Card style={styles.card}>
         <Card.Title
-          title="E-Mail"
+          title={t("profile.email")}
           left={() => (
             <Ionicons
               name="mail-outline"
@@ -339,14 +341,14 @@ export default function ProfileScreen() {
           )}
         />
         <Card.Content>
-          <Text variant="bodyLarge">{email ?? "—"}</Text>
+          <Text variant="bodyLarge">{email ?? t("common.emptyValue")}</Text>
         </Card.Content>
       </Card>
 
       {/* Benutzername */}
       <Card style={styles.card}>
         <Card.Title
-          title="Benutzername"
+          title={t("profile.username")}
           left={() => (
             <Ionicons
               name="person-outline"
@@ -357,7 +359,7 @@ export default function ProfileScreen() {
           )}
           right={() => (
             <IconButton
-              accessibilityLabel="Benutzernamen bearbeiten"
+              accessibilityLabel={t("profile.editUsernameAccessibility")}
               onPress={() => {
                 setNewUsername(profile.username ?? "");
                 setEditVisible(true);
@@ -367,14 +369,16 @@ export default function ProfileScreen() {
           )}
         />
         <Card.Content>
-          <Text variant="bodyLarge">{profile.username ?? "—"}</Text>
+          <Text variant="bodyLarge">
+            {profile.username ?? t("common.emptyValue")}
+          </Text>
         </Card.Content>
       </Card>
 
       {/* Rolle */}
       <Card style={styles.card}>
         <Card.Title
-          title="Rolle"
+          title={t("profile.role")}
           left={() => (
             <Ionicons
               name="key-outline"
@@ -385,18 +389,18 @@ export default function ProfileScreen() {
           )}
         />
         <Card.Content>
-          <Text variant="bodyLarge">{profile.role ?? "—"}</Text>
+          <Text variant="bodyLarge">{profile.role ?? t("common.emptyValue")}</Text>
         </Card.Content>
       </Card>
 
       {/* Dialog: Benutzernamen ändern */}
       <Portal>
         <Dialog visible={editVisible} onDismiss={() => setEditVisible(false)}>
-          <Dialog.Title>Benutzernamen ändern</Dialog.Title>
+          <Dialog.Title>{t("profile.editUsernameTitle")}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               mode="outlined"
-              label="Neuer Benutzername"
+              label={t("profile.editUsernameLabel")}
               value={newUsername}
               onChangeText={setNewUsername}
               autoCapitalize="none"
@@ -404,9 +408,11 @@ export default function ProfileScreen() {
             />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setEditVisible(false)}>Abbrechen</Button>
+            <Button onPress={() => setEditVisible(false)}>
+              {t("common.cancel")}
+            </Button>
             <Button mode="contained" onPress={handleUpdateUsername}>
-              Speichern
+              {t("common.save")}
             </Button>
           </Dialog.Actions>
         </Dialog>

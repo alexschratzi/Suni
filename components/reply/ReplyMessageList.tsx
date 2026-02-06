@@ -24,6 +24,7 @@ type Props = {
   items: ReplyItem[];
   isDirect: boolean;
   userId: string | null;
+  resetKey?: string | number;
   avatarUrls: Record<string, string | null>;
   voteStats: VoteStats;
   handleVote: (replyId: string, value: 1 | -1) => void;
@@ -33,6 +34,7 @@ type Props = {
   formatDateLabel: (value: any) => string;
   isSameDay: (a: any, b: any) => boolean;
   theme: any;
+  onNearBottomChange?: (isNearBottom: boolean) => void;
   onUserPress?: (
     event: GestureResponderEvent,
     userId?: string,
@@ -48,6 +50,7 @@ export default function ReplyMessageList({
   items,
   isDirect,
   userId,
+  resetKey,
   avatarUrls,
   voteStats,
   handleVote,
@@ -57,6 +60,7 @@ export default function ReplyMessageList({
   formatDateLabel,
   isSameDay,
   theme,
+  onNearBottomChange,
   onUserPress,
   autoScrollEnabled = true,
   onLoadMore,
@@ -70,6 +74,16 @@ export default function ReplyMessageList({
   const hasUserScrolledRef = React.useRef(false);
   const loadMoreTriggeredRef = React.useRef(false);
 
+  React.useEffect(() => {
+    if (!isDirect) return;
+    hasAutoScrolledRef.current = false;
+    isNearBottomRef.current = true;
+    lastItemCountRef.current = 0;
+    hasUserScrolledRef.current = false;
+    loadMoreTriggeredRef.current = false;
+    onNearBottomChange?.(true);
+  }, [isDirect, onNearBottomChange, resetKey]);
+
   const scrollToBottom = React.useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated });
@@ -82,11 +96,7 @@ export default function ReplyMessageList({
     const prevCount = lastItemCountRef.current;
     lastItemCountRef.current = items.length;
 
-    if (!hasAutoScrolledRef.current) {
-      scrollToBottom(false);
-      hasAutoScrolledRef.current = true;
-      return;
-    }
+    if (!hasAutoScrolledRef.current) return;
 
     const appended = items.length > prevCount;
     if (appended && isNearBottomRef.current) {
@@ -114,7 +124,13 @@ export default function ReplyMessageList({
 
       if (isDirect && autoScrollEnabled) {
         const distanceFromBottom = contentHeight - (offsetY + visibleHeight);
-        isNearBottomRef.current = distanceFromBottom < 80;
+        const nearBottom = distanceFromBottom < 80;
+        if (nearBottom !== isNearBottomRef.current) {
+          isNearBottomRef.current = nearBottom;
+          onNearBottomChange?.(nearBottom);
+        } else {
+          isNearBottomRef.current = nearBottom;
+        }
       }
 
       if (
@@ -142,6 +158,9 @@ export default function ReplyMessageList({
       data={items}
       keyExtractor={(i) => i.id}
       contentContainerStyle={isDirect ? styles.dmListContent : styles.threadListContent}
+      maintainVisibleContentPosition={
+        isDirect ? { minIndexForVisible: 0, autoscrollToTopThreshold: 80 } : undefined
+      }
       onContentSizeChange={isDirect ? handleContentSizeChange : undefined}
       onScroll={handleScroll}
       onScrollBeginDrag={handleScrollBeginDrag}

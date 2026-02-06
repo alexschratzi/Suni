@@ -20,11 +20,17 @@ import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
 import { fetchProfilesWithCache, getMemoryProfiles } from "@/src/lib/profileCache";
+import {
+  acceptFriendRequest,
+  blockUser as blockFriend,
+  declineFriendRequest,
+  sendFriendRequest,
+  unblockUser as unblockFriend,
+} from "@/src/lib/friends";
+import { getOrCreateDmThread } from "@/src/lib/dmThreads";
 
 type ProfileMap = Record<string, { username?: string } | undefined>;
 type SearchResult = { username: string; uid: string };
-
-const pairFor = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
 export default function FriendsScreen() {
   const theme = useTheme();
@@ -260,30 +266,21 @@ export default function FriendsScreen() {
     const missing = uniqueFriends.filter((uid) => !map[uid]);
     if (missing.length === 0) return map;
 
-    const inserts = missing.map((uid) => ({
-      [COLUMNS.dmThreads.userIds]: [userId, uid],
-      [COLUMNS.dmThreads.lastMessage]: "",
-      [COLUMNS.dmThreads.lastTimestamp]: null,
-      [COLUMNS.dmThreads.hiddenBy]: [],
-    }));
+    const created = await Promise.all(
+      missing.map(async (uid) => {
+        try {
+          const threadId = await getOrCreateDmThread(userId, uid);
+          return [uid, threadId] as const;
+        } catch (err: any) {
+          console.error("Direct threads create error:", err?.message || err);
+          return null;
+        }
+      })
+    );
 
-    const { data: created, error: createErr } = await supabase
-      .from(TABLES.dmThreads)
-      .insert(inserts)
-      .select(columns);
-
-    if (createErr) {
-      console.error("Direct threads create error:", createErr.message);
-      return map;
-    }
-
-    (created || []).forEach((row: any) => {
-      const ids = row?.[COLUMNS.dmThreads.userIds];
-      if (!Array.isArray(ids)) return;
-      const otherUid = ids.find((id: string) => id !== userId);
-      if (otherUid) {
-        map[otherUid] = row?.[COLUMNS.dmThreads.id];
-      }
+    created.forEach((entry) => {
+      if (!entry) return;
+      map[entry[0]] = entry[1];
     });
 
     return map;
@@ -359,69 +356,27 @@ export default function FriendsScreen() {
     }
 
     try {
-      const [blockedByOther, blockedByMe, existingFriend, outgoingReq, incomingReq] =
-        await Promise.all([
-          supabase
-            .from(TABLES.blocks)
-            .select("id")
-            .eq(COLUMNS.blocks.blockerId, targetUid)
-            .eq(COLUMNS.blocks.blockedId, userId)
-            .maybeSingle(),
-          supabase
-            .from(TABLES.blocks)
-            .select("id")
-            .eq(COLUMNS.blocks.blockerId, userId)
-            .eq(COLUMNS.blocks.blockedId, targetUid)
-            .maybeSingle(),
-          (() => {
-            const [a, b] = pairFor(userId, targetUid);
-            return supabase
-              .from(TABLES.friendships)
-              .select("id")
-              .eq(COLUMNS.friendships.userId, a)
-              .eq(COLUMNS.friendships.friendId, b)
-              .maybeSingle();
-          })(),
-          supabase
-            .from(TABLES.friendRequests)
-            .select("id")
-            .eq(COLUMNS.friendRequests.fromUser, userId)
-            .eq(COLUMNS.friendRequests.toUser, targetUid)
-            .maybeSingle(),
-          supabase
-            .from(TABLES.friendRequests)
-            .select("id")
-            .eq(COLUMNS.friendRequests.fromUser, targetUid)
-            .eq(COLUMNS.friendRequests.toUser, userId)
-            .maybeSingle(),
-        ]);
-
-      if (blockedByOther.data) {
+      const status = await sendFriendRequest(userId, targetUid);
+      if (status === "blockedByOther") {
         setSnack(t("friends.snacks.blockedByOther"));
         return;
       }
-      if (blockedByMe.data) {
+      if (status === "blockedByMe") {
         setSnack(t("friends.snacks.youBlocked"));
         return;
       }
-      if (existingFriend.data) {
+      if (status === "alreadyFriends") {
         setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
-      if (outgoingReq.data) {
+      if (status === "pendingSent") {
         setSnack(t("friends.snacks.pendingSent"));
         return;
       }
-      if (incomingReq.data) {
+      if (status === "pendingReceived") {
         setSnack(t("friends.snacks.pendingReceived"));
         return;
       }
-
-      const { error } = await supabase.from(TABLES.friendRequests).insert({
-        [COLUMNS.friendRequests.fromUser]: userId,
-        [COLUMNS.friendRequests.toUser]: targetUid,
-      });
-      if (error) throw error;
 
       setSnack(t("friends.snacks.sent"));
     } catch (err) {
@@ -434,34 +389,14 @@ export default function FriendsScreen() {
     if (!userId) return;
 
     try {
-      const [a, b] = pairFor(userId, otherUid);
-      const existing = await supabase
-        .from(TABLES.friendships)
-        .select("id")
-        .eq(COLUMNS.friendships.userId, a)
-        .eq(COLUMNS.friendships.friendId, b)
-        .maybeSingle();
-
-      if (existing.data) {
+      const status = await acceptFriendRequest(userId, otherUid);
+      if (status === "alreadyFriends") {
         setSnack(t("friends.snacks.alreadyFriends"));
         return;
       }
 
-      const { error: insertErr } = await supabase.from(TABLES.friendships).insert({
-        [COLUMNS.friendships.userId]: a,
-        [COLUMNS.friendships.friendId]: b,
-      });
-      if (insertErr) throw insertErr;
-
-      const { error: deleteErr } = await supabase
-        .from(TABLES.friendRequests)
-        .delete()
-        .eq(COLUMNS.friendRequests.fromUser, otherUid)
-        .eq(COLUMNS.friendRequests.toUser, userId);
-      if (deleteErr) throw deleteErr;
-
-      const map = await ensureDirectThreads([otherUid]);
-      setThreadsByFriend((prev) => ({ ...prev, ...map }));
+      const threadId = await getOrCreateDmThread(userId, otherUid);
+      setThreadsByFriend((prev) => ({ ...prev, [otherUid]: threadId }));
 
       setSnack(t("friends.snacks.added"));
     } catch (err) {
@@ -474,12 +409,7 @@ export default function FriendsScreen() {
     if (!userId) return;
 
     try {
-      const { error } = await supabase
-        .from(TABLES.friendRequests)
-        .delete()
-        .eq(COLUMNS.friendRequests.fromUser, otherUid)
-        .eq(COLUMNS.friendRequests.toUser, userId);
-      if (error) throw error;
+      await declineFriendRequest(userId, otherUid);
 
       setSnack(t("friends.snacks.declined"));
     } catch (err) {
@@ -492,45 +422,7 @@ export default function FriendsScreen() {
     if (!userId) return;
 
     try {
-      const { data: existingBlock } = await supabase
-        .from(TABLES.blocks)
-        .select("id")
-        .eq(COLUMNS.blocks.blockerId, userId)
-        .eq(COLUMNS.blocks.blockedId, otherUid)
-        .maybeSingle();
-
-      if (existingBlock) {
-        setSnack(t("friends.snacks.blocked"));
-        return;
-      }
-
-      const { error: blockErr } = await supabase
-        .from(TABLES.blocks)
-        .insert({
-          [COLUMNS.blocks.blockerId]: userId,
-          [COLUMNS.blocks.blockedId]: otherUid,
-        });
-      if (blockErr) throw blockErr;
-
-      const [a, b] = pairFor(userId, otherUid);
-      await Promise.all([
-        supabase
-          .from(TABLES.friendships)
-          .delete()
-          .eq(COLUMNS.friendships.userId, a)
-          .eq(COLUMNS.friendships.friendId, b),
-        supabase
-          .from(TABLES.friendRequests)
-          .delete()
-          .eq(COLUMNS.friendRequests.fromUser, userId)
-          .eq(COLUMNS.friendRequests.toUser, otherUid),
-        supabase
-          .from(TABLES.friendRequests)
-          .delete()
-          .eq(COLUMNS.friendRequests.fromUser, otherUid)
-          .eq(COLUMNS.friendRequests.toUser, userId),
-      ]);
-
+      await blockFriend(userId, otherUid);
       setSnack(t("friends.snacks.blocked"));
     } catch (err) {
       console.error("Fehler beim Blockieren:", err);
@@ -541,12 +433,7 @@ export default function FriendsScreen() {
   const unblockUser = async (otherUid: string) => {
     if (!userId) return;
     try {
-      const { error } = await supabase
-        .from(TABLES.blocks)
-        .delete()
-        .eq(COLUMNS.blocks.blockerId, userId)
-        .eq(COLUMNS.blocks.blockedId, otherUid);
-      if (error) throw error;
+      await unblockFriend(userId, otherUid);
       setSnack(t("friends.snacks.unblocked"));
     } catch (err) {
       console.error("Fehler beim Entblocken:", err);
@@ -584,7 +471,7 @@ export default function FriendsScreen() {
             icon="account-circle"
             onPress={() => router.push("/(app)/(stack)/profile")}
           >
-            {t("profile.title", "Profil")}
+            {t("profile.title")}
           </Button>
         </View>
       </Surface>
@@ -599,7 +486,7 @@ export default function FriendsScreen() {
           onChangeText={setSearchValue}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="@username"
+          placeholder={t("friends.searchPlaceholder")}
           style={{ marginTop: 8 }}
         />
         <Button
