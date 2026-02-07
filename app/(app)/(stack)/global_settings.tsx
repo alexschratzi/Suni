@@ -239,6 +239,10 @@ export default function SettingsScreen() {
     }
   };
 
+  const openPrivacy = () => {
+    router.push("/(app)/(stack)/privacy");
+  };
+
   useEffect(() => {
     const handler = (lng: string) => {
       setLanguage(lng.startsWith("de") ? "de" : "en");
@@ -861,7 +865,11 @@ export default function SettingsScreen() {
 
       {/* Info / Rechtliches */}
       <View onLayout={handleSectionLayout("info")}>
-        <SettingsInfoSection listItemTextStyles={listItemTextStyles} scale={scale} />
+        <SettingsInfoSection
+          listItemTextStyles={listItemTextStyles}
+          scale={scale}
+          onPressPrivacy={openPrivacy}
+        />
       </View>
     </ScrollView>
   );

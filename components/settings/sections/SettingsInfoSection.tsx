@@ -9,9 +9,14 @@ import type { ListItemTextStyles } from "@/components/settings/types";
 type Props = {
   listItemTextStyles: ListItemTextStyles;
   scale: number;
+  onPressPrivacy?: () => void;
 };
 
-export function SettingsInfoSection({ listItemTextStyles, scale }: Props) {
+export function SettingsInfoSection({
+  listItemTextStyles,
+  scale,
+  onPressPrivacy,
+}: Props) {
   const { t } = useTranslation();
 
   return (
@@ -30,7 +35,8 @@ export function SettingsInfoSection({ listItemTextStyles, scale }: Props) {
         <List.Item
           title={t("settings.infoSection.privacy")}
           {...listItemTextStyles}
-          right={() => <SettingsTodoTag scale={scale} />}
+          onPress={onPressPrivacy}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
         />
         <Divider />
         <List.Item

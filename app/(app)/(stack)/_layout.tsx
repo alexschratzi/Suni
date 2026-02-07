@@ -103,6 +103,7 @@ export default function AppStackLayout() {
         <Stack.Screen name="todos" options={{ title: "To-Dos" }} />
         <Stack.Screen name="grades" options={{ title: "Grades" }} />
         <Stack.Screen name="global_settings" options={{ title: "Einstellungen" }} />
+        <Stack.Screen name="privacy" options={{ title: "Datenschutz" }} />
         <Stack.Screen name="settings/timetable" options={{ title: "Kalender verwalten" }} />
         <Stack.Screen name="chat" options={{ title: "Chat" }} />
         <Stack.Screen name="room" options={{ title: "Thread" }} />
