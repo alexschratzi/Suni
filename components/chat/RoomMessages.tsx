@@ -33,7 +33,6 @@ import {
 import type { AttachmentDraft } from "@/src/lib/chatAttachments";
 import { initials } from "@/utils/utils";
 
-import type { RoomKey } from "./RoomsList";
 
 type Message = {
   id: string;
@@ -53,7 +52,7 @@ const voteCache: Record<string, VoteStats> = {};
 const avatarCache: Record<string, Record<string, string | null>> = {};
 
 type Props = {
-  room: RoomKey;
+  room: string;
   locale: string;
   messages: Message[];
   loading: boolean;
@@ -126,15 +125,7 @@ export default function RoomMessages(props: Props) {
     () => avatarCache[room] ?? {}
   );
 
-  const resolvedRoomTitle =
-    roomTitle ||
-    (room === "salzburg"
-      ? t("chat.rooms.salzburg.title")
-      : room === "oesterreich"
-      ? t("chat.rooms.oesterreich.title")
-      : room === "wirtschaft"
-      ? t("chat.rooms.wirtschaft.title")
-      : String(room));
+  const resolvedRoomTitle = roomTitle || String(room);
 
   React.useEffect(() => {
     setVoteStats(voteCache[room] ?? {});

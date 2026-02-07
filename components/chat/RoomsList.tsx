@@ -5,47 +5,62 @@
 
 import React from "react";
 import { View, FlatList, StyleSheet, TouchableOpacity } from "react-native";
-import { Surface, Text, useTheme } from "react-native-paper";
+import { Button, Surface, Text, useTheme } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "./EmptyState";
 import { useTranslation } from "react-i18next";
 
-export type RoomKey = "salzburg" | "oesterreich" | "wirtschaft" | "Applied AI Lab"| "Deep Learning for Image Analysis"| "Ethik Nachhaltigkeit"| "Intercultural Communication Skills"| "Language Technologies Applications"| "Masterseminar Masterexposé"| "Projekt 2"| "Reinforcement Learning for Intelligent Agents"| "Unternehmensführung -gründung";
-
 export type RoomItem = {
-  key: RoomKey;
+  key: string;
   title: string;
-  subtitle: string;
+  subtitle?: string | null;
+  threadNumber?: number | null;
+  isVisible?: boolean;
 };
 
 type Props = {
   rooms: RoomItem[];
-  onSelect: (room: RoomKey) => void;
+  onSelect: (room: RoomItem) => void;
+  onMakeVisible?: (room: RoomItem) => void;
+  showHiddenActions?: boolean;
+  loading?: boolean;
+  pendingKeys?: Set<string>;
 };
 
-export default function RoomsList({ rooms, onSelect }: Props) {
+export default function RoomsList({
+  rooms,
+  onSelect,
+  onMakeVisible,
+  showHiddenActions = false,
+  loading = false,
+  pendingKeys,
+}: Props) {
   const theme = useTheme();
   const { t } = useTranslation();
 
-  return (
-    <FlatList
-      data={rooms}
-      keyExtractor={(it) => it.key}
-      contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
-      ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-      renderItem={({ item }) => (
-        <Surface
-          style={[
-            styles.card,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.outlineVariant,
-            },
-          ]}
-        >
+  const renderItem = ({ item }: { item: RoomItem }) => {
+    const isHidden = showHiddenActions && item.isVisible === false;
+    const pending = pendingKeys?.has(item.key) ?? false;
+    const subtitle =
+      item.subtitle?.trim() ||
+      (typeof item.threadNumber === "number"
+        ? `#${item.threadNumber}`
+        : item.key);
+
+    return (
+      <Surface
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View style={styles.row}>
           <TouchableOpacity
-            onPress={() => onSelect(item.key)}
-            style={styles.row}
+            onPress={() => onSelect(item)}
+            style={styles.rowTap}
             activeOpacity={0.8}
           >
             <View
@@ -54,17 +69,44 @@ export default function RoomsList({ rooms, onSelect }: Props) {
                 { backgroundColor: theme.colors.primary },
               ]}
             >
-              <Ionicons name="chatbubble-ellipses" size={20} color={theme.colors.onPrimary} />
+              <Ionicons
+                name="chatbubble-ellipses"
+                size={20}
+                color={theme.colors.onPrimary}
+              />
             </View>
             <View style={styles.main}>
-              <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-                {item.title}
-              </Text>
+              <View style={styles.titleRow}>
+                <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+                  {item.title}
+                </Text>
+                {typeof item.threadNumber === "number" && (
+                  <Text
+                    style={[
+                      styles.threadNumber,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    #{item.threadNumber}
+                  </Text>
+                )}
+              </View>
               <Text
                 style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
+                numberOfLines={2}
               >
-                {item.subtitle}
+                {subtitle}
               </Text>
+              {isHidden && (
+                <Text
+                  style={[
+                    styles.hiddenLabel,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  {t("chat.rooms.hiddenLabel")}
+                </Text>
+              )}
             </View>
             <Ionicons
               name="chevron-forward"
@@ -72,12 +114,35 @@ export default function RoomsList({ rooms, onSelect }: Props) {
               color={theme.colors.onSurfaceVariant}
             />
           </TouchableOpacity>
-        </Surface>
-      )}
+          {isHidden && (
+            <Button
+              mode="outlined"
+              compact
+              icon="eye-outline"
+              onPress={() => onMakeVisible?.(item)}
+              loading={pending}
+              disabled={pending}
+              style={styles.showButton}
+            >
+              {t("chat.rooms.makeVisible")}
+            </Button>
+          )}
+        </View>
+      </Surface>
+    );
+  };
+
+  return (
+    <FlatList
+      data={rooms}
+      keyExtractor={(it) => it.key}
+      contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
+      ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+      renderItem={renderItem}
       ListEmptyComponent={
         <EmptyState
           title={t("chat.empty.roomsTitle")}
-          subtitle={t("chat.empty.roomsSubtitle")}
+          subtitle={loading ? t("common.loading") : t("chat.empty.roomsSubtitle")}
         />
       }
     />
@@ -97,7 +162,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: 12,
+    gap: 8,
+  },
+  rowTap: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   iconWrap: {
     width: 42,
@@ -110,12 +181,28 @@ const styles = StyleSheet.create({
   main: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   title: {
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 2,
   },
+  threadNumber: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
   subtitle: {
     fontSize: 13,
+  },
+  hiddenLabel: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  showButton: {
+    borderRadius: 999,
   },
 });

@@ -12,7 +12,6 @@ import { useTheme } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 
 import RoomMessages from "./RoomMessages";
-import type { RoomKey } from "./RoomsList";
 import { supabase } from "@/src/lib/supabase";
 import { useSupabaseUserId } from "@/src/lib/useSupabaseUser";
 import { TABLES, COLUMNS } from "@/src/lib/supabaseTables";
@@ -38,7 +37,7 @@ type Message = {
 };
 
 type Props = {
-  room: RoomKey;
+  room: string;
   roomTitle?: string;
   initialAccentColor?: string;
   initialUsername?: string;
@@ -59,15 +58,7 @@ export default function RoomThreadScreen({
   const userId = useSupabaseUserId();
 
   const locale = i18n.language?.startsWith("de") ? "de-DE" : "en-US";
-  const fallbackTitle =
-    room === "salzburg"
-      ? t("chat.rooms.salzburg.title")
-      : room === "oesterreich"
-      ? t("chat.rooms.oesterreich.title")
-      : room === "wirtschaft"
-      ? t("chat.rooms.wirtschaft.title")
-      : String(room);
-  const headerTitle = roomTitle || fallbackTitle;
+  const headerTitle = roomTitle || String(room);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
@@ -487,6 +478,7 @@ export default function RoomThreadScreen({
   return (
     <RoomMessages
       room={room}
+      roomTitle={headerTitle}
       locale={locale}
       messages={visibleMessages}
       loading={loadingMsgs}

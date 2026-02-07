@@ -165,7 +165,9 @@
       "wirtschaft": {
         "title": "Business",
         "subtitle": "Studies & practice"
-      }
+      },
+      "makeVisible": "Show in list",
+      "hiddenLabel": "Hidden"
     },
     "empty": {
       "roomsTitle": "No threads found",

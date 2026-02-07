@@ -1,7 +1,6 @@
 import React from "react";
 import { useLocalSearchParams } from "expo-router";
 import RoomThreadScreen from "@/components/chat/RoomThreadScreen";
-import type { RoomKey } from "@/components/chat/RoomsList";
 
 export default function RoomRoute() {
   const { room, roomTitle, accentColor, username } = useLocalSearchParams();
@@ -13,7 +12,7 @@ export default function RoomRoute() {
 
   return (
     <RoomThreadScreen
-      room={roomValue as RoomKey}
+      room={roomValue}
       roomTitle={toSingle(roomTitle)}
       initialAccentColor={toSingle(accentColor)}
       initialUsername={toSingle(username)}

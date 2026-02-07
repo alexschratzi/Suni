@@ -54,7 +54,10 @@ export default function ChatHeader({
     <View style={styles.container}>
       <SegmentedButtons
         value={tab}
-        onValueChange={(v) => setTab(v as TabKey)}
+        onValueChange={(v) => {
+          setTab(v as TabKey);
+          setSearch("");
+        }}
         buttons={[
           { value: "rooms", label: t("chat.tabs.rooms"), icon: "chat" },
           { value: "direct", label: directLabel, icon: "account" },

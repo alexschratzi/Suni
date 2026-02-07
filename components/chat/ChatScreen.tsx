@@ -14,6 +14,11 @@ import { fetchUnreadDmCounts, getOrCreateDmThread } from "@/src/lib/dmThreads";
 import ChatHeader from "./ChatHeader";
 import RoomsList, { RoomItem } from "./RoomsList";
 import DirectList, { Direct } from "./DirectList";
+import {
+  fetchVisibleRoomThreads,
+  searchRoomThreads,
+  subscribeRoomThread,
+} from "@/src/lib/roomThreads";
 
 type TabKey = "rooms" | "direct";
 
@@ -39,6 +44,12 @@ export default function ChatScreen() {
 
   const [tab, setTab] = useState<TabKey>("rooms");
   const [search, setSearch] = useState("");
+
+  const [roomThreads, setRoomThreads] = useState<RoomItem[]>([]);
+  const [roomSearchResults, setRoomSearchResults] = useState<RoomItem[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [roomsSearchLoading, setRoomsSearchLoading] = useState(false);
+  const [roomPendingKeys, setRoomPendingKeys] = useState<Set<string>>(new Set());
 
   const [username, setUsername] = useState("");
   const [chatColor, setChatColor] = useState<string | null>(null);
@@ -393,6 +404,131 @@ export default function ChatScreen() {
     }, [refreshUnreadCounts, tab])
   );
 
+  const mapRoomRows = useCallback(
+    (rows: any[] | null | undefined, visibleFallback: boolean) =>
+      (rows || [])
+        .map((row: any) => {
+          const key = row?.thread_key ?? row?.room_key ?? row?.key;
+          if (!key) return null;
+          const rawNumber = row?.thread_number;
+          const parsedNumber =
+            typeof rawNumber === "number"
+              ? rawNumber
+              : typeof rawNumber === "string"
+              ? Number(rawNumber)
+              : null;
+          return {
+            key,
+            title: row?.title ?? String(key),
+            subtitle: row?.subtitle ?? null,
+            threadNumber: Number.isFinite(parsedNumber) ? parsedNumber : null,
+            isVisible:
+              typeof row?.is_visible === "boolean" ? row.is_visible : visibleFallback,
+          } as RoomItem;
+        })
+        .filter(Boolean),
+    []
+  );
+
+  const refreshVisibleRooms = useCallback(async () => {
+    if (!userId) {
+      setRoomThreads([]);
+      setRoomsLoading(false);
+      return;
+    }
+
+    setRoomsLoading(true);
+    try {
+      const rows = await fetchVisibleRoomThreads();
+      setRoomThreads(mapRoomRows(rows, true) as RoomItem[]);
+    } catch (err: any) {
+      console.error("Room threads load error:", err?.message || err);
+      setRoomThreads([]);
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, [mapRoomRows, userId]);
+
+  useEffect(() => {
+    refreshVisibleRooms();
+  }, [refreshVisibleRooms]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (tab !== "rooms") return;
+      refreshVisibleRooms();
+    }, [refreshVisibleRooms, tab])
+  );
+
+  useEffect(() => {
+    if (tab !== "rooms") {
+      setRoomsSearchLoading(false);
+      return;
+    }
+    const q = search.trim();
+    if (!q) {
+      setRoomSearchResults([]);
+      setRoomsSearchLoading(false);
+      return;
+    }
+    if (!userId) {
+      setRoomSearchResults([]);
+      setRoomsSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setRoomsSearchLoading(true);
+      try {
+        const rows = await searchRoomThreads(q);
+        if (!cancelled) {
+          setRoomSearchResults(mapRoomRows(rows, false) as RoomItem[]);
+        }
+      } catch (err: any) {
+        console.error("Room threads search error:", err?.message || err);
+        if (!cancelled) setRoomSearchResults([]);
+      } finally {
+        if (!cancelled) setRoomsSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [mapRoomRows, search, tab, userId]);
+
+  const handleMakeVisible = useCallback(
+    async (room: RoomItem) => {
+      if (!room?.key) return;
+      setRoomPendingKeys((prev) => {
+        const next = new Set(prev);
+        next.add(room.key);
+        return next;
+      });
+
+      try {
+        await subscribeRoomThread(room.key);
+        setRoomSearchResults((prev) =>
+          prev.map((item) =>
+            item.key === room.key ? { ...item, isVisible: true } : item
+          )
+        );
+        await refreshVisibleRooms();
+      } catch (err: any) {
+        console.error("Room thread subscribe error:", err?.message || err);
+      } finally {
+        setRoomPendingKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(room.key);
+          return next;
+        });
+      }
+    },
+    [refreshVisibleRooms]
+  );
+
   const directs: Direct[] = useMemo(
     () =>
       rawDirects.map((d) => ({
@@ -416,30 +552,14 @@ export default function ChatScreen() {
     [rawDirects, unreadByThread]
   );
 
-  // Rooms filter
-  const filteredRooms: RoomItem[] = useMemo(() => {
-    const list: RoomItem[] = [
-      { key: "salzburg", title: t("chat.rooms.salzburg.title"), subtitle: t("chat.rooms.salzburg.subtitle") },
-      { key: "oesterreich", title: t("chat.rooms.oesterreich.title"), subtitle: t("chat.rooms.oesterreich.subtitle") },
-      { key: "wirtschaft", title: t("chat.rooms.wirtschaft.title"), subtitle: t("chat.rooms.wirtschaft.subtitle") },
-      { key: "Applied AI Lab", title: "Applied AI Lab", subtitle: "Applied AI Lab" },
-      { key: "Deep Learning for Image Analysis", title: "Deep Learning for Image Analysis", subtitle: "Deep Learning for Image Analysis" },
-      { key: "Ethik Nachhaltigkeit", title: "Ethik Nachhaltigkeit", subtitle: "Ethik Nachhaltigkeit" },
-      { key: "Intercultural Communication Skills", title: "Intercultural Communication Skills", subtitle: "Intercultural Communication Skills" },
-      { key: "Language Technologies Applications", title: "Language Technologies Applications", subtitle: "Language Technologies Applications" },
-      { key: "Masterseminar Masterexposé", title: "Masterseminar Masterexposé", subtitle: "Masterseminar Masterexposé" },
-      { key: "Projekt 2", title: "Projekt 2", subtitle: "Projekt 2" },
-      { key: "Reinforcement Learning for Intelligent Agents", title: "Reinforcement Learning for Intelligent Agents", subtitle: "Reinforcement Learning for Intelligent Agents" },
-      { key: "Unternehmensführung -gründung", title: "Unternehmensführung -gründung", subtitle: "Unternehmensführung -gründung" },
-    ];
-
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-
-    return list.filter(
-      (r) => r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q)
-    );
-  }, [search, t]);
+  const visibleRooms = useMemo(() => roomThreads, [roomThreads]);
+  const searchedRooms = useMemo(() => roomSearchResults, [roomSearchResults]);
+  const showHiddenActions = search.trim().length > 0;
+  const roomsForDisplay = useMemo(
+    () => (showHiddenActions ? searchedRooms : visibleRooms),
+    [searchedRooms, showHiddenActions, visibleRooms]
+  );
+  const roomsLoadingState = roomsLoading || (showHiddenActions && roomsSearchLoading);
 
   // Directs filter
   const filteredDirects = useMemo(() => {
@@ -465,19 +585,27 @@ export default function ChatScreen() {
 
       {tab === "rooms" && (
         <RoomsList
-          rooms={filteredRooms}
-          onSelect={(roomKey) => {
-            const roomItem = filteredRooms.find((item) => item.key === roomKey);
+          rooms={roomsForDisplay}
+          onSelect={(roomItem) => {
+            const baseTitle = roomItem.title?.trim() || roomItem.key;
+            const displayTitle =
+              typeof roomItem.threadNumber === "number"
+                ? `${baseTitle} #${roomItem.threadNumber}`
+                : baseTitle;
             router.push({
               pathname: "/(app)/(stack)/room",
               params: {
-                room: roomKey,
-                roomTitle: roomItem?.title ?? roomKey,
+                room: roomItem.key,
+                roomTitle: displayTitle,
                 accentColor: chatColor ?? "",
                 username: username ?? "",
               },
             });
           }}
+          onMakeVisible={handleMakeVisible}
+          showHiddenActions={showHiddenActions}
+          loading={roomsLoadingState}
+          pendingKeys={roomPendingKeys}
         />
       )}
 

@@ -165,7 +165,9 @@
       "wirtschaft": {
         "title": "Wirtschaft",
         "subtitle": "Studium & Praxis"
-      }
+      },
+      "makeVisible": "Sichtbar machen",
+      "hiddenLabel": "Ausgeblendet"
     },
     "empty": {
       "roomsTitle": "Keine Threads gefunden",
